@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Users,
   CalendarCheck,
+  CalendarRange,
   BarChart3,
   GraduationCap,
   Search,
@@ -14,14 +15,20 @@ import {
   X,
   LogOut,
   Sparkles,
+  Plus,
+  UserPlus,
+  BookOpen,
 } from "lucide-react";
 import clsx from "clsx";
 import { useApp } from "../context/AppContext";
+import StudentFormModal from "./StudentFormModal";
+import ClassFormModal from "./ClassFormModal";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/students", label: "Students", icon: Users },
   { to: "/attendance", label: "Attendance", icon: CalendarCheck },
+  { to: "/schedule", label: "Schedule", icon: CalendarRange },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -46,7 +53,7 @@ function Brand() {
 function Sidebar({ open, onClose }) {
   const { students, theme, toggleTheme, showToast } = useApp();
   const navigate = useNavigate();
-  const active = students.filter((s) => s.status === "Active").length;
+  const active = students.filter((s) => s.status !== "Graduate").length;
 
   const handleLogout = () => {
     localStorage.removeItem("ntti.auth");
@@ -155,8 +162,9 @@ function Sidebar({ open, onClose }) {
   );
 }
 
-function TopBar({ onMenu }) {
+function TopBar({ onMenu, onAddStudent, onAddClass }) {
   const [query, setQuery] = useState("");
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const { students, theme, toggleTheme } = useApp();
   const navigate = useNavigate();
 
@@ -232,6 +240,54 @@ function TopBar({ onMenu }) {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setAddMenuOpen((o) => !o)}
+              className="btn btn-primary h-10 px-3 rounded-xl text-sm"
+              title="Quick add"
+            >
+              <Plus size={17} /> <span className="hidden sm:inline">Add</span>
+            </button>
+            {addMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setAddMenuOpen(false)} />
+                <div
+                  className="absolute right-0 top-[calc(100%+8px)] z-50 w-56 overflow-hidden rounded-2xl shadow-soft animate-fade-up"
+                  style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+                >
+                  <p className="px-4 pt-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: "var(--text-3)" }}>
+                    Quick add
+                  </p>
+                  <button
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      onAddStudent();
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium transition-colors hover:bg-[var(--surface-2)]"
+                    style={{ color: "var(--text)" }}
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg text-white" style={{ background: "var(--primary)" }}>
+                      <UserPlus size={15} />
+                    </span>
+                    Add student
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAddMenuOpen(false);
+                      onAddClass();
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-medium transition-colors hover:bg-[var(--surface-2)]"
+                    style={{ color: "var(--text)" }}
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg text-white" style={{ background: "linear-gradient(135deg,#10b981,#14b8a6)" }}>
+                      <BookOpen size={15} />
+                    </span>
+                    Add class
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={() => toggleTheme()}
             className="btn btn-ghost h-10 w-10 p-0 rounded-xl"
@@ -279,16 +335,24 @@ function ToastStack() {
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showAddStudent, setShowAddStudent] = useState(false);
+  const [showAddClass, setShowAddClass] = useState(false);
 
   return (
     <div className="min-h-screen">
       <Sidebar open={mobileOpen} onClose={() => setMobileOpen(false)} />
       <div className="lg:pl-[264px]">
-        <TopBar onMenu={() => setMobileOpen(true)} />
+        <TopBar
+          onMenu={() => setMobileOpen(true)}
+          onAddStudent={() => setShowAddStudent(true)}
+          onAddClass={() => setShowAddClass(true)}
+        />
         <main className="bg-mesh min-h-[calc(100vh-68px)] px-4 sm:px-6 lg:px-8 py-6">
           <Outlet />
         </main>
       </div>
+      <StudentFormModal open={showAddStudent} onClose={() => setShowAddStudent(false)} />
+      <ClassFormModal open={showAddClass} onClose={() => setShowAddClass(false)} />
       <ToastStack />
     </div>
   );

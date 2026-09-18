@@ -32,6 +32,10 @@ export function Badge({ tone = "neutral", children, className }) {
   return <span className={clsx("badge", COLOR_CLS[tone], className)}>{children}</span>;
 }
 
+/** Student lifecycle status → badge tone. */
+export const statusTone = (s) =>
+  s === "Learning" ? "active" : s === "Graduate" ? "info" : s === "Undergraduate" ? "warning" : "neutral";
+
 export function StudentAvatar({ student, size }) {
   const fallback = ["#6366f1", "#8b5cf6", "#f59e0b", "#10b981", "#3b82f6", "#ec4899", "#14b8a6", "#f97316"];
   const hash = String(student.id || 0).split("").reduce((a, b) => a + b.charCodeAt(0) * 7, 0);
@@ -40,6 +44,7 @@ export function StudentAvatar({ student, size }) {
     <Avatar
       name={`${student.firstName} ${student.lastName}`}
       color={color}
+      photo={student.photo || undefined}
       size={size}
     />
   );

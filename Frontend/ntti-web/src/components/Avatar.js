@@ -1,7 +1,7 @@
 import React from "react";
 import clsx from "clsx";
 
-export default function Avatar({ name, color, size = "md", className }) {
+export default function Avatar({ name, color, photo, size = "md", className }) {
   const initials = name
     ?.split(" ")
     .map((n) => n[0])
@@ -19,13 +19,17 @@ export default function Avatar({ name, color, size = "md", className }) {
   return (
     <div
       className={clsx(
-        "relative inline-flex items-center justify-center rounded-full font-semibold text-white shrink-0",
+        "relative inline-flex items-center justify-center overflow-hidden rounded-full font-semibold text-white shrink-0",
         sizes[size],
         className
       )}
       style={{ background: color || "#6366f1" }}
     >
-      {initials}
+      {photo ? (
+        <img src={photo} alt={name || "avatar"} className="h-full w-full object-cover" />
+      ) : (
+        initials
+      )}
     </div>
   );
 }

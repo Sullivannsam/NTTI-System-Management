@@ -41,6 +41,10 @@ module.exports = {
           "0%": { opacity: "0", transform: "translateY(14px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        "fade-down": {
+          "0%": { opacity: "0", transform: "translateY(-14px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
         "fade-in": {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
@@ -76,6 +80,7 @@ module.exports = {
       },
       animation: {
         "fade-up": "fade-up .55s cubic-bezier(.22,1,.36,1) both",
+        "fade-down": "fade-down .55s cubic-bezier(.22,1,.36,1) both",
         "fade-in": "fade-in .4s ease both",
         "scale-in": "scale-in .3s cubic-bezier(.22,1,.36,1) both",
         "slide-in": "slide-in .3s cubic-bezier(.22,1,.36,1) both",

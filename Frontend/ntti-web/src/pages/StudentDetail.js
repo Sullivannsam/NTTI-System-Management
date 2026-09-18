@@ -8,17 +8,19 @@ import {
   MapPin,
   CalendarDays,
   User2,
+  Languages,
   Target,
   CheckCircle2,
   XCircle,
   BookOpen,
   MessageCircle,
+  GraduationCap,
 } from "lucide-react";
 import StatCard from "../components/StatCard";
 import { EmptyState } from "../components/Page";
-import { Badge, StatusBadge, StudentAvatar } from "../components/Badge";
+import { Badge, StatusBadge, StudentAvatar, statusTone } from "../components/Badge";
 import { useApp } from "../context/AppContext";
-import { CLASSES, addDays, todayISO, weekdayLabel, prettyDate, computeRate, majorName } from "../data/seed";
+import { addDays, todayISO, weekdayLabel, prettyDate, computeRate, majorName, ACADEMIC_LEVELS, nextLevel } from "../data/seed";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 function ChartTooltip({ active, payload, label }) {
@@ -40,7 +42,7 @@ function ChartTooltip({ active, payload, label }) {
 export default function StudentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { students, attendance } = useApp();
+  const { students, attendance, classes, promoteStudent, showToast } = useApp();
   const student = students.find((s) => s.id === Number(id));
 
   const recs = useMemo(
@@ -88,17 +90,27 @@ export default function StudentDetail() {
     );
   }
 
-  const className = CLASSES.find((c) => c.id === student.className);
+  const className = classes.find((c) => c.id === student.className);
   const rate = computeRate(recs);
 
   const infoRows = [
+    { icon: Languages, label: "Khmer name", value: student.khmerName || "—" },
     { icon: Mail, label: "Email", value: student.email },
     { icon: Phone, label: "Phone", value: student.phone },
     { icon: Cake, label: "Date of birth", value: prettyDate(student.dob) },
     { icon: MapPin, label: "Address", value: student.address },
-    { icon: CalendarDays, label: "Enrolled", value: prettyDate(student.enrollmentDate) },
+    { icon: CalendarDays, label: "Enrolled", value: student.enrollmentYear ? `Cohort ${student.enrollmentYear}` : prettyDate(student.enrollmentDate) },
     { icon: User2, label: "Guardian", value: student.guardian },
   ];
+
+  const currentLevel = ACADEMIC_LEVELS.includes(student.level) ? student.level : "S1Y1";
+  const next = nextLevel(currentLevel);
+  const progressHistory = [...(student.history || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const historySet = new Set(progressHistory.map((h) => h.level));
+  const handlePromote = () => {
+    promoteStudent(student.id);
+    showToast(next ? `Exam passed · ${currentLevel} archived · now ${next}` : "All four years complete — student has graduated");
+  };
 
   return (
     <div className="space-y-6">
@@ -120,8 +132,11 @@ export default function StudentDetail() {
                 <h2 className="text-xl font-bold" style={{ color: "var(--text)" }}>
                   {student.firstName} {student.lastName}
                 </h2>
-                <Badge tone={student.status === "Active" ? "active" : student.status === "Graduated" ? "info" : "danger"}>
+                <Badge tone={statusTone(student.status)}>
                   {student.status}
+                </Badge>
+                <Badge tone="neutral" className="ml-1">
+                  {student.level || "S1Y1"}
                 </Badge>
               </div>
               <p className="text-sm" style={{ color: "var(--text-3)" }}>
@@ -158,6 +173,93 @@ export default function StudentDetail() {
         <StatCard label="Days present" value={stats.present} icon={CheckCircle2} tone="success" sub={`+ ${stats.late} late`} delay={140} />
         <StatCard label="Days absent" value={stats.absent} icon={XCircle} tone="danger" sub={`+ ${stats.leave} leave`} delay={200} />
         <StatCard label="Days enrolled" value={recs.length} icon={CalendarDays} tone="brand" delay={260} />
+      </div>
+
+      <div className="card p-5 animate-fade-up" style={{ animationDelay: "165ms" }}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+              Academic progress
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
+              1 semester = 15 weeks · finished semesters are archived when the exam is passed
+            </p>
+          </div>
+          <button
+            onClick={handlePromote}
+            disabled={student.status === "Graduate" || !next}
+            className="btn btn-primary h-10 px-4 text-sm gap-1.5 disabled:opacity-50"
+          >
+            <GraduationCap size={16} />
+            {student.status === "Graduate" ? "Graduated" : `Pass exam · go to ${next}`}
+          </button>
+        </div>
+
+        <div className="mt-5 flex items-center gap-1 overflow-x-auto thin-scroll pb-2">
+          {ACADEMIC_LEVELS.map((lvl, i) => {
+            const done = historySet.has(lvl);
+            const isCur = lvl === currentLevel;
+            return (
+              <div key={lvl} className="flex shrink-0 items-center gap-1">
+                <div
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 whitespace-nowrap"
+                  style={{
+                    background: isCur ? "var(--primary-strong)" : done ? "var(--success-soft)" : "var(--surface-2)",
+                    color: isCur ? "#fff" : done ? "var(--success)" : "var(--text-3)",
+                    border: isCur ? "none" : "1px solid var(--border)",
+                  }}
+                >
+                  <span className="text-[11px] font-bold">{lvl}</span>
+                  <span className={`text-[9px] ${isCur ? "opacity-80" : "opacity-70"}`}>
+                    {isCur ? "now" : done ? "✓ passed" : `Sem ${lvl[1]} · Y${lvl[3]}`}
+                  </span>
+                </div>
+                {i < ACADEMIC_LEVELS.length - 1 && (
+                  <span className="h-px w-3.5 shrink-0" style={{ background: "var(--border)" }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="overflow-x-auto thin-scroll mt-4">
+          {progressHistory.length > 0 ? (
+            <table className="table-w" style={{ minWidth: 640 }}>
+              <thead>
+                <tr>
+                  <th>Semester</th>
+                  <th>Year</th>
+                  <th>Class</th>
+                  <th>Passed exam on</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {progressHistory.map((h, i) => {
+                  const cls = classes.find((c) => c.id === h.className);
+                  return (
+                    <tr key={h.id} style={{ animationDelay: `${i * 30}ms` }}>
+                      <td>
+                        <span className="inline-flex rounded-lg px-2 py-0.5 text-[11px] font-bold" style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
+                          {h.level}
+                        </span>
+                      </td>
+                      <td className="font-medium" style={{ color: "var(--text)" }}>{h.semester}</td>
+                      <td style={{ color: "var(--text-2)" }}>{h.year}</td>
+                      <td style={{ color: "var(--text-2)" }}>{cls?.name || h.className || "—"}</td>
+                      <td className="tabular-nums" style={{ color: "var(--text-2)" }}>{prettyDate(h.date)}</td>
+                      <td><Badge tone="success">{h.result || "Passed"}</Badge></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div className="rounded-xl p-6 text-center text-sm" style={{ background: "var(--surface-2)", color: "var(--text-3)" }}>
+              No semesters archived yet — press <b className="text-[var(--text-2)]">"Pass exam · go to {next || "Graduation"}"</b> above when the final exam is passed.
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">

@@ -24,7 +24,7 @@ import {
 import PageHeader, { ProgressBar } from "../components/Page";
 import StatCard from "../components/StatCard";
 import { useApp } from "../context/AppContext";
-import { CLASSES, addDays, todayISO, weekdayLabel, computeRate } from "../data/seed";
+import { addDays, todayISO, weekdayLabel, computeRate } from "../data/seed";
 import { StudentAvatar } from "../components/Badge";
 
 const PIE_COLORS = ["#10b981", "#f59e0b", "#ef4444", "#3b82f6"];
@@ -67,7 +67,7 @@ function ChartTooltip({ active, payload, label, unit = "" }) {
 }
 
 export default function Analytics() {
-  const { students, attendance } = useApp();
+  const { students, attendance, classes } = useApp();
   const today = todayISO();
 
   const distribution = useMemo(() => {
@@ -101,7 +101,7 @@ export default function Analytics() {
   }, [attendance, today]);
 
   const byClass = useMemo(() => {
-    return CLASSES.map((c) => {
+    return classes.map((c) => {
       const studs = students.filter((s) => s.className === c.id);
       const recs = attendance.filter((a) => studs.some((s) => s.id === a.studentId));
       const attended = recs.filter((r) => r.status === "present" || r.status === "late").length;
@@ -111,7 +111,7 @@ export default function Analytics() {
         Students: studs.length,
       };
     });
-  }, [students, attendance]);
+  }, [students, attendance, classes]);
 
   const ranked = useMemo(() => {
     return students
@@ -263,7 +263,7 @@ export default function Analytics() {
                       {s.firstName} {s.lastName}
                     </p>
                     <p className="text-[11px]" style={{ color: "var(--text-3)" }}>
-                      {CLASSES.find((c) => c.id === s.className)?.name}
+                      {classes.find((c) => c.id === s.className)?.name}
                     </p>
                   </div>
                   <span className="badge" style={{ background: "var(--success-soft)", color: "var(--success)" }}>

@@ -5,8 +5,11 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
+import ClassDetail from "./pages/ClassDetail";
+import MajorDetail from "./pages/MajorDetail";
 import StudentDetail from "./pages/StudentDetail";
 import Attendance from "./pages/Attendance";
+import Schedule from "./pages/Schedule";
 import Analytics from "./pages/Analytics";
 
 function RequireAuth({ children }) {
@@ -29,8 +32,11 @@ function App() {
           >
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/students" element={<Students />} />
+            <Route path="/majors/:majorId" element={<MajorDetail />} />
+            <Route path="/classes/:classId" element={<ClassDetail />} />
             <Route path="/students/:id" element={<StudentDetail />} />
             <Route path="/attendance" element={<Attendance />} />
+            <Route path="/schedule" element={<Schedule />} />
             <Route path="/analytics" element={<Analytics />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -31,6 +31,7 @@ export default function Modal({ open, onClose, title, subtitle, children, size =
             "sm:max-w-lg": size === "md",
             "sm:max-w-2xl": size === "lg",
             "sm:max-w-3xl": size === "xl",
+            "sm:max-w-5xl": size === "2xl",
           }
         )}
         style={{ background: "var(--surface)" }}

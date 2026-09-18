@@ -15,7 +15,7 @@ import {
 import StatCard from "../components/StatCard";
 import PageHeader, { ProgressBar } from "../components/Page";
 import { useApp } from "../context/AppContext";
-import { CLASSES, MAJORS, addDays, todayISO, computeRate, weekdayLabel } from "../data/seed";
+import { MAJORS, addDays, todayISO, computeRate, weekdayLabel } from "../data/seed";
 import { StudentAvatar } from "../components/Badge";
 
 function ChartTooltip({ active, payload, label, unit = "" }) {
@@ -38,7 +38,7 @@ function ChartTooltip({ active, payload, label, unit = "" }) {
 }
 
 export default function Dashboard() {
-  const { students, attendance } = useApp();
+  const { students, attendance, classes } = useApp();
   const today = todayISO();
 
   const stats = useMemo(() => {
@@ -65,7 +65,7 @@ export default function Dashboard() {
   }, [attendance, today]);
 
   const classStats = useMemo(() => {
-    return CLASSES.map((c) => {
+    return classes.map((c) => {
       const studs = students.filter((s) => s.className === c.id);
       const recs = attendance.filter((a) => studs.some((s) => s.id === a.studentId));
       const attended = recs.filter((r) => r.status === "present" || r.status === "late").length;
@@ -75,7 +75,7 @@ export default function Dashboard() {
         rate: recs.length ? Math.round((attended / recs.length) * 100) : 0,
       };
     });
-  }, [students, attendance]);
+  }, [students, attendance, classes]);
 
   const majorStats = useMemo(() => {
     return MAJORS.map((m) => {
@@ -118,7 +118,7 @@ export default function Dashboard() {
         <StatCard label="Total students" value={students.length} icon={Users} tone="brand" trend={{ up: true, value: 8 }} sub="vs last month" />
         <StatCard label="Present today" value={stats.presentToday} icon={UserRoundCheck} tone="success" sub={`of ${students.length} enrolled`} />
         <StatCard label="Attendance rate" value={stats.avgRate} suffix="%" icon={Percent} tone="info" trend={{ up: true, value: 2.4 }} sub="avg all students" />
-        <StatCard label="Classes" value={CLASSES.length} icon={Building2} tone="warning" suffix=" active" sub="3 shifts" />
+        <StatCard label="Classes" value={classes.length} icon={Building2} tone="warning" suffix=" active" sub="3 shifts" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
@@ -233,7 +233,7 @@ export default function Dashboard() {
                       {s.firstName} {s.lastName}
                     </p>
                     <p className="text-[11px]" style={{ color: "var(--text-3)" }}>
-                      {CLASSES.find((c) => c.id === s.className)?.name} · {s.studentId}
+                      {classes.find((c) => c.id === s.className)?.name} · {s.studentId}
                     </p>
                   </div>
                   <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: s.rec.status === "late" ? "var(--warning)" : "var(--success)" }}>
