@@ -14,13 +14,13 @@ import {
   XCircle,
   BookOpen,
   MessageCircle,
-  GraduationCap,
+  FileText,
 } from "lucide-react";
 import StatCard from "../components/StatCard";
 import { EmptyState } from "../components/Page";
 import { Badge, StatusBadge, StudentAvatar, statusTone } from "../components/Badge";
 import { useApp } from "../context/AppContext";
-import { addDays, todayISO, weekdayLabel, prettyDate, computeRate, majorName, ACADEMIC_LEVELS, nextLevel } from "../data/seed";
+import { addDays, todayISO, weekdayLabel, prettyDate, computeRate, majorName, ACADEMIC_LEVELS, levelsForMajor, programYears } from "../data/seed";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 function ChartTooltip({ active, payload, label }) {
@@ -42,7 +42,7 @@ function ChartTooltip({ active, payload, label }) {
 export default function StudentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { students, attendance, classes, promoteStudent, showToast } = useApp();
+  const { students, attendance, classes } = useApp();
   const student = students.find((s) => s.id === Number(id));
 
   const recs = useMemo(
@@ -103,14 +103,10 @@ export default function StudentDetail() {
     { icon: User2, label: "Guardian", value: student.guardian },
   ];
 
+  const programLevels = levelsForMajor(student.major);
   const currentLevel = ACADEMIC_LEVELS.includes(student.level) ? student.level : "S1Y1";
-  const next = nextLevel(currentLevel);
   const progressHistory = [...(student.history || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const historySet = new Set(progressHistory.map((h) => h.level));
-  const handlePromote = () => {
-    promoteStudent(student.id);
-    showToast(next ? `Exam passed · ${currentLevel} archived · now ${next}` : "All four years complete — student has graduated");
-  };
 
   return (
     <div className="space-y-6">
@@ -130,7 +126,7 @@ export default function StudentDetail() {
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
                 <h2 className="text-xl font-bold" style={{ color: "var(--text)" }}>
-                  {student.firstName} {student.lastName}
+                  {student.khmerName || `${student.firstName} ${student.lastName}`}
                 </h2>
                 <Badge tone={statusTone(student.status)}>
                   {student.status}
@@ -140,12 +136,18 @@ export default function StudentDetail() {
                 </Badge>
               </div>
               <p className="text-sm" style={{ color: "var(--text-3)" }}>
+                {student.khmerName ? `${student.firstName} ${student.lastName} · ` : ""}
                 {student.studentId} · {majorName(student.major)} — {className?.name} · {className?.shift} shift
               </p>
             </div>
-            <Link to={`/attendance`} className="btn btn-outline h-10 px-4 text-sm gap-1.5">
-              <BookOpen size={16} /> Attendance
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link to={`/transcript?student=${student.id}`} className="btn btn-primary h-10 px-4 text-sm gap-1.5">
+                <FileText size={16} /> Transcript
+              </Link>
+              <Link to={`/attendance`} className="btn btn-outline h-10 px-4 text-sm gap-1.5">
+                <BookOpen size={16} /> Attendance
+              </Link>
+            </div>
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -182,21 +184,20 @@ export default function StudentDetail() {
               Academic progress
             </h3>
             <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-              1 semester = 15 weeks · finished semesters are archived when the exam is passed
+              1 semester = 15 weeks · {programYears(student.major)}-year programme · a semester is archived when the class passes the exam
             </p>
           </div>
-          <button
-            onClick={handlePromote}
-            disabled={student.status === "Graduate" || !next}
-            className="btn btn-primary h-10 px-4 text-sm gap-1.5 disabled:opacity-50"
+          <span
+            className="inline-flex items-center rounded-lg px-3 py-2 text-xs font-semibold"
+            style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}
+            title="Students advance with their class — use Next semester on the class page."
           >
-            <GraduationCap size={16} />
-            {student.status === "Graduate" ? "Graduated" : `Pass exam · go to ${next}`}
-          </button>
+            Progression follows the class
+          </span>
         </div>
 
         <div className="mt-5 flex items-center gap-1 overflow-x-auto thin-scroll pb-2">
-          {ACADEMIC_LEVELS.map((lvl, i) => {
+          {programLevels.map((lvl, i) => {
             const done = historySet.has(lvl);
             const isCur = lvl === currentLevel;
             return (
@@ -214,7 +215,7 @@ export default function StudentDetail() {
                     {isCur ? "now" : done ? "✓ passed" : `Sem ${lvl[1]} · Y${lvl[3]}`}
                   </span>
                 </div>
-                {i < ACADEMIC_LEVELS.length - 1 && (
+                {i < programLevels.length - 1 && (
                   <span className="h-px w-3.5 shrink-0" style={{ background: "var(--border)" }} />
                 )}
               </div>
@@ -256,7 +257,7 @@ export default function StudentDetail() {
             </table>
           ) : (
             <div className="rounded-xl p-6 text-center text-sm" style={{ background: "var(--surface-2)", color: "var(--text-3)" }}>
-              No semesters archived yet — press <b className="text-[var(--text-2)]">"Pass exam · go to {next || "Graduation"}"</b> above when the final exam is passed.
+              No semesters archived yet — finished semesters appear here once the class passes its exam (use <b className="text-[var(--text-2)]">Next semester</b> on the class page).
             </div>
           )}
         </div>

@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Score sheet — design concepts</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --surface: #ffffff;
+    --surface-2: #f0f2f9;
+    --surface-3: #e7e9f3;
+    --border: #e6e8f1;
+    --text: #0f172a;
+    --text-2: #52566e;
+    --text-3: #8a90a6;
+    --primary: #6366f1;
+    --primary-strong: #4f46e5;
+    --primary-soft: #eef0ff;
+    --ring: rgba(99,102,241,.35);
+    --success: #10b981;
+    --danger: #ef4444;
+    --shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px -12px rgba(15,23,42,.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Noto Sans Khmer", sans-serif;
+    background: #f6f7fb; color: var(--text); -webkit-font-smoothing: antialiased;
+    padding: 32px 20px 80px;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+
+  /* preview toolbar */
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 26px; }
+  .toolbar .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+  .logo { width: 40px; height: 40px; border-radius: 12px; display:grid; place-items:center;
+    background: linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; font-size:18px; }
+  .toolbar h1 { font-size: 17px; font-weight: 700; }
+  .toolbar p { font-size: 12px; color: var(--text-3); }
+  .tabs { display: flex; gap: 6px; background: #fff; border: 1px solid var(--border);
+    border-radius: 14px; padding: 5px; box-shadow: var(--shadow); }
+  .tabs label { cursor: pointer; padding: 8px 14px; border-radius: 10px; font-size: 13px;
+    font-weight: 600; color: var(--text-2); transition: all .15s; }
+  .tabs label:hover { background: var(--surface-2); }
+  selectors { display: contents; }
+  .tab-a:checked ~ .tabs label[for="a"],
+  .tab-b:checked ~ .tabs label[for="b"],
+  .tab-c:checked ~ .tabs label[for="c"] {
+    background: var(--primary); color: #fff; box-shadow: 0 4px 12px -4px var(--ring);
+  }
+  .tab-a:checked ~ .frames .frame-a, .tab-b:checked ~ .frames .frame-b, .tab-c:checked ~ .frames .frame-c { display: block; }
+  .frames .frame { display: none; }
+  .frame-head { display:flex; align-items:baseline; gap:10px; margin: 4px 0 18px; }
+  .frame-head .tag { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: var(--primary-strong);
+    background: var(--primary-soft); padding: 3px 10px; border-radius: 999px; }
+  .frame-head h2 { font-size: 16px; font-weight: 700; }
+  .frame-head span { font-size: 12.5px; color: var(--text-3); }
+
+  /* generic page furniture used by all designs */
+  .ph { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .ph h3 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+  .ph p { font-size: 13px; color: var(--text-3); margin-top: 3px; }
+  .sel { display:flex; align-items:center; gap:10px; background:#fff; border:1px solid var(--border);
+    border-radius: 13px; padding: 10px 14px; font-size: 14px; font-weight: 700; box-shadow: var(--shadow); cursor: pointer; min-width: 240px; }
+  .sel svg { color: var(--primary-strong); }
+  .sel .muted { margin-left:auto; font-size: 12px; font-weight: 600; color: var(--text-3); }
+  .btn { display:inline-flex; align-items:center; gap:8px; border:none; cursor:pointer; font-weight: 600;
+    border-radius: 11px; padding: 9px 14px; font-size: 13px; }
+  .btn.primary { background: linear-gradient(135deg,var(--primary),var(--primary-strong)); color:#fff; box-shadow: 0 6px 16px -6px var(--ring); }
+  .btn.ghost { background: var(--surface); border:1px solid var(--border); color: var(--text-2); }
+  .btn.danger-ghost { background: var(--surface); border:1px solid var(--border); color: var(--danger); }
+  .card { background:#fff; border:1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+  .khmer { direction: ltr; }
+  sub { vertical-align: baseline; }
+  .en { font-weight: 500; }
+
+  .gradeA { background:#e7f8f1; color:#059669; }
+  .gradeB { background:#e2f1fe; color:#0284c7; }
+  .gradeC { background:#fdf3df; color:#d97706; }
+  .gradeD { background:#feeddc; color:#ea580c; }
+  .gradeF { background:#fdecec; color:#dc2626; }
+
+  /* ───────────────────────── DESIGN A ───────────────────────── */
+  /* class info strip */
+  .a-info { display:flex; flex-wrap:wrap; gap:8px; padding: 14px 18px; border-bottom:1px solid var(--border); align-items:center; }
+  .chip { font-size:12px; font-weight:600; color:var(--text-2); background:var(--surface-2);
+    border:1px solid var(--border); padding:5px 11px; border-radius:999px; }
+  .chip.hl { background: var(--primary-soft); color: var(--primary-strong); border-color: transparent; }
+  .a-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding: 16px 18px; border-bottom:1px solid var(--border); }
+  .a-bar .l { font-size:13px; font-weight:700; }
+  .a-bar .l small { display:block; font-weight:500; color:var(--text-3); font-size:11.5px; margin-top:2px;}
+  .a-list { padding: 14px 18px 20px; display:flex; flex-direction:column; gap:10px; }
+  .a-row { display:flex; align-items:center; gap:12px; border:1px solid var(--border); border-radius: 14px;
+    padding: 10px 12px; background:#fff; transition: box-shadow .15s, border-color .15s; }
+  .a-row:hover { border-color:#d4d7ee; box-shadow: 0 6px 18px -10px rgba(15,23,42,.15); }
+  .a-av { width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary-strong));
+    color:#fff;font-size:12px;font-weight:800;display:grid;place-items:center;flex-shrink:0; }
+  .a-name { min-width: 0; width: 150px; }
+  .a-name .k { font-size: 13.5px; font-weight: 700; }
+  .a-name .e { font-size: 11px; color: var(--text-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .a-scores { display:flex; flex:1; gap:6px; }
+  .a-box { text-align:center; flex:1; }
+  .a-box .lab { font-size:9.5px; color:var(--text-3); font-weight:700; margin-bottom:3px; }
+  .a-box input { width:100%; border:1px solid var(--border); background:var(--surface-2); border-radius:9px;
+    padding:7px 2px; text-align:center; font-size:13px; font-weight:600; color:var(--text); outline:none; }
+  .a-box input:focus { border-color:var(--primary); background:#fff; box-shadow: 0 0 0 3px var(--ring); }
+  .a-pct { width:56px; text-align:center; }
+  .a-pct .v { font-size:16px; font-weight:800; }
+  .a-pct .l2 { font-size:9.5px; color:var(--text-3); }
+  .a-grade { width:34px; height:34px; border-radius:11px; display:grid; place-items:center; font-weight:800; font-size:13px; }
+
+  /* ───────────────────────── DESIGN B ───────────────────────── */
+  .b-head { display:flex; align-items:center; gap:18px; padding: 16px 20px; border-bottom:1px solid var(--border); }
+  .b-head .cn { font-size:15px; font-weight:800; }
+  .b-head .cn small { display:block; font-size:11.5px; font-weight:500; color:var(--text-3); margin-top:2px; }
+  .b-head .rs { font-size:12px; color:var(--text-2); font-weight:600; }
+  .b-head .btns { margin-left:auto; display:flex; gap:8px; }
+  table.b { width:100%; border-collapse: collapse; }
+  table.b th { text-align:left; font-size:11px; font-weight:700; color:var(--text-3); letter-spacing:.06em; text-transform: uppercase;
+    padding: 14px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  table.b th.c { text-align:center; }
+  table.b td { padding: 12px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  table.b tr:last-child td { border-bottom:none; }
+  table.b tbody tr { transition: background .12s; }
+  table.b tbody tr:hover { background:#fafbff; }
+  .b-stu { display:flex; align-items:center; gap:10px; min-width: 180px; }
+  .b-av { width:32px;height:32px;border-radius:9px;background:var(--primary-soft);color:var(--primary-strong);
+    display:grid;place-items:center;font-size:11px;font-weight:800; }
+  .b-k { font-weight:700; font-size:13px; }
+  .b-e { font-size:10.5px; color:var(--text-3); }
+  .b-score { width:44px; text-align:center; font-weight:700; }
+  .b-cel { width: 52px; margin:0 auto; }
+  .b-cel input { width:46px; border:none; background:transparent; text-align:center; font-size:13px; font-weight:700;
+    color:var(--text); outline:none; border-bottom:2px solid transparent; padding:4px 0; border-radius:0; }
+  .b-cel input:hover { border-bottom-color: var(--border); }
+  .b-cel input:focus { border-bottom-color: var(--primary); }
+  .b-cel input::placeholder { color: var(--text-3); font-weight:500; }
+  .b-avg { font-weight:800; color: var(--text); text-align:center; }
+  .b-grad { width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:12px; margin:0 auto; }
+
+  /* ───────────────────────── DESIGN C ───────────────────────── */
+  .c-head { display:flex; align-items:center; gap:14px; padding:16px 20px; border-bottom:1px solid var(--border); }
+  .c-head .cn { font-size:15px; font-weight:800; }
+  .c-head .cn small { font-size:11.5px; color:var(--text-3); font-weight:500; display:block; margin-top:2px; }
+  .c-head .btns { margin-left:auto; display:flex; gap:8px; }
+  .c-list { padding: 16px 20px 20px; display:flex; flex-direction:column; gap:12px; }
+  .c-card { border:1px solid var(--border); border-radius:16px; overflow:hidden; background:#fff; }
+  .c-lane { display:flex; align-items:center; gap:14px; padding:12px 16px; background:var(--surface-2); }
+  .c-lane .nm { flex:1; min-width:0; }
+  .c-lane .k { font-size:14px; font-weight:800; }
+  .c-lane .e { font-size:11.5px; color:var(--text-3); }
+  .c-lane .sum { text-align:right; }
+  .c-lane .sum .pct { font-size:20px; font-weight:800; letter-spacing:-.02em; }
+  .c-lane .sum .cap { font-size:10px; color:var(--text-3); }
+  .c-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap:10px; padding:14px 16px; }
+  .c-sub { border:1px solid var(--border); border-radius:12px; padding:8px 10px; background:#fff; }
+  .c-sub .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:7px; }
+  .c-sub .nm2 { font-size:11px; font-weight:700; color:var(--text-2); }
+  .c-sub .val { font-size:12px; font-weight:800; }
+  .bar { height:5px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
+  .bar i { display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--primary),#8b5cf6); }
+
+  .note { font-size:12px; color:var(--text-3); margin-top:18px; line-height:1.6; }
+  .note b { color: var(--text-2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <input class="tab-a" type="radio" name="d" id="a" checked hidden />
+  <input class="tab-b" type="radio" name="d" id="b" hidden />
+  <input class="tab-c" type="radio" name="d" id="c" hidden />
+
+  <div class="toolbar">
+    <div class="brand">
+      <div class="logo">🎓</div>
+      <div>
+        <h1>Score sheet — design concepts</h1>
+        <p>Same data everywhere · class IT09A1 · 7 subjects from schedule · 4 students</p>
+      </div>
+    </div>
+    <div class="tabs">
+      <label for="a">Design A</label>
+      <label for="b">Design B</label>
+      <label for="c">Design C</label>
+    </div>
+  </div>
+
+  <div class="frames">
+
+    <!-- ═══════════════ DESIGN A ═══════════════ -->
+    <section class="frame frame-a">
+      <div class="frame-head">
+        <span class="tag">DESIGN A</span>
+        <h2>Row cards with subject chips</h2>
+        <span>each student is a soft card · compact per-subject inputs · clean &amp; readable</span>
+      </div>
+
+      <div class="ph">
+        <div>
+          <h3>Scores</h3>
+          <p>Columns follow the class schedule — edit subjects on the Schedule page.</p>
+        </div>
+        <div class="sel">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          IT09A1
+          <span class="muted">7 subjects ▾</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="a-info">
+          <span class="chip hl">7 subjects</span>
+          <span class="chip">18 students</span>
+          <span class="chip">Night</span>
+          <span class="chip">Year 2 · Semester 2</span>
+        </div>
+        <div class="a-bar">
+          <div class="l">Roster
+            <small>3 of 18 scored so far</small>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn danger-ghost">↺ Reset</button>
+            <button class="btn primary">Save scores</button>
+          </div>
+        </div>
+        <div class="a-list">
+          <div class="a-row">
+            <div class="a-av">KV</div>
+            <div class="a-name">
+              <div class="k khmer">ខុច វិសាល</div>
+              <div class="e">Khuch Visal · NTTI-2026-0001</div>
+            </div>
+            <div class="a-scores">
+              <div class="a-box"><div class="lab">Math</div><input value="92"/></div>
+              <div class="a-box"><div class="lab">Khmer</div><input value="88"/></div>
+              <div class="a-box"><div class="lab">Eng</div><input value="79"/></div>
+              <div class="a-box"><div class="lab">Phys</div><input value="85"/></div>
+              <div class="a-box"><div class="lab">Chem</div><input value="90"/></div>
+              <div class="a-box"><div class="lab">Comp</div><input value="81"/></div>
+              <div class="a-box"><div class="lab">PE</div><input value="95"/></div>
+            </div>
+            <div class="a-pct"><div class="v">87.1</div><div class="l2">avg</div></div>
+            <div class="a-grade gradeA">A</div>
+          </div>
+
+          <div class="a-row">
+            <div class="a-av">CC</div>
+            <div class="a-name">
+              <div class="k khmer">ចាប ចាន្នារា</div>
+              <div class="e">Chab Channara · NTTI-2026-0002</div>
+            </div>
+            <div class="a-scores">
+              <div class="a-box"><div class="lab">Math</div><input value="64"/></div>
+              <div class="a-box"><div class="lab">Khmer</div><input value="70"/></div>
+              <div class="a-box"><div class="lab">Eng</div><input value="58"/></div>
+              <div class="a-box"><div class="lab">Phys</div><input value="66"/></div>
+              <div class="a-box"><div class="lab">Chem</div><input value="61"/></div>
+              <div class="a-box"><div class="lab">Comp</div><input value="72"/></div>
+              <div class="a-box"><div class="lab">PE</div><input value="75"/></div>
+            </div>
+            <div class="a-pct"><div class="v">66.6</div><div class="l2">avg</div></div>
+            <div class="a-grade gradeD">D</div>
+          </div>
+
+          <div class="a-row">
+            <div class="a-av">SP</div>
+            <div class="a-name">
+              <div class="k khmer">សុខា ផាន</div>
+              <div class="e">Sokha Phan · NTTI-2026-0010</div>
+            </div>
+            <div class="a-scores">
+              <div class="a-box"><div class="lab">Math</div><input value="83"/></div>
+              <div class="a-box"><div class="lab">Khmer</div><input value="77"/></div>
+              <div class="a-box"><div class="lab">Eng</div><input value="80"/></div>
+              <div class="a-box"><div class="lab">Phys</div><input value="74"/></div>
+              <div class="a-box"><div class="lab">Chem</div><input value="76"/></div>
+              <div class="a-box"><div class="lab">Comp</div><input value="69"/></div>
+              <div class="a-box"><div class="lab">PE</div><input value="82"/></div>
+            </div>
+            <div class="a-pct"><div class="v">77.3</div><div class="l2">avg</div></div>
+            <div class="a-grade gradeB">B</div>
+          </div>
+        </div>
+      </div>
+      <p class="note"><b>Feel:</b> one soft card per student · subjects as compact chips with labels · average &amp; grade on the right · minimal borders, lots of air. Scales well for up to ~7 subjects.</p>
+    </section>
+
+    <!-- ═══════════════ DESIGN B ═══════════════ -->
+    <section class="frame frame-b">
+      <div class="frame-head">
+        <span class="tag">DESIGN B</span>
+        <h2>Sparse line table</h2>
+        <span>classic spreadsheet feel, de-cluttered — no cell borders, underline inputs, one click to type</span>
+      </div>
+
+      <div class="ph">
+        <div>
+          <h3>Scores</h3>
+          <p>Columns follow the class schedule — edit subjects on the Schedule page.</p>
+        </div>
+        <div class="sel">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          IT09A1
+          <span class="muted">7 subjects ▾</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="b-head">
+          <div class="cn">IT09A1 — score sheet
+            <small>Night · Year 2 · Semester 2 · 7 subjects · 18 students</small>
+          </div>
+          <span class="rs">3 scored</span>
+          <div class="btns">
+            <button class="btn danger-ghost">↺ Reset</button>
+            <button class="btn primary">Save scores</button>
+          </div>
+        </div>
+        <table class="b">
+          <thead>
+            <tr>
+              <th style="padding-left:20px">Student</th>
+              <th class="c" title="Mathematics">Math</th>
+              <th class="c" title="Khmer">Khmer</th>
+              <th class="c" title="English">Eng</th>
+              <th class="c" title="Physics">Phys</th>
+              <th class="c" title="Chemistry">Chem</th>
+              <th class="c" title="Computer">Comp</th>
+              <th class="c" title="Physical Ed">PE</th>
+              <th class="c">Avg</th>
+              <th class="c" style="padding-right:20px">Grade</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding-left:20px"><div class="b-stu"><div class="b-av">KV</div><div><div class="b-k khmer">ខុច វិសាល</div><div class="b-e">Khuch Visal · NTTI-2026-0001</div></div></div></td>
+              <td><div class="b-cel"><input value="92"/></div></td>
+              <td><div class="b-cel"><input value="88"/></div></td>
+              <td><div class="b-cel"><input value="79"/></div></td>
+              <td><div class="b-cel"><input value="85"/></div></td>
+              <td><div class="b-cel"><input value="90"/></div></td>
+              <td><div class="b-cel"><input value="81"/></div></td>
+              <td><div class="b-cel"><input value="95"/></div></td>
+              <td><div class="b-avg">87.1</div></td>
+              <td style="padding-right:20px"><div class="b-grad gradeA">A</div></td>
+            </tr>
+            <tr>
+              <td style="padding-left:20px"><div class="b-stu"><div class="b-av">CC</div><div><div class="b-k khmer">ចាប ចាន្នារា</div><div class="b-e">Chab Channara · NTTI-2026-0002</div></div></div></td>
+              <td><div class="b-cel"><input value="64"/></div></td>
+              <td><div class="b-cel"><input value="70"/></div></td>
+              <td><div class="b-cel"><input value="58"/></div></td>
+              <td><div class="b-cel"><input value="66"/></div></td>
+              <td><div class="b-cel"><input value="61"/></div></td>
+              <td><div class="b-cel"><input value="72"/></div></td>
+              <td><div class="b-cel"><input value="75"/></div></td>
+              <td><div class="b-avg">66.6</div></td>
+              <td style="padding-right:20px"><div class="b-grad gradeD">D</div></td>
+            </tr>
+            <tr>
+              <td style="padding-left:20px"><div class="b-stu"><div class="b-av">SP</div><div><div class="b-k khmer">សុខា ផាន</div><div class="b-e">Sokha Phan · NTTI-2026-0010</div></div></div></td>
+              <td><div class="b-cel"><input value="83"/></div></td>
+              <td><div class="b-cel"><input value="77"/></div></td>
+              <td><div class="b-cel"><input value="80"/></div></td>
+              <td><div class="b-cel"><input value="74"/></div></td>
+              <td><div class="b-cel"><input value="76"/></div></td>
+              <td><div class="b-cel"><input value="69"/></div></td>
+              <td><div class="b-cel"><input value="82"/></div></td>
+              <td><div class="b-avg">77.3</div></td>
+              <td style="padding-right:20px"><div class="b-grad gradeB">B</div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note"><b>Feel:</b> the familiar spreadsheet grid but lighter — only thin row separators, bare underlined number inputs, sticky student column. Best when you want quick typing across many students.</p>
+    </section>
+
+    <!-- ═══════════════ DESIGN C ═══════════════ -->
+    <section class="frame frame-c">
+      <div class="frame-head">
+        <span class="tag">DESIGN C</span>
+        <h2>Student cards + progress bars</h2>
+        <span>one generous card per student — subject pills with progress, big average &amp; grade</span>
+      </div>
+
+      <div class="ph">
+        <div>
+          <h3>Scores</h3>
+          <p>Columns follow the class schedule — edit subjects on the Schedule page.</p>
+        </div>
+        <div class="sel">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          IT09A1
+          <span class="muted">7 subjects ▾</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="c-head">
+          <div class="cn">IT09A1
+            <small>Night · Year 2 · Semester 2 · 7 subjects · 18 students</small>
+          </div>
+          <div class="btns">
+            <button class="btn danger-ghost">↺ Reset</button>
+            <button class="btn primary">Save scores</button>
+          </div>
+        </div>
+        <div class="c-list">
+          <div class="c-card">
+            <div class="c-lane">
+              <div class="a-av" style="border-radius:12px">KV</div>
+              <div class="nm">
+                <div class="k khmer">ខុច វិសាល</div>
+                <div class="e">Khuch Visal · NTTI-2026-0001</div>
+              </div>
+              <div class="sum">
+                <div class="pct">87.1%</div>
+                <div class="cap">average</div>
+              </div>
+              <div class="a-grade gradeA" style="width:40px;height:40px;border-radius:13px;font-size:15px">A</div>
+            </div>
+            <div class="c-grid">
+              <div class="c-sub"><div class="top"><span class="nm2">Mathematics</span><span class="val" style="color:#059669">92</span></div><div class="bar"><i style="width:92%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Khmer</span><span class="val" style="color:#059669">88</span></div><div class="bar"><i style="width:88%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">English</span><span class="val" style="color:#d97706">79</span></div><div class="bar"><i style="width:79%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Physics</span><span class="val" style="color:#059669">85</span></div><div class="bar"><i style="width:85%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Chemistry</span><span class="val" style="color:#059669">90</span></div><div class="bar"><i style="width:90%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Computer</span><span class="val" style="color:#d97706">81</span></div><div class="bar"><i style="width:81%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Physical Ed</span><span class="val" style="color:#059669">95</span></div><div class="bar"><i style="width:95%"></i></div></div>
+            </div>
+          </div>
+
+          <div class="c-card">
+            <div class="c-lane">
+              <div class="a-av" style="border-radius:12px">CC</div>
+              <div class="nm">
+                <div class="k khmer">ចាប ចាន្នារា</div>
+                <div class="e">Chab Channara · NTTI-2026-0002</div>
+              </div>
+              <div class="sum">
+                <div class="pct">66.6%</div>
+                <div class="cap">average</div>
+              </div>
+              <div class="a-grade gradeD" style="width:40px;height:40px;border-radius:13px;font-size:15px">D</div>
+            </div>
+            <div class="c-grid">
+              <div class="c-sub"><div class="top"><span class="nm2">Mathematics</span><span class="val" style="color:#d97706">64</span></div><div class="bar"><i style="width:64%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Khmer</span><span class="val" style="color:#d97706">70</span></div><div class="bar"><i style="width:70%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">English</span><span class="val" style="color:#dc2626">58</span></div><div class="bar"><i style="width:58%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Physics</span><span class="val" style="color:#d97706">66</span></div><div class="bar"><i style="width:66%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Chemistry</span><span class="val" style="color:#d97706">61</span></div><div class="bar"><i style="width:61%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Computer</span><span class="val" style="color:#d97706">72</span></div><div class="bar"><i style="width:72%"></i></div></div>
+              <div class="c-sub"><div class="top"><span class="nm2">Physical Ed</span><span class="val" style="color:#d97706">75</span></div><div class="bar"><i style="width:75%"></i></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note"><b>Feel:</b> calm and visual — one card per student, subjects shown as pills with progress bars, big average + grade. Slightly taller page, but each student's situation is instantly readable.</p>
+    </section>
+  </div>
+</div>
+</body>
+</html>

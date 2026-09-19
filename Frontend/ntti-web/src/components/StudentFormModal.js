@@ -1,29 +1,46 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
 import { useApp } from "../context/AppContext";
-import { MAJORS, classesOfMajor, ACADEMIC_LEVELS } from "../data/seed";
+import { MAJORS, classesOfMajor, SHIFTS, FIELDS_OF_STUDY, latinToKhmer, levelsForMajor } from "../data/seed";
 import Avatar from "./Avatar";
 
-const makeForm = (classes, overrides = {}) => ({
-  firstName: "",
-  lastName: "",
-  khmerName: "",
-  photo: "",
-  gender: "Male",
-  dob: "",
-  birthPlace: "",
-  email: "",
-  phone: "",
-  fatherName: "",
-  motherName: "",
-  major: MAJORS[0].id,
-  className: classesOfMajor(classes, MAJORS[0].id)[0]?.id || "",
-  address: "Phnom Penh",
-  status: "Learning",
-  enrollmentYear: new Date().getFullYear(),
-  level: "S1Y1",
-  ...overrides,
-});
+const makeForm = (classes, overrides = {}) => {
+  const hasClass = overrides.className !== undefined && overrides.className !== "";
+  // a class given explicitly is looked up as-is; otherwise default to the major's first class
+  const cls = hasClass
+    ? classes.find((c) => c.id === overrides.className) || null
+    : classesOfMajor(classes, overrides.major || MAJORS[0].id)[0] || classes[0] || null;
+  const majorId = cls?.major || overrides.major || MAJORS[0].id;
+  // when the class exists it is the source of truth for major / field / shift
+  const classFields = cls
+    ? { major: cls.major, className: cls.id, field: cls.field || FIELDS_OF_STUDY[cls.major]?.[0] || "", shift: cls.shift }
+    : {};
+  return {
+    firstName: "",
+    lastName: "",
+    khmerName: "",
+    username: "",
+    photo: "",
+    gender: "Male",
+    dob: "",
+    birthPlace: "",
+    email: "",
+    phone: "",
+    fatherName: "",
+    motherName: "",
+    major: majorId,
+    className: overrides.className || cls?.id || "",
+    field: overrides.field || cls?.field || FIELDS_OF_STUDY[majorId]?.[0] || "",
+    shift: overrides.shift || cls?.shift || SHIFTS[0],
+    address: "Phnom Penh",
+    status: "Learning",
+    enrollmentYear: new Date().getFullYear(),
+    level: "S1Y1",
+    ...overrides,
+    // a known class always wins for major / field / shift
+    ...(cls ? classFields : {}),
+  };
+};
 
 export default function StudentFormModal({ open, onClose, editing = null, lockedClass = null }) {
   const { students, classes, addStudent, updateStudent, showToast } = useApp();
@@ -38,6 +55,7 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
           firstName: editing.firstName,
           lastName: editing.lastName,
           khmerName: editing.khmerName || "",
+          username: editing.username || "",
           photo: editing.photo || "",
           gender: editing.gender,
           dob: editing.dob,
@@ -48,6 +66,8 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
           motherName: editing.motherName || "",
           major: editing.major || (locked?.major ?? MAJORS[0].id),
           className: editing.className,
+          field: editing.field || (locked?.field ?? (FIELDS_OF_STUDY[editing.major || locked?.major || MAJORS[0].id]?.[0] || "")),
+          shift: editing.shift || locked?.shift || SHIFTS[0],
           address: editing.address,
           status: editing.status,
           enrollmentYear: editing.enrollmentYear || new Date().getFullYear(),
@@ -55,7 +75,14 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
         })
       );
     } else if (locked) {
-      setForm(makeForm(classes, { major: locked.major, className: locked.id }));
+      setForm(
+        makeForm(classes, {
+          major: locked.major,
+          className: locked.id,
+          field: locked.field || FIELDS_OF_STUDY[locked.major]?.[0] || "",
+          shift: locked.shift || SHIFTS[0],
+        })
+      );
     } else {
       setForm(makeForm(classes));
     }
@@ -69,8 +96,30 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
 
   const handleMajorSelect = (e) => {
     const major = e.target.value;
-    const firstClass = classesOfMajor(classes, major)[0]?.id || "";
-    setForm((f) => ({ ...f, major, className: firstClass }));
+    const firstClass = classesOfMajor(classes, major)[0] || null;
+    const nextLevels = levelsForMajor(major);
+    setForm((f) => ({
+      ...f,
+      major,
+      className: firstClass?.id || "",
+      // follow the class when there is one, else the major's first field
+      field: firstClass?.field || FIELDS_OF_STUDY[major]?.[0] || "",
+      shift: firstClass?.shift || f.shift,
+      // keep the level inside the new programme's range
+      level: nextLevels.includes(f.level) ? f.level : nextLevels[0],
+    }));
+  };
+
+  const handleClassSelect = (e) => {
+    const cls = classes.find((c) => c.id === e.target.value);
+    setForm((f) => ({
+      ...f,
+      className: e.target.value,
+      // the class decides major / field / shift
+      major: cls?.major || f.major,
+      field: cls?.field || f.field,
+      shift: cls?.shift || f.shift,
+    }));
   };
 
   const onPhoto = (e) => {
@@ -103,7 +152,8 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
     const payload = {
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
-      khmerName: form.khmerName.trim(),
+      khmerName:
+        form.khmerName.trim() || latinToKhmer(`${form.lastName.trim()} ${form.firstName.trim()}`),
       photo: form.photo || "",
       gender: form.gender,
       dob: form.dob,
@@ -114,6 +164,9 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
       motherName: form.motherName.trim(),
       major: form.major,
       className: form.className,
+      field: form.field,
+      shift: form.shift,
+      username: form.username.trim(),
       address: form.address,
       status: form.status,
       level: form.level,
@@ -247,9 +300,29 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
           </div>
           <div>
             <label className="label">Class *</label>
-            <select className="input" value={form.className} onChange={set("className")} disabled={classLocked} key={form.major}>
+            <select className="input" value={form.className} onChange={handleClassSelect} disabled={classLocked} key={form.major}>
               {formClasses.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Username</label>
+            <input className="input" value={form.username} onChange={set("username")} placeholder="e.g. chab.channara" />
+          </div>
+          <div>
+            <label className="label">Shift</label>
+            <select className="input" value={form.shift} onChange={set("shift")}>
+              {SHIFTS.map((sh) => (
+                <option key={sh} value={sh}>{sh}</option>
+              ))}
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className="label">Field of study</label>
+            <select className="input" value={form.field} onChange={set("field")} key={form.major}>
+              {(FIELDS_OF_STUDY[form.major] || []).map((f) => (
+                <option key={f} value={f}>{f}</option>
               ))}
             </select>
           </div>
@@ -273,12 +346,12 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
           <div className="col-span-2 lg:col-span-4">
             <label className="label">Academic level</label>
             <select className="input" value={form.level} onChange={set("level")}>
-              {ACADEMIC_LEVELS.map((lvl) => (
+              {levelsForMajor(form.major).map((lvl) => (
                 <option key={lvl} value={lvl}>{lvl} · Semester {lvl[1]} · Year {lvl[3]}</option>
               ))}
             </select>
             <p className="text-[10px] mt-1" style={{ color: "var(--text-3)" }}>
-              Current position (1 semester = 15 weeks). Advance via "Pass exam" on the profile.
+              Current position (1 semester = 15 weeks). Students advance with their class via "Next semester".
             </p>
           </div>
         </div>

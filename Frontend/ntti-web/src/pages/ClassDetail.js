@@ -12,12 +12,17 @@ import {
   UserRoundCheck,
   BookOpen,
   X,
+  History,
+  Flag,
+  UserPlus,
 } from "lucide-react";
 import PageHeader, { EmptyState, ProgressBar } from "../components/Page";
 import Modal from "../components/Modal";
 import StudentFormModal from "../components/StudentFormModal";
+import TermRecordModal from "../components/TermRecordModal";
+import NextSemesterModal from "../components/NextSemesterModal";
 import { useApp } from "../context/AppContext";
-import { majorName, todayISO, computeRate, lastNWeeks, weekKeyOf, shiftRange } from "../data/seed";
+import { majorName, computeRate, lastNWeeks, shiftRange, prettyDate, levelsForMajor } from "../data/seed";
 import { StudentAvatar, Badge, statusTone } from "../components/Badge";
 
 const MAJOR_ACCENT = {
@@ -33,38 +38,31 @@ const WEEK_STATUS = {
   leave: { label: "Permission", color: "var(--info)", soft: "var(--info-soft)" },
 };
 
-const CYCLE = ["", "present", "late", "absent", "leave"];
-
 export default function ClassDetail() {
   const { classId } = useParams();
   const navigate = useNavigate();
-  const { students, classes, weekly, saveWeekly, deleteStudent, showToast } = useApp();
+  const { students, classes, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, showToast } = useApp();
 
   const cls = classes.find((c) => c.id === classId);
-  const weeks = useMemo(() => lastNWeeks(15), []);
-  const currentWeekKey = useMemo(() => weekKeyOf(todayISO()), []);
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
-
-  const weeklyOf = useMemo(() => {
-    const map = {};
-    weekly.forEach((r) => {
-      (map[r.studentId] ||= {})[r.week] = r.status;
-    });
-    return map;
-  }, [weekly]);
+  const [endOpen, setEndOpen] = useState(false);
+  const [record, setRecord] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importQuery, setImportQuery] = useState("");
+  const [importSel, setImportSel] = useState([]);
+  const [importScope, setImportScope] = useState("prev");
 
   const roster = useMemo(() => {
     return students
       .filter((s) => s.className === classId)
       .map((s) => ({
         ...s,
-        rate: computeRate(weekly.filter((a) => a.studentId === s.id)),
-        cells: weeks.map((w) => weeklyOf[s.id]?.[w.key] || ""),
+        rate: computeRate(attendance.filter((a) => a.studentId === s.id)),
       }))
       .filter((s) => {
         const q = query.trim().toLowerCase();
@@ -72,30 +70,61 @@ export default function ClassDetail() {
         const matchS = statusFilter === "all" || s.status === statusFilter;
         return matchQ && matchS;
       });
-  }, [students, weekly, weeklyOf, classId, query, statusFilter, weeks]);
+  }, [students, attendance, classId, query, statusFilter]);
+
+  const candidates = useMemo(() => {
+    const c = classes.find((x) => x.id === classId);
+    const levels = levelsForMajor(c?.major);
+    const yr = String(c?.year || "").match(/\d+/)?.[0] || "1";
+    const sem = String(c?.semester || "").match(/\d+/)?.[0] || "1";
+    const cur = `S${sem}Y${yr}`;
+    const idx = levels.indexOf(cur);
+    const prev = idx > 0 ? levels[idx - 1] : null;
+    const norm = (v) => String(v || "").trim().toLowerCase();
+    const sameMajor = (s) => !c?.major || norm(s.major) === norm(c.major);
+    const sameField = (s) => !c?.field || norm(s.field) === norm(c.field);
+    const sameProgramme = (s) => sameMajor(s) && sameField(s);
+    const q = importQuery.trim().toLowerCase();
+    return students
+      .filter((s) => s.className !== classId)
+      .filter((s) => (importScope === "all" ? true : !prev ? sameProgramme(s) : s.level === prev && sameProgramme(s)))
+      .filter(
+        (s) =>
+          !q ||
+          `${s.firstName} ${s.lastName} ${s.khmerName || ""} ${s.studentId || ""} ${s.username || ""}`
+            .toLowerCase()
+            .includes(q)
+      )
+      .sort((a, b) => {
+        const score = (s) => {
+          let v = 0;
+          if (s.level === prev) v -= 4;
+          if (sameMajor(s)) v -= 2;
+          if (sameField(s)) v -= 1;
+          return v;
+        };
+        return score(a) - score(b) || String(a.studentId || "").localeCompare(String(b.studentId || ""), undefined, { numeric: true });
+      });
+  }, [students, classes, classId, importQuery, importScope]);
 
   const stats = useMemo(() => {
     const all = students.filter((s) => s.className === classId);
-    const thisWeek = weekly.filter(
-      (a) => a.week === currentWeekKey && all.some((s) => s.id === a.studentId)
+    const ids = new Set(all.map((s) => s.id));
+    const wk = lastNWeeks(1)[0];
+    const thisWeek = attendance.filter(
+      (a) => ids.has(a.studentId) && a.date >= wk.start && a.date <= wk.end
     );
     const present = thisWeek.filter((r) => r.status === "present").length;
     const avg = all.length
       ? Math.round(
           all.reduce(
-            (acc, s) => acc + computeRate(weekly.filter((a) => a.studentId === s.id)),
+            (acc, s) => acc + computeRate(attendance.filter((a) => a.studentId === s.id)),
             0
           ) / all.length
         )
       : 0;
     return { total: all.length, present, avg };
-  }, [students, weekly, classId, currentWeekKey]);
-
-  const cycle = (s, wk) => {
-    const cur = weeklyOf[s.id]?.[wk.key] || "";
-    const next = CYCLE[(CYCLE.indexOf(cur) + 1) % CYCLE.length];
-    saveWeekly([{ week: wk.key, studentId: s.id, status: next }]);
-  };
+  }, [students, attendance, classId]);
 
   if (!cls) {
     return (
@@ -116,10 +145,24 @@ export default function ClassDetail() {
   }
 
   const accent = MAJOR_ACCENT[cls.major] || MAJOR_ACCENT.it;
+  const classYear = String(cls.year || "").match(/\d+/)?.[0] || "1";
+  const classSem = String(cls.semester || "").match(/\d+/)?.[0] || "1";
+  const currentLevel = `S${classSem}Y${classYear}`;
+  const classLevels = levelsForMajor(cls.major);
+  const ci = classLevels.indexOf(currentLevel);
+  const nextLevelCode = ci >= 0 && ci < classLevels.length - 1 ? classLevels[ci + 1] : null;
+  const prevLevelCode = ci > 0 ? classLevels[ci - 1] : null;
+  /* S1Y1 is the intake — students are added, not imported. From S2Y1 on,
+     students are imported from the previous semester. */
+  const canImport = currentLevel !== "S1Y1";
+  const termRecords = [...(cls.terms || [])].sort((a, b) =>
+    String(b.endedOn || "").localeCompare(String(a.endedOn || ""))
+  );
+  const finishedLevels = new Set(termRecords.map((t) => t.level));
 
   return (
     <div>
-      <button onClick={() => navigate("/students")} className="btn btn-ghost h-9 px-3 text-sm gap-1 mb-2 animate-fade-up">
+      <button onClick={() => navigate("/classes")} className="btn btn-ghost h-9 px-3 text-sm gap-1 mb-2 animate-fade-up">
         <ArrowLeft size={16} /> All classes
       </button>
 
@@ -148,8 +191,21 @@ export default function ClassDetail() {
             <button onClick={() => setAddOpen(true)} className="btn btn-primary h-10 px-4 text-sm">
               <UsersRound size={16} /> Add student
             </button>
+            {canImport && (
+              <button
+                onClick={() => {
+                  setImportSel([]);
+                  setImportQuery("");
+                  setImportScope("prev");
+                  setImportOpen(true);
+                }}
+                className="btn btn-outline h-10 px-4 text-sm"
+              >
+                <UserPlus size={16} /> Import from {prevLevelCode}
+              </button>
+            )}
             <Link to={`/attendance?class=${cls.id}`} className="btn btn-outline h-10 px-4 text-sm">
-              <CalendarCheck2 size={16} /> Daily attendance
+              <CalendarCheck2 size={16} /> Attendance
             </Link>
           </div>
         </div>
@@ -180,7 +236,7 @@ export default function ClassDetail() {
               Class roster
             </h3>
             <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-              {roster.length} of {stats.total} students · weekly attendance (15 weeks)
+              {roster.length} of {stats.total} students · attendance by day
             </p>
           </div>
           <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
@@ -213,9 +269,9 @@ export default function ClassDetail() {
               <span className="h-2 w-2 rounded-full" style={{ background: v.color }} /> {v.label}
             </span>
           ))}
-          <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
-            Click a week cell to cycle Present → Late → Absent → Permission → clear
-          </span>
+          <Link to={`/attendance?class=${cls.id}`} className="text-[11px] font-semibold ml-auto" style={{ color: "var(--primary-strong)" }}>
+            Mark attendance →
+          </Link>
         </div>
 
         {roster.length === 0 ? (
@@ -231,31 +287,13 @@ export default function ClassDetail() {
           />
         ) : (
           <div className="overflow-x-auto thin-scroll">
-            <table className="table-w" style={{ minWidth: 1420 }}>
+            <table className="table-w" style={{ minWidth: 760 }}>
               <thead>
                 <tr>
                   <th style={{ minWidth: 210 }}>Student</th>
                   <th>ID</th>
                   <th>Status</th>
-                  <th style={{ minWidth: 130 }}>Attendance</th>
-                  {weeks.map((w, i) => (
-                    <th
-                      key={w.key}
-                      className="!p-1 text-center"
-                      title={`Week ${i + 1}: ${w.range}`}
-                    >
-                      <span
-                        className="block w-10 mx-auto rounded-lg px-1 py-1 text-[11px] font-bold"
-                        style={
-                          w.key === currentWeekKey
-                            ? { background: "var(--primary)", color: "#fff" }
-                            : { background: "var(--surface-2)", color: "var(--text-2)" }
-                        }
-                      >
-                        W{i + 1}
-                      </span>
-                    </th>
-                  ))}
+                  <th style={{ minWidth: 200 }}>Attendance</th>
                   <th className="text-right" style={{ minWidth: 140 }}>Actions</th>
                 </tr>
               </thead>
@@ -270,9 +308,11 @@ export default function ClassDetail() {
                         <StudentAvatar student={s} size="md" />
                         <span>
                           <span className="block font-semibold text-[var(--text)] group-hover:text-[var(--primary-strong)] transition-colors">
-                            {s.firstName} {s.lastName}
+                            {s.khmerName || `${s.firstName} ${s.lastName}`}
                           </span>
-                          <span className="block text-[11px] text-[var(--text-3)]">{s.gender}</span>
+                          <span className="block text-[11px] text-[var(--text-3)]">
+                            {s.khmerName ? `${s.firstName} ${s.lastName}` : s.gender}
+                          </span>
                         </span>
                       </button>
                     </td>
@@ -292,26 +332,6 @@ export default function ClassDetail() {
                         </span>
                       </div>
                     </td>
-                    {weeks.map((w) => {
-                      const st = weeklyOf[s.id]?.[w.key] || "";
-                      const meta = WEEK_STATUS[st];
-                      return (
-                        <td key={w.key} className="!p-1 text-center">
-                          <button
-                            onClick={() => cycle(s, w)}
-                            title={st ? `${meta.label} — ${w.range}` : `Mark ${w.range}`}
-                            className="h-8 w-8 mx-auto rounded-lg border transition-all duration-150 flex items-center justify-center"
-                            style={
-                              meta
-                                ? { background: meta.soft, borderColor: "transparent", boxShadow: "0 4px 10px -6px var(--text-2)" }
-                                : { borderStyle: "dashed", borderColor: "var(--border)", background: "var(--surface-1)" }
-                            }
-                          >
-                            {meta && <span className="h-2 w-2 rounded-full" style={{ background: meta.color }} />}
-                          </button>
-                        </td>
-                      );
-                    })}
                     <td>
                       <div className="flex items-center justify-end gap-1">
                         <button
@@ -324,7 +344,7 @@ export default function ClassDetail() {
                         <button
                           onClick={() => navigate(`/attendance?class=${cls.id}`)}
                           className="btn btn-ghost h-8 w-8 p-0 rounded-lg text-[var(--primary-strong)]"
-                          title="Daily attendance"
+                          title="Attendance"
                         >
                           <CalendarCheck2 size={15} />
                         </button>
@@ -352,6 +372,91 @@ export default function ClassDetail() {
         )}
       </div>
 
+      {/* term archive */}
+      <div className="card overflow-hidden mt-6 animate-fade-up" style={{ animationDelay: "260ms" }}>
+        <div className="flex flex-wrap items-center gap-3 px-5 pt-5 pb-4 border-b" style={{ borderColor: "var(--border)" }}>
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
+            <History size={18} />
+          </span>
+          <div>
+            <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>Terms &amp; records</h3>
+            <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
+              Finished semesters are archived here so you can look back after the class moves on.
+            </p>
+          </div>
+          <button
+            onClick={() => setEndOpen(true)}
+            disabled={cls.completed}
+            title={cls.completed ? "This class has completed its programme" : "Archive this term and open the next semester"}
+            className="ml-auto btn btn-outline h-10 px-4 text-sm gap-1.5 disabled:opacity-50"
+          >
+            <Flag size={16} />
+            {cls.completed ? "Programme complete" : nextLevelCode ? `Next semester · ${nextLevelCode}` : "Finish programme"}
+          </button>
+        </div>
+
+        <div className="px-5 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-3)" }}>
+            Programme timeline · {classLevels.length / 2} years
+          </p>
+          <div className="flex items-center gap-1 overflow-x-auto thin-scroll pb-3 mb-1">
+            {classLevels.map((lvl, i) => {
+              const done = finishedLevels.has(lvl);
+              const isCur = !cls.completed && lvl === currentLevel;
+              const label = done ? "finished" : isCur ? "present" : "not yet";
+              return (
+                <div key={lvl} className="flex shrink-0 items-center gap-1">
+                  <div
+                    className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 whitespace-nowrap text-[11px] font-bold"
+                    style={{
+                      background: done ? "var(--success-soft)" : isCur ? "var(--primary-strong)" : "var(--surface-2)",
+                      color: done ? "var(--success)" : isCur ? "#fff" : "var(--text-3)",
+                      border: done || isCur ? "none" : "1px solid var(--border)",
+                    }}
+                  >
+                    {lvl}
+                    <span className="font-semibold opacity-80">{label}</span>
+                  </div>
+                  {i < classLevels.length - 1 && (
+                    <span className="h-px w-3.5 shrink-0" style={{ background: "var(--border)" }} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {termRecords.length === 0 ? (
+            <p className="text-sm py-3" style={{ color: "var(--text-3)" }}>
+              No terms archived yet. When you end a semester, every student&apos;s scores and attendance are saved here — captured automatically, even without pressing Save.
+            </p>
+          ) : (
+            termRecords.map((t, i) => (
+              <div
+                key={t.id}
+                className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3"
+                style={{ borderTop: i ? "1px solid var(--border)" : "none" }}
+              >
+                <div className="min-w-[150px]">
+                  <p className="font-semibold text-sm" style={{ color: "var(--text)" }}>{t.level}</p>
+                  <p className="text-[11px]" style={{ color: "var(--text-3)" }}>{t.semester} · {t.year}</p>
+                </div>
+                <span className="text-xs" style={{ color: "var(--text-2)" }}>Ended {prettyDate(t.endedOn)}</span>
+                <span className="text-xs" style={{ color: "var(--text-2)" }}>{t.classSize ?? (t.rows || []).length} students</span>
+                <span className="text-xs" style={{ color: "var(--text-2)" }}>
+                  Class average <b style={{ color: "var(--text)" }}>{t.classAvg == null ? "—" : t.classAvg.toFixed(2)}</b>
+                </span>
+                <button
+                  onClick={() => setRecord(t)}
+                  className="ml-auto btn btn-ghost h-9 px-3 text-sm gap-1.5 text-[var(--primary-strong)]"
+                >
+                  <ExternalLink size={15} /> View record
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       <StudentFormModal
         open={addOpen || !!editing}
         onClose={() => {
@@ -362,32 +467,196 @@ export default function ClassDetail() {
         lockedClass={cls.id}
       />
 
+      <NextSemesterModal
+        open={endOpen}
+        onClose={() => setEndOpen(false)}
+        cls={cls}
+        students={students}
+        currentLevel={currentLevel}
+        nextLevelCode={nextLevelCode}
+        onConfirm={(advanceIds) => {
+          const term = endClassTerm(cls.id, { advanceIds });
+          setEndOpen(false);
+          showToast(
+            nextLevelCode
+              ? `${currentLevel} finished · ${cls.name} is now ${nextLevelCode}`
+              : `${currentLevel} finished · ${cls.name} programme complete`
+          );
+          if (term) setRecord(term);
+        }}
+      />
+
+      <TermRecordModal term={record} onClose={() => setRecord(null)} attendance={attendance} />
+
       <Modal
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title="Delete student"
+        title="Remove student"
+        subtitle={deleting ? `${deleting.firstName} ${deleting.lastName} · ${cls.name}` : ""}
         footer={
           <>
             <button onClick={() => setDeleting(null)} className="btn btn-outline h-10 px-4 text-sm">Cancel</button>
             <button
               onClick={() => {
-                deleteStudent(deleting.id);
-                showToast(`${deleting.firstName} ${deleting.lastName} removed`, "error");
+                if (deleting) deleteStudent(deleting.id);
                 setDeleting(null);
               }}
-              className="btn h-10 px-5 text-sm text-white"
-              style={{ background: "var(--danger)" }}
+              className="btn h-10 px-4 text-sm"
+              style={{ color: "var(--danger)" }}
+              title="Delete the student permanently"
             >
-              <Trash2 size={16} /> Delete
+              <Trash2 size={15} /> Delete permanently
+            </button>
+            <button
+              onClick={() => {
+                if (deleting) removeFromClass(cls.id, deleting.id);
+                setDeleting(null);
+              }}
+              className="btn h-10 px-4 text-sm"
+              style={{ background: "var(--danger)", color: "#fff" }}
+            >
+              <Trash2 size={15} /> Remove from class
             </button>
           </>
         }
       >
-        <p className="text-sm leading-relaxed" style={{ color: "var(--text-2)" }}>
-          Remove{" "}
-          <b style={{ color: "var(--text)" }}>{deleting?.firstName} {deleting?.lastName}</b>{" "}
-          from {cls.name}? Their attendance history will also be deleted. This action cannot be undone.
-        </p>
+        <div className="space-y-2 text-sm" style={{ color: "var(--text-2)" }}>
+          <p>
+            <b style={{ color: "var(--text)" }}>Remove from class</b> keeps the student and their past records. They return to{" "}
+            <b style={{ color: "var(--text)" }}>{prevLevelCode || currentLevel}</b> with no class, so you can import them again.
+          </p>
+          <p className="text-xs" style={{ color: "var(--text-3)" }}>
+            <b>Delete permanently</b> erases the student and all of their attendance. This cannot be undone.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        size="lg"
+        title="Import students"
+        subtitle={`Import ${prevLevelCode || "previous"} students into ${cls.name} (now ${currentLevel} · ${cls.year} ${cls.semester})`}
+        footer={
+          <>
+            <button onClick={() => setImportOpen(false)} className="btn btn-outline h-10 px-4 text-sm">
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                const n = importStudents(cls.id, importSel);
+                setImportOpen(false);
+                showToast(
+                  n ? `${n} student${n === 1 ? "" : "s"} imported into ${cls.name}` : "No students selected"
+                );
+              }}
+              disabled={importSel.length === 0}
+              className="btn btn-primary h-10 px-5 text-sm gap-1.5 disabled:opacity-50"
+            >
+              <UserPlus size={16} /> Import{importSel.length ? ` ${importSel.length}` : ""}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+              <input
+                value={importQuery}
+                onChange={(e) => setImportQuery(e.target.value)}
+                className="input pl-9"
+                placeholder="Search students not in this class…"
+              />
+            </div>
+            <button
+              onClick={() =>
+                setImportSel((sel) => (sel.length === candidates.length ? [] : candidates.map((s) => s.id)))
+              }
+              disabled={candidates.length === 0}
+              className="btn btn-outline h-10 px-3 text-sm disabled:opacity-50"
+            >
+              {candidates.length > 0 && importSel.length === candidates.length ? "Clear all" : "Select all"}
+            </button>
+          </div>
+
+          {prevLevelCode && (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span style={{ color: "var(--text-3)" }}>Import from</span>
+              <button
+                onClick={() => { setImportScope("prev"); setImportSel([]); }}
+                className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition"
+                style={
+                  importScope === "prev"
+                    ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" }
+                    : { background: "var(--surface)", color: "var(--text-2)", borderColor: "var(--border)" }
+                }
+              >
+                {prevLevelCode}
+              </button>
+              <button
+                onClick={() => { setImportScope("all"); setImportSel([]); }}
+                className="rounded-lg border px-2.5 py-1 text-xs font-semibold transition"
+                style={
+                  importScope === "all"
+                    ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" }
+                    : { background: "var(--surface)", color: "var(--text-2)", borderColor: "var(--border)" }
+                }
+              >
+                All students
+              </button>
+              <span className="ml-1" style={{ color: "var(--text-3)" }}>
+                matching {majorName(cls.major)}{cls.field ? ` · ${cls.field}` : ""}
+              </span>
+            </div>
+          )}
+
+          {candidates.length === 0 ? (
+            <p className="text-sm py-6 text-center" style={{ color: "var(--text-3)" }}>
+              {importScope === "prev" && prevLevelCode
+                ? `No ${prevLevelCode} students match ${majorName(cls.major)}${cls.field ? ` · ${cls.field}` : ""}. Switch to “All students” for other programmes.`
+                : "No students available to import."}
+            </p>
+          ) : (
+            <div className="max-h-[46vh] overflow-y-auto thin-scroll rounded-xl border" style={{ borderColor: "var(--border)" }}>
+              {candidates.map((s, idx) => {
+                const on = importSel.includes(s.id);
+                const cur = classes.find((c) => c.id === s.className);
+                return (
+                  <label
+                    key={s.id}
+                    className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm"
+                    style={{ borderTop: idx ? "1px solid var(--border)" : "none" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() =>
+                        setImportSel((sel) => (on ? sel.filter((x) => x !== s.id) : [...sel, s.id]))
+                      }
+                      className="h-4 w-4 accent-[var(--primary)]"
+                    />
+                    <StudentAvatar student={s} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold" style={{ color: "var(--text)" }}>
+                        {s.khmerName || `${s.firstName} ${s.lastName}`}
+                      </span>
+                      <span className="block truncate text-[11px]" style={{ color: "var(--text-3)" }}>
+                        {s.khmerName ? `${s.firstName} ${s.lastName} · ` : ""}
+                        {s.studentId}
+                        {s.level ? ` · ${s.level}` : ""}
+                        {` · ${majorName(s.major)}`}
+                        {s.field ? ` · ${s.field}` : ""}
+                        {cur ? ` · in ${cur.name}` : " · no class"}
+                      </span>
+                    </span>
+                    <Badge tone={statusTone(s.status)}>{s.status}</Badge>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );

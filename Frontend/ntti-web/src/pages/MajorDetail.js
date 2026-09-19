@@ -17,7 +17,7 @@ const rateTone = (r) => (r >= 85 ? "success" : r >= 70 ? "warning" : "danger");
 export default function MajorDetail() {
   const { majorId } = useParams();
   const navigate = useNavigate();
-  const { students, classes, weekly } = useApp();
+  const { students, classes, attendance } = useApp();
 
   const [classQuery, setClassQuery] = useState("");
   const [studentQuery, setStudentQuery] = useState("");
@@ -29,10 +29,10 @@ export default function MajorDetail() {
   const rateById = useMemo(() => {
     const map = {};
     students.forEach((s) => {
-      map[s.id] = computeRate(weekly.filter((a) => a.studentId === s.id));
+      map[s.id] = computeRate(attendance.filter((a) => a.studentId === s.id));
     });
     return map;
-  }, [students, weekly]);
+  }, [students, attendance]);
 
   const classStats = useMemo(() => {
     return classesOfMajor(classes, majorId).map((c) => {

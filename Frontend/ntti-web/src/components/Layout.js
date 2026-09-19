@@ -3,10 +3,10 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
+  UsersRound,
   CalendarCheck,
   CalendarRange,
   BarChart3,
-  GraduationCap,
   Search,
   Bell,
   Moon,
@@ -18,6 +18,10 @@ import {
   Plus,
   UserPlus,
   BookOpen,
+  ShieldCheck,
+  ClipboardList,
+  Trophy,
+  FileText,
 } from "lucide-react";
 import clsx from "clsx";
 import { useApp } from "../context/AppContext";
@@ -27,23 +31,28 @@ import ClassFormModal from "./ClassFormModal";
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/students", label: "Students", icon: Users },
+  { to: "/classes", label: "Classes", icon: UsersRound },
   { to: "/attendance", label: "Attendance", icon: CalendarCheck },
   { to: "/schedule", label: "Schedule", icon: CalendarRange },
+  { to: "/scores", label: "Scores", icon: ClipboardList },
+  { to: "/billboard", label: "Billboard", icon: Trophy },
+  { to: "/transcript", label: "Transcript", icon: FileText },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/admin", label: "Admin", icon: ShieldCheck },
 ];
 
 function Brand() {
   return (
     <NavLink to="/dashboard" className="flex items-center gap-3 px-1">
-      <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-500/30">
-        <GraduationCap size={22} />
-      </div>
-      <div className="leading-tight">
-        <p className="text-[15px] font-bold tracking-tight" style={{ color: "var(--text)" }}>
-          NTTI <span className="text-gradient">Portal</span>
-        </p>
-        <p className="text-[11px] font-medium" style={{ color: "var(--text-3)" }}>
-          Management System
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+        style={{ background: "var(--surface-2)" }}
+      >
+        <img src="/ntti-logo.png" alt="NTTI" className="h-9 w-9 object-contain" />
+      </span>
+      <div className="min-w-0 leading-tight">
+        <p className="text-[12.5px] font-bold leading-snug" style={{ color: "var(--text)" }}>
+          ការិយាល័យអប់រំបណ្ដុះបណ្ដាល
         </p>
       </div>
     </NavLink>
@@ -51,15 +60,24 @@ function Brand() {
 }
 
 function Sidebar({ open, onClose }) {
-  const { students, theme, toggleTheme, showToast } = useApp();
+  const { students, theme, toggleTheme, showToast, logout, currentAdmin } = useApp();
   const navigate = useNavigate();
   const active = students.filter((s) => s.status !== "Graduate").length;
 
   const handleLogout = () => {
-    localStorage.removeItem("ntti.auth");
+    logout();
     showToast("Signed out", "info");
     navigate("/login");
   };
+
+  const adminName = currentAdmin?.name || "Admin User";
+  const adminRole = currentAdmin?.role || "System Administrator";
+  const initials = (adminName || "AD")
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 
   return (
     <>
@@ -72,7 +90,7 @@ function Sidebar({ open, onClose }) {
       />
       <aside
         className={clsx(
-          "fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col border-r transition-transform duration-300 lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col border-r transition-transform duration-300 lg:translate-x-0 print:hidden",
           open ? "translate-x-0" : "-translate-x-full"
         )}
         style={{ background: "var(--surface)", borderColor: "var(--border)" }}
@@ -131,14 +149,14 @@ function Sidebar({ open, onClose }) {
               className="flex h-10 w-10 items-center justify-center rounded-full text-white text-xs font-bold"
               style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)" }}
             >
-              AD
+              {initials}
             </div>
             <div className="min-w-0 flex-1 leading-tight">
               <p className="text-sm font-semibold truncate" style={{ color: "var(--text)" }}>
-                Admin User
+                {adminName}
               </p>
               <p className="text-[11px] truncate" style={{ color: "var(--text-3)" }}>
-                System Administrator
+                {adminRole.replace(/\b\w/g, (c) => c.toUpperCase())}
               </p>
             </div>
             <button
@@ -180,7 +198,7 @@ function TopBar({ onMenu, onAddStudent, onAddClass }) {
 
   return (
     <header
-      className="sticky top-0 z-30 glass border-b"
+      className="sticky top-0 z-30 glass border-b print:hidden"
       style={{ borderColor: "var(--border)" }}
     >
       <div className="flex h-[68px] items-center gap-3 px-4 sm:px-6">
@@ -226,10 +244,10 @@ function TopBar({ onMenu, onAddStudent, onAddClass }) {
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-medium truncate" style={{ color: "var(--text)" }}>
-                        {s.firstName} {s.lastName}
+                        {s.khmerName || `${s.firstName} ${s.lastName}`}
                       </span>
                       <span className="block text-[11px]" style={{ color: "var(--text-3)" }}>
-                        {s.studentId}
+                        {s.khmerName ? `${s.firstName} ${s.lastName} · ` : ""}{s.studentId}
                       </span>
                     </span>
                   </button>
@@ -316,7 +334,7 @@ function ToastStack() {
     info: "linear-gradient(135deg,#3b82f6,#06b6d4)",
   };
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[70] flex w-[calc(100vw-2.5rem)] max-w-sm flex-col gap-2.5">
+    <div className="pointer-events-none fixed bottom-5 right-5 z-[70] flex w-[calc(100vw-2.5rem)] max-w-sm flex-col gap-2.5 print:hidden">
       {toasts.map((t) => (
         <div
           key={t.id}
@@ -341,13 +359,13 @@ export default function Layout() {
   return (
     <div className="min-h-screen">
       <Sidebar open={mobileOpen} onClose={() => setMobileOpen(false)} />
-      <div className="lg:pl-[264px]">
+      <div className="lg:pl-[264px] print:pl-0">
         <TopBar
           onMenu={() => setMobileOpen(true)}
           onAddStudent={() => setShowAddStudent(true)}
           onAddClass={() => setShowAddClass(true)}
         />
-        <main className="bg-mesh min-h-[calc(100vh-68px)] px-4 sm:px-6 lg:px-8 py-6">
+        <main className="bg-mesh min-h-[calc(100vh-68px)] px-4 sm:px-6 lg:px-8 py-6 print:px-0 print:py-0 print:bg-white">
           <Outlet />
         </main>
       </div>

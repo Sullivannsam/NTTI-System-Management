@@ -16,11 +16,22 @@ export const SHIFT_TIMES = {
 
 export const shiftRange = (shift) =>
   SHIFT_TIMES[shift] ? `${SHIFT_TIMES[shift].start} – ${SHIFT_TIMES[shift].end}` : "";
-export const YEARS = ["Year 1", "Year 2", "Year 3", "Year 4"];
+export const YEARS = ["Year 1", "Year 2", "Year 3", "Year 4", "Year 5", "Year 6"];
 export const SEMESTERS = ["Semester 1", "Semester 2"];
 
 /** Academic progression: 1 semester = 15 weeks. S<semester>Y<year>. */
-export const ACADEMIC_LEVELS = ["S1Y1", "S2Y1", "S1Y2", "S2Y2", "S1Y3", "S2Y3", "S1Y4", "S2Y4"];
+export const ACADEMIC_LEVELS = ["S1Y1", "S2Y1", "S1Y2", "S2Y2", "S1Y3", "S2Y3", "S1Y4", "S2Y4", "S1Y5", "S2Y5", "S1Y6", "S2Y6"];
+
+/**
+ * Programme length (academic years) per major — edit these to match the real
+ * curriculum. Architecture runs 5 years; IT / Electronic run 4. A major that
+ * isn't listed falls back to 4 years.
+ */
+export const PROGRAM_YEARS = { it: 4, el: 4, arc: 5 };
+export const programYears = (majorId) => PROGRAM_YEARS[majorId] || 4;
+/** The levels a major actually runs through: S1Y1 … S2Y<years>. */
+export const levelsForMajor = (majorId) => ACADEMIC_LEVELS.slice(0, programYears(majorId) * 2);
+export const maxLevelForMajor = (majorId) => levelsForMajor(majorId).slice(-1)[0] || "S1Y1";
 
 export const levelMeta = (lvl) => ({
   label: lvl,
@@ -40,17 +51,23 @@ export const FIELDS_OF_STUDY = {
   arc: ["Architecture Design", "Interior Design", "Urban Planning"],
 };
 
+/* Every demo class starts at the very beginning of its programme: Year 1 · Semester 1. */
 export const CLASSES = [
-  { id: "cyber", name: "Cyber Security", field: "Cyber Security", major: "it", shift: "Morning", year: "Year 2", semester: "Semester 2", degree: "Diploma" },
-  { id: "git", name: "General IT", field: "IT General", major: "it", shift: "Morning", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
-  { id: "gin", name: "Graphic Design", field: "Graphic Design", major: "it", shift: "Evening", year: "Year 2", semester: "Semester 1", degree: "Diploma" },
-  { id: "ele", name: "Electrical Engineering", field: "Electrical Engineering", major: "el", shift: "Evening", year: "Year 3", semester: "Semester 2", degree: "Bachelor" },
-  { id: "mec", name: "Mechatronics", field: "Mechatronics", major: "el", shift: "Night", year: "Year 2", semester: "Semester 1", degree: "Diploma" },
-  { id: "rep", name: "Electronics Repair", field: "Electronics Repair", major: "el", shift: "Night", year: "Year 1", semester: "Semester 2", degree: "Certificate" },
-  { id: "ads", name: "Architecture Design", field: "Architecture Design", major: "arc", shift: "Morning", year: "Year 3", semester: "Semester 1", degree: "Bachelor" },
-  { id: "int", name: "Interior Design", field: "Interior Design", major: "arc", shift: "Evening", year: "Year 2", semester: "Semester 2", degree: "Diploma" },
-  { id: "urb", name: "Urban Planning", field: "Urban Planning", major: "arc", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Bachelor" },
+  { id: "cyber", name: "IT01A", field: "Cyber Security", major: "it", shift: "Morning", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
+  { id: "git", name: "IT02A", field: "IT General", major: "it", shift: "Morning", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
+  { id: "gin", name: "IT03A", field: "Graphic Design", major: "it", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
+  { id: "ele", name: "IT04A", field: "Electrical Engineering", major: "el", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Bachelor" },
+  { id: "mec", name: "IT05A", field: "Mechatronics", major: "el", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
+  { id: "rep", name: "IT06A", field: "Electronics Repair", major: "el", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Certificate" },
+  { id: "ads", name: "IT07A", field: "Architecture Design", major: "arc", shift: "Morning", year: "Year 1", semester: "Semester 1", degree: "Bachelor" },
+  { id: "int", name: "IT08A", field: "Interior Design", major: "arc", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
+  { id: "urb", name: "IT09A2", field: "Urban Planning", major: "arc", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Bachelor" },
 ];
+
+/** Class id that gets a full demo cohort (students + scores) after a reset. */
+export const DEMO_CLASS_ID = "cyber";
+/** Subjects used by the demo score sheet / schedule (matches Schedule's defaults). */
+export const SEED_SUBJECTS = ["Mathematics", "Khmer", "English", "Physics", "Chemistry", "Computer", "Physical Ed"];
 
 export const classesOfMajor = (classes, majorId) => classes.filter((c) => c.major === majorId);
 
@@ -95,6 +112,68 @@ const KHMER_LAST = {
   Tep: "តេប", Nop: "នប", Vong: "វង្ស", Heng: "ហេង", Orn: "អន", Kong: "គង់",
   Chhin: "ឈិន", Meas: "មាស", Sao: "សាវ", Yon: "យន់", Nut: "នុត", Pich: "ពេជ្រ", Eang: "អាំង",
 };
+
+/**
+ * Best-effort Latin → Khmer transliteration for common Khmer name romanisations.
+ * Not a full dictionary — close enough to recognise, and each student's Khmer name
+ * can be edited from the student form afterwards.
+ */
+const KH_DIGRAPHS = [
+  ["chh", "ឈ"], ["ch", "ច"], ["ngh", "ង្ហ"], ["kh", "ខ"], ["th", "ថ"], ["ph", "ផ"],
+  ["nh", "ញ"], ["ng", "ង"], ["gh", "ឃ"], ["dh", "ឍ"], ["bh", "ភ"], ["jh", "ឈ"],
+  ["tr", "ត្រ"], ["dr", "ឌ្រ"], ["pr", "ប្រ"], ["br", "ប្រ"], ["kr", "ក្រ"],
+  ["gr", "គ្រ"], ["sr", "ស្រ"], ["kl", "ក្ល"], ["gl", "គ្ល"], ["pl", "ប្ល"],
+  ["sl", "ស្ល"], ["fl", "ផ្ល"], ["sw", "ស្វ"], ["tw", "ត្វ"], ["kw", "ក្វ"],
+  ["nn", "ន្ន"], ["ll", "ល្ល"], ["mm", "ម្ម"], ["tt", "ត្ត"], ["ss", "ស្ស"],
+  ["rr", "រ្រ"], ["kk", "ក្ក"], ["pp", "ប្ប"],
+];
+
+const KH_CONSONANTS = {
+  b: "ប", c: "ច", d: "ដ", f: "ផ", g: "គ", h: "ហ", j: "ជ", k: "ក", l: "ល",
+  m: "ម", n: "ន", p: "ប", q: "ក", r: "រ", s: "ស", t: "ត", v: "វ", w: "វ",
+  x: "ស", y: "យ", z: "ហ្ស",
+};
+
+const KH_VOWELS = { a: "ា", e: "េ", i: "ិ", o: "ុ", u: "ុ" };
+
+export function latinToKhmer(text) {
+  const t = (text || "").toLowerCase().replace(/[^a-z\s]/g, "").trim();
+  if (!t) return "";
+  let out = "";
+  let i = 0;
+  while (i < t.length) {
+    const c = t[i];
+    if (c === " ") {
+      out += " ";
+      i++;
+      continue;
+    }
+    const chunk = t.slice(i);
+    const match = KH_DIGRAPHS.find(([p]) => chunk.startsWith(p));
+    if (match) {
+      out += match[1];
+      i += match[0].length;
+      continue;
+    }
+    if (c === "y" && (i === t.length - 1 || t[i + 1] === " ")) {
+      out += "ី"; // long-i word ending (Mony, Rithy…)
+      i++;
+      continue;
+    }
+    if (KH_CONSONANTS[c]) {
+      out += KH_CONSONANTS[c];
+      i++;
+      continue;
+    }
+    if (KH_VOWELS[c]) {
+      out += KH_VOWELS[c];
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return out;
+}
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -149,64 +228,51 @@ function genStudents() {
   const rng = mulberry32(20260916);
   const students = [];
   const today = todayISO();
+  const enrollmentYear = new Date().getFullYear();
 
-  for (let i = 0; i < 18; i++) {
+  /* One class gets a full demo cohort; every other class gets one student so the
+     portal isn't empty. Everyone is at the start of the programme (S1Y1). */
+  const plan = CLASSES.flatMap((classDef) =>
+    Array.from({ length: classDef.id === DEMO_CLASS_ID ? 12 : 1 }, () => classDef)
+  );
+
+  plan.forEach((classDef, idx) => {
+    const i = idx; // 0-based
     const firstName = FIRST[Math.floor(rng() * FIRST.length)];
     const lastName = LAST[Math.floor(rng() * LAST.length)];
-    const classIdx = i % CLASSES.length;
-    const classDef = CLASSES[classIdx];
-    const enrolledDaysAgo = 40 + Math.floor(rng() * 500);
+    const enrolledDaysAgo = 30 + Math.floor(rng() * 90);
     const enrollment = addDays(today, -enrolledDaysAgo);
-    const cohort = 2020 + Math.floor((i + 1) / 4);
-    const currentYear = Math.min(4, Math.max(1, new Date().getFullYear() - cohort));
-    const level = `S1Y${currentYear}`;
-    const history = [];
-    for (let y = 1; y <= currentYear; y++) {
-      for (let sem = 1; sem <= 2; sem++) {
-        const lvl = `S${sem}Y${y}`;
-        if (lvl === level) continue;
-        const semIndexBack = (currentYear - y) * 2 + (2 - sem); // semesters behind the current one
-        history.push({
-          id: `${i + 1}-${lvl}`,
-          level: lvl,
-          year: `Year ${y}`,
-          semester: `Semester ${sem}`,
-          className: classDef.id,
-          date: addDays(today, -(semIndexBack + 1) * 105), // ~15 weeks per semester
-          result: "Passed",
-        });
-      }
-    }
+    const place = ["Phnom Penh", "Kandal", "Sihanoukville", "Battambang", "Siem Reap", "Kampong Cham"][
+      Math.floor(rng() * 6)
+    ];
     students.push({
       id: i + 1,
-      studentId: `NTTI-${2020 + Math.floor((i + 1) / 4)}-${String(i + 1).padStart(4, "0")}`,
+      studentId: `NTTI-${enrollmentYear}-${String(i + 1).padStart(4, "0")}`,
       firstName,
       lastName,
       khmerName: `${KHMER_LAST[lastName] || ""} ${KHMER_FIRST[firstName] || ""}`.trim(),
       gender: i % 3 === 0 ? "Female" : "Male",
-      dob: `${1978 + Math.floor(rng() * 16)}-${String(1 + Math.floor(rng() * 12)).padStart(2, "0")}-${String(1 + Math.floor(rng() * 28)).padStart(2, "0")}`,
-      email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@ntti.edu.kh`,
+      dob: `${2000 + Math.floor(rng() * 6)}-${String(1 + Math.floor(rng() * 12)).padStart(2, "0")}-${String(
+        1 + Math.floor(rng() * 28)
+      ).padStart(2, "0")}`,
+      email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${i + 1}@ntti.edu.kh`,
       phone: `+855 1${Math.floor(rng() * 90 + 10)} ${Math.floor(rng() * 900 + 100)} ${Math.floor(rng() * 9000 + 1000)}`,
       guardian: `${LAST[Math.floor(rng() * LAST.length)]} ${FIRST[Math.floor(rng() * FIRST.length)]}`,
       fatherName: `${LAST[Math.floor(rng() * LAST.length)]} ${FIRST[Math.floor(rng() * FIRST.length)]}`,
       motherName: `${LAST[Math.floor(rng() * LAST.length)]} ${FIRST[Math.floor(rng() * FIRST.length)]}`,
-      address: ["Phnom Penh", "Kandal", "Sihanoukville", "Battambang", "Siem Reap", "Kampong Cham"][
-        Math.floor(rng() * 6)
-      ],
-      birthPlace: ["Phnom Penh", "Kandal", "Sihanoukville", "Battambang", "Siem Reap", "Kampong Cham"][
-        Math.floor(rng() * 6)
-      ],
+      address: place,
+      birthPlace: place,
       photo: "",
       major: classDef.major,
       className: classDef.id,
       avatarColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
       enrollmentDate: enrollment,
-      enrollmentYear: cohort,
-      level,
-      history,
-      status: rng() > 0.92 ? "Undergraduate" : rng() > 0.86 ? "Graduate" : "Learning",
+      enrollmentYear,
+      level: "S1Y1",
+      history: [],
+      status: "Learning",
     });
-  }
+  });
   return students;
 }
 
@@ -296,6 +362,52 @@ function genWeekly(students) {
 }
 
 export const SEED_WEEKLY = genWeekly(SEED_STUDENTS);
+
+/** Demo score sheet for the populated class — a deterministic mix of A–F grades. */
+function genScores(students) {
+  const rng = mulberry32(515151);
+  const rows = {};
+  students
+    .filter((s) => s.className === DEMO_CLASS_ID)
+    .forEach((s) => {
+      const ability = 55 + rng() * 40; // per-student level, 55–95
+      const row = {};
+      SEED_SUBJECTS.forEach((sub) => {
+        const v = Math.max(35, Math.min(100, ability + (rng() - 0.5) * 22));
+        row[sub] = v.toFixed(2);
+      });
+      rows[s.id] = row;
+    });
+  return { [DEMO_CLASS_ID]: rows };
+}
+
+export const SEED_SCORES = genScores(SEED_STUDENTS);
+
+export const SEED_TEACHERS = ["Teacher 1", "Teacher 2", "Teacher 3", "Teacher 4", "Teacher 5", "Teacher 6", "Teacher 7"];
+
+/** Demo schedule for the populated class so the score sheet has subject columns. */
+const demoClass = CLASSES.find((c) => c.id === DEMO_CLASS_ID);
+export const SEED_SCHEDULE = {
+  activeId: "sched-demo",
+  schedules: demoClass
+    ? [
+        {
+          id: "sched-demo",
+          className: demoClass.name,
+          classId: demoClass.id,
+          semester: "1",
+          year: "1",
+          major: majorName(demoClass.major),
+          field: demoClass.field || "",
+          studentYear: "2026-2027",
+          shift: "morning",
+          subjects: [...SEED_SUBJECTS],
+          teachers: [...SEED_TEACHERS],
+          cells: {},
+        },
+      ]
+    : [],
+};
 
 export function computeRate(records) {
   if (!records.length) return 0;

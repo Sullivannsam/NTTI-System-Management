@@ -5,12 +5,17 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
+import Classes from "./pages/Classes";
 import ClassDetail from "./pages/ClassDetail";
 import MajorDetail from "./pages/MajorDetail";
 import StudentDetail from "./pages/StudentDetail";
 import Attendance from "./pages/Attendance";
 import Schedule from "./pages/Schedule";
+import Scores from "./pages/Scores";
+import Billboard from "./pages/Billboard";
+import Transcript from "./pages/Transcript";
 import Analytics from "./pages/Analytics";
+import Admin from "./pages/Admin";
 
 function RequireAuth({ children }) {
   const authed = localStorage.getItem("ntti.auth");
@@ -32,12 +37,17 @@ function App() {
           >
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/students" element={<Students />} />
+            <Route path="/classes" element={<Classes />} />
             <Route path="/majors/:majorId" element={<MajorDetail />} />
             <Route path="/classes/:classId" element={<ClassDetail />} />
             <Route path="/students/:id" element={<StudentDetail />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/schedule" element={<Schedule />} />
+            <Route path="/scores" element={<Scores />} />
+            <Route path="/billboard" element={<Billboard />} />
+            <Route path="/transcript" element={<Transcript />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/admin" element={<Admin />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

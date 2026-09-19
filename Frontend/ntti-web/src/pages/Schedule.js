@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, Save, RotateCcw, Trash2, CalendarDays, Download, ChevronDown, Check, X,
-  FileDown, FileSpreadsheet, FileText, Copy,
+  FileDown, FileSpreadsheet, FileText, Copy, Link2, Search,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
+import { MAJORS as SEED_MAJORS, majorName, FIELDS_OF_STUDY } from "../data/seed";
 
 const KEY = "ntti.schedule.v2";
 const LEGACY = "ntti.schedule.v1";
@@ -85,6 +86,7 @@ const nextId = () => `s${Date.now().toString(36)}${(uid++).toString(36)}`;
 const newSchedule = (name, idx) => ({
   id: nextId(),
   className: name || "",
+  classId: "", // linked to a real class in AppContext when the schedule belongs to one
   semester: "1",
   year: "1",
   major: "IT",
@@ -95,6 +97,66 @@ const newSchedule = (name, idx) => ({
   teachers: [...DEFAULT_TEACHERS],
   cells: {}, // "c|r" → { day, time }
 });
+
+/* ── class ↔ schedule term mapping ─────────────────────────
+ * A class stores "Semester 1" / "Year 1"; the schedule stores "1" / "1".
+ * These map between the two so the term can be kept in sync both ways. */
+const digitsOf = (v, fallback = "1") => {
+  const m = String(v ?? "").match(/\d+(?:\.\d+)?/);
+  return m ? m[0] : fallback;
+};
+const semToClass = (v) => (v === "1" || v === "2" ? `Semester ${v}` : null);
+const yearToClass = (v) => `Year ${digitsOf(v, "1")}`;
+
+/* major / field / shift mapping between the class and the schedule */
+const majorNameOf = (id) => majorName(id) || "";
+const majorIdOf = (name) => {
+  const s = String(name || "").toLowerCase();
+  return (
+    SEED_MAJORS.find((m) => m.name.toLowerCase() === s)?.id ||
+    SEED_MAJORS.find((m) => m.id === name)?.id ||
+    null
+  );
+};
+const shiftKeyOf = (label) => {
+  const k = String(label || "").toLowerCase();
+  return SHIFTS[k] ? k : DEFAULT_SHIFT;
+};
+const shiftLabelOf = (key) => (SHIFTS[key] ? SHIFTS[key].label : String(key || ""));
+
+/* everything a linked schedule inherits from its class */
+const fromClass = (c) => ({
+  className: c.name,
+  semester: digitsOf(c.semester),
+  year: digitsOf(c.year),
+  major: majorNameOf(c.major),
+  field: c.field || "",
+  shift: shiftKeyOf(c.shift),
+});
+
+/* ── bind schedules to real classes ────────────────────────
+ * Every class that exists in the portal gets its own schedule entry
+ * (auto-created when the class appears). For a linked schedule the
+ * class name, term, major, field AND shift follow the class. Custom
+ * schedules that aren't linked to a class stay untouched. */
+function mergeClasses(prev, classList) {
+  const list = classList || [];
+  let scheds = (prev.schedules || []).map((s) => {
+    if (s.classId) {
+      const c = list.find((x) => x.id === s.classId);
+      if (!c) return s;
+      return { ...s, ...fromClass(c) };
+    }
+    const c = list.find((x) => x.name === s.className);
+    return c ? { ...s, classId: c.id, ...fromClass(c) } : s;
+  });
+  const linked = new Set(scheds.map((s) => s.classId).filter(Boolean));
+  const need = list.filter((c) => !linked.has(c.id));
+  for (const c of need) {
+    scheds = [...scheds, { ...newSchedule(c.name), classId: c.id, ...fromClass(c) }];
+  }
+  return scheds;
+}
 
 /* ── load / persist state ─────────────────────────────────── */
 function load() {
@@ -154,11 +216,12 @@ function load() {
 }
 
 /* ── Half-select: portable day/time picker (Day or Time) ─── */
-function HalfSelect({ value, options, onChange, style, wide, h9 = false, label }) {
+function HalfSelect({ value, options, onChange, style, wide, h9 = false, label, searchable }) {
   const ref = useRef(null);
   const menuRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
+  const [q, setQ] = useState("");
 
   const close = () => setOpen(false);
 
@@ -169,8 +232,14 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label }
     0
   );
 
+  const qq = q.trim().toLowerCase();
+  const shownOpts = searchable && qq
+    ? options.filter((o) => (typeof o === "string" ? o : o.label || "").toLowerCase().includes(qq))
+    : options;
+
   useEffect(() => {
     if (!open) {
+      setQ("");
       setPos(null);
       return;
     }
@@ -181,8 +250,8 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label }
       const vh = window.innerHeight;
       const GAP = 4;
       const MARGIN = 8;
-      // rough height of the menu (None row + divider + one row per option)
-      const estHeight = Math.min(240, (options.length + 2) * 30 + 12);
+      // rough height of the menu (search + None row + divider + one row per option)
+      const estHeight = Math.min(280, (shownOpts.length + 3) * 30 + (searchable ? 40 : 12));
       const spaceBelow = vh - r.bottom;
       const spaceAbove = r.top;
       // flip upward when there isn't enough room below and more room above
@@ -195,12 +264,15 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label }
         left,
         minWidth: Math.max(r.width, 140),
         up,
-        maxHeight: Math.max(140, Math.min(240, avail)),
+        maxHeight: Math.max(140, Math.min(260, avail)),
         ...(up ? { bottom: vh - r.top + GAP } : { top: r.bottom + GAP }),
       });
     };
     const onKey = (e) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        close();
+        setQ("");
+      }
     };
     const onScroll = (e) => {
       // keep the menu open while the user scrolls inside it
@@ -217,7 +289,7 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label }
       window.removeEventListener("resize", close);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, q, searchable, shownOpts.length]);
 
   return (
     <div className={`relative ${wide ? "w-full" : "shrink-0"}`}>
@@ -266,6 +338,18 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label }
                 ...(pos.bottom != null ? { bottom: pos.bottom } : { top: pos.top }),
               }}
             >
+              {searchable && (
+                <div className="relative px-1 pb-1.5">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search…"
+                    className="w-full rounded-lg border py-1.5 pl-8 pr-3 text-xs outline-none transition-colors focus:border-[var(--primary)]"
+                    style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }}
+                  />
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -279,7 +363,10 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label }
                 None
               </button>
               <div className="my-1 h-px" style={{ background: "var(--border)" }} />
-              {options.map((o) => {
+              {searchable && shownOpts.length === 0 && (
+                <p className="px-2.5 py-1.5 text-xs" style={{ color: "var(--text-3)" }}>No match</p>
+              )}
+              {shownOpts.map((o) => {
                 const val = typeof o === "string" ? o : o.value;
                 const label = typeof o === "string" ? o : o.label;
                 const active = value === val;
@@ -352,12 +439,26 @@ function doExport(schedules, type) {
 
 /* ── main page ───────────────────────────────────────────── */
 export default function Schedule() {
-  const { showToast } = useApp();
+  const { showToast, classes, logAudit, updateClass } = useApp();
   const [state, setState] = useState(load());
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // when the class list changes (class created/renamed), pick up those classes
+  useEffect(() => {
+    setState((prev) => {
+      const next = mergeClasses(prev, classes);
+      if (
+        next.length === prev.schedules.length &&
+        next.every((s, i) => s === prev.schedules[i])
+      ) {
+        return prev;
+      }
+      return { ...prev, schedules: next };
+    });
+  }, [classes]);
 
   // persist every state change so schedules survive a refresh
   useEffect(() => {
@@ -380,15 +481,12 @@ export default function Schedule() {
     showToast("New schedule added — old ones kept");
   };
 
-  const duplicateSchedule = (id) => {
-    const src = schedules.find((s) => s.id === id);
-    if (!src) return;
-    const copy = { ...src, id: nextId(), className: `${src.className} (copy)`, cells: { ...src.cells } };
-    persist({ schedules: [...schedules, copy], activeId: copy.id });
-    showToast("Schedule duplicated");
-  };
-
   const removeSchedule = (id) => {
+    const target = schedules.find((s) => s.id === id);
+    if (target?.classId) {
+      showToast(`Linked to class ${target.className} — delete the class itself to remove its schedule`, "info");
+      return;
+    }
     if (schedules.length <= 1) {
       showToast("Keep at least one schedule");
       return;
@@ -413,6 +511,30 @@ export default function Schedule() {
       next = { ...next, cells };
     }
     persist({ ...state, schedules: schedules.map((s) => (s.id === data.id ? next : s)) });
+  };
+
+  /* schedule → class: changing a linked field here updates the class too,
+     so the class follows the schedule back. */
+  const pushToClass = (patch) => {
+    if (!data.classId) return;
+    const clsPatch = {};
+    if (patch.semester !== undefined) {
+      const v = semToClass(patch.semester);
+      if (v) clsPatch.semester = v;
+    }
+    if (patch.year !== undefined) clsPatch.year = yearToClass(patch.year);
+    if (patch.major !== undefined) {
+      const id = majorIdOf(patch.major);
+      if (id) clsPatch.major = id;
+    }
+    if (patch.field !== undefined) clsPatch.field = patch.field;
+    if (patch.shift !== undefined) clsPatch.shift = shiftLabelOf(patch.shift);
+    if (Object.keys(clsPatch).length) updateClass(data.classId, clsPatch);
+  };
+
+  const setLinkedField = (field, value) => {
+    setMeta({ [field]: value });
+    pushToClass({ [field]: value });
   };
 
   const setSubjectName = (i, name) =>
@@ -455,7 +577,12 @@ export default function Schedule() {
 
   const reset = () => {
     const s = newSchedule(data.className, schedules.length);
-    setMeta({ ...s, cells: {} });
+    // keep the class link and everything that follows it when clearing the table
+    const linked = data.classId ? classes.find((c) => c.id === data.classId) : null;
+    const next = linked
+      ? { ...s, classId: linked.id, ...fromClass(linked), cells: {} }
+      : { ...s, major: data.major, field: data.field, shift: data.shift, semester: data.semester, year: data.year, cells: {} };
+    setMeta(next);
     showToast("Schedule reset");
   };
 
@@ -465,6 +592,7 @@ export default function Schedule() {
     } catch {
       /* ignore */
     }
+    logAudit("save_schedule", `Saved ${stateRef.current.schedules.length} schedule(s)`);
     showToast("All schedules saved");
   };
 
@@ -473,6 +601,20 @@ export default function Schedule() {
   const [dlAll, setDlAll] = useState(false);
   const [checked, setChecked] = useState({});
   const [dlType, setDlType] = useState("excel");
+
+  /* copy-from state */
+  const [copyFrom, setCopyFrom] = useState(false);
+  const [copySrc, setCopySrc] = useState("");
+  const [copyOpts, setCopyOpts] = useState({ subjects: true, teachers: true, cells: true });
+  const [copyQ, setCopyQ] = useState("");
+
+  /* clear the copy search whenever the dialog closes */
+  useEffect(() => {
+    if (!copyFrom) {
+      setCopySrc("");
+      setCopyQ("");
+    }
+  }, [copyFrom]);
 
   const toggleAll = (on) => setDlAll(on);
 
@@ -484,7 +626,62 @@ export default function Schedule() {
 
   const times = SLOTS[data.shift] || SLOTS[DEFAULT_SHIFT];
 
+  /* a linked schedule offers the class's own major/field values (plus the
+     current one, so a value never shows as "—" just because it wasn't in
+     the preset list) */
+  const linkedClass = data.classId ? classes.find((c) => c.id === data.classId) : null;
+  const majorChoices = Array.from(
+    new Set([...(data.classId ? SEED_MAJORS.map((m) => m.name) : MAJORS), data.major].filter(Boolean))
+  );
+  const fieldPool =
+    linkedClass && (FIELDS_OF_STUDY[linkedClass.major] || []).length
+      ? FIELDS_OF_STUDY[linkedClass.major]
+      : FIELDS;
+  const fieldChoices = Array.from(new Set([...fieldPool, data.field].filter(Boolean)));
+
   const noSelected = dlSel && !someChecked && !dlAll;
+
+  /* copy an existing schedule's subjects/teachers/times into the current one */
+  const copySources = schedules
+    .filter((s) => s.id !== data.id)
+    .sort(
+      (a, b) =>
+        (a.classId ? 0 : 1) - (b.classId ? 0 : 1) ||
+        a.className.localeCompare(b.className)
+    );
+
+  const copyQq = copyQ.trim().toLowerCase();
+  const copyList = copyQq
+    ? copySources.filter((s) => (s.className || "Untitled").toLowerCase().includes(copyQq))
+    : copySources;
+
+  const applyCopy = () => {
+    const src = schedules.find((s) => s.id === copySrc);
+    if (!src) return;
+    const patch = {};
+    if (copyOpts.subjects) patch.subjects = [...src.subjects];
+    if (copyOpts.teachers) patch.teachers = [...src.teachers];
+    if (copyOpts.cells) {
+      // only keep times that exist in this schedule's shift
+      const valid = new Set(SLOTS[data.shift] || SLOTS[DEFAULT_SHIFT]);
+      patch.cells = Object.fromEntries(
+        Object.entries(src.cells)
+          .map(([k, v]) => {
+            const time = valid.has(v.time) ? v.time : "";
+            return [k, { ...v, time }];
+          })
+          .filter(([, v]) => v.day || v.time)
+      );
+    }
+    setMeta(patch);
+    logAudit(
+      "copy_schedule",
+      `Copied ${["subjects", "teachers", "cells"].filter((k) => copyOpts[k]).join(", ")} from ${src.className || "a schedule"} into ${data.className || "current schedule"}`
+    );
+    setCopyFrom(false);
+    setCopySrc("");
+    showToast(`Copied from ${src.className || "schedule"} into ${data.className || "this schedule"}`);
+  };
 
   return (
     <div className="animate-fade-up">
@@ -497,9 +694,16 @@ export default function Schedule() {
             </label>
             <HalfSelect
               h9
+              searchable
               style={{ minWidth: 220 }}
               value={state.activeId}
-              options={schedules.map((s) => ({ value: s.id, label: s.className || "Untitled" }))}
+              options={[...schedules]
+                .sort(
+                  (a, b) =>
+                    (a.classId ? 0 : 1) - (b.classId ? 0 : 1) ||
+                    a.className.localeCompare(b.className)
+                )
+                .map((s) => ({ value: s.id, label: s.className || "Untitled" }))}
               onChange={(id) => switchSchedule(id)}
             />
           </div>
@@ -507,8 +711,15 @@ export default function Schedule() {
             <button onClick={addSchedule} className="btn btn-outline h-9 px-3 text-sm gap-1.5" title="Add new schedule — keeps existing ones">
               <Plus size={15} /> Add schedule
             </button>
-            <button onClick={() => duplicateSchedule(data.id)} className="btn btn-outline h-9 px-3 text-sm gap-1.5" title="Duplicate current schedule">
-              <Copy size={15} /> Duplicate
+            <button
+              onClick={() => {
+                setCopyFrom(true);
+                setCopySrc("");
+              }}
+              className="btn btn-outline h-9 px-3 text-sm gap-1.5"
+              title="Copy subjects, teachers and lesson times from an existing schedule — no retyping"
+            >
+              <Copy size={15} /> Copy from…
             </button>
             <button onClick={() => removeSchedule(data.id)} className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500" title="Remove current schedule">
               <Trash2 size={15} /> Delete
@@ -520,12 +731,40 @@ export default function Schedule() {
         <div className="grid grid-cols-2 gap-x-4 gap-y-4 px-5 py-4 border-b md:grid-cols-3 xl:grid-cols-7" style={{ borderColor: "var(--border)" }}>
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>Class</label>
-            <input
-              value={data.className}
-              onChange={(e) => setMeta({ className: e.target.value })}
-              className="input h-9 text-sm !w-full rounded-md"
-              placeholder="e.g., IT09A1"
-            />
+            <div className="relative">
+              <input
+                value={data.className}
+                readOnly={!!data.classId}
+                list="schedule-class-datalist"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const hit = classes.find((c) => c.name === v);
+                  // picking a class makes the whole term/major/field/shift follow
+                  setMeta({
+                    className: v,
+                    ...(hit ? { classId: hit.id, ...fromClass(hit) } : {}),
+                  });
+                }}
+                className="input h-9 text-sm !w-full rounded-md"
+                placeholder="e.g., IT09A1"
+                style={data.classId ? { cursor: "default", color: "var(--text-2)" } : undefined}
+              />
+              {data.classId && (
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold"
+                  style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
+                  <Link2 size={10} /> linked to class
+                </span>
+              )}
+            </div>
+            <datalist id="schedule-class-datalist">
+              {classes.map((c) => (
+                <option key={c.id} value={c.name} />
+              ))}
+            </datalist>
+            <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+              {classes.length} class{classes.length === 1 ? "" : "es"} in portal
+              {data.classId ? " · name, term, major, field & shift follow the class" : ""}
+            </span>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -535,7 +774,7 @@ export default function Schedule() {
               style={{ minWidth: 0 }}
               value={data.semester}
               options={SEMESTERS.map((s) => ({ value: s, label: `Semester ${s}` }))}
-              onChange={(v) => setMeta({ semester: v })}
+              onChange={(v) => setLinkedField("semester", v)}
             />
           </div>
 
@@ -546,7 +785,7 @@ export default function Schedule() {
               style={{ minWidth: 0 }}
               value={data.year}
               options={YEARS.map((y) => ({ value: y, label: `Year ${y}` }))}
-              onChange={(v) => setMeta({ year: v })}
+              onChange={(v) => setLinkedField("year", v)}
             />
           </div>
 
@@ -556,8 +795,8 @@ export default function Schedule() {
               h9
               style={{ minWidth: 0 }}
               value={data.major}
-              options={MAJORS.map((m) => ({ value: m, label: m }))}
-              onChange={(v) => setMeta({ major: v })}
+              options={majorChoices.map((m) => ({ value: m, label: m }))}
+              onChange={(v) => setLinkedField("major", v)}
             />
           </div>
 
@@ -567,8 +806,8 @@ export default function Schedule() {
               h9
               style={{ minWidth: 0 }}
               value={data.field || ""}
-              options={FIELDS.map((f) => ({ value: f, label: f }))}
-              onChange={(v) => setMeta({ field: v })}
+              options={fieldChoices.map((f) => ({ value: f, label: f }))}
+              onChange={(v) => setLinkedField("field", v)}
             />
           </div>
 
@@ -595,7 +834,7 @@ export default function Schedule() {
               style={{ minWidth: 0 }}
               value={data.shift}
               options={Object.keys(SHIFTS).map((k) => ({ value: k, label: SHIFTS[k].label }))}
-              onChange={(v) => setMeta({ shift: v })}
+              onChange={(v) => setLinkedField("shift", v)}
             />
             <span className="text-[11px] tabular-nums" style={{ color: "var(--text-3)" }}>
               {SHIFTS[data.shift].label}{" "}
@@ -613,6 +852,13 @@ export default function Schedule() {
           <button onClick={addTeacher} className="btn btn-outline h-9 px-3 text-sm gap-1.5">
             <Plus size={14} /> Add row
           </button>
+          <span
+            className="flex h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold tabular-nums"
+            style={{ borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-2)" }}
+            title="Current table size"
+          >
+            {data.subjects.length} columns · {data.teachers.length} rows
+          </span>
           <span className="ml-auto" />
           <button onClick={() => setDlSel(true)} className="btn btn-outline h-9 px-3 text-sm gap-1.5">
             <FileDown size={15} /> Export
@@ -817,6 +1063,118 @@ export default function Schedule() {
                 >
                   <FileDown size={15} /> PDF
                 </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* copy-picker — reuse another schedule's columns/rows/times */}
+      {copyFrom &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0" style={{ background: "rgba(0,0,0,0.45)" }} onClick={() => setCopyFrom(false)} />
+            <div className="relative card w-full max-w-2xl p-6 shadow-2xl animate-fade-up">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-sm font-bold" style={{ color: "var(--text)" }}>
+                  Copy from another schedule
+                </h3>
+                <button onClick={() => setCopyFrom(false)} className="btn btn-ghost h-8 w-8 p-0 rounded-lg" title="Close">
+                  <X size={15} />
+                </button>
+              </div>
+              <p className="text-xs" style={{ color: "var(--text-3)" }}>
+                Reuse subjects, teachers and lesson times — no retyping.
+              </p>
+
+              {/* copy from another schedule into this one */}
+              <div className="mt-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--text-3)" }}>
+                  Copy from another schedule into {data.className || "this schedule"}
+                </p>
+                {copySources.length === 0 ? (
+                  <p className="text-xs" style={{ color: "var(--text-3)" }}>
+                    No other schedules to copy from yet. Add another schedule first, then copy its subjects here.
+                  </p>
+                ) : (
+                  <>
+                    {/* search class */}
+                    <div className="relative mb-2.5">
+                      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+                      <input
+                        autoFocus
+                        value={copyQ}
+                        onChange={(e) => setCopyQ(e.target.value)}
+                        placeholder="Search class…"
+                        className="w-full rounded-xl border py-2.5 pl-10 pr-3 text-sm outline-none transition-colors focus:border-[var(--primary)]"
+                        style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }}
+                      />
+                    </div>
+
+                    {/* source list — single select */}
+                    <div className="max-h-80 overflow-y-auto thin-scroll mb-2 space-y-1.5">
+                      {copyList.length === 0 ? (
+                        <p className="px-2 py-4 text-xs" style={{ color: "var(--text-3)" }}>No class matches “{copyQ}”</p>
+                      ) : (
+                        copyList.map((s) => {
+                          const active = copySrc === s.id;
+                          return (
+                            <button
+                              key={s.id}
+                              onClick={() => setCopySrc(s.id)}
+                              className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-3 text-left text-sm transition-colors"
+                              style={{
+                                background: active ? "var(--primary-soft)" : "transparent",
+                                border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
+                                color: active ? "var(--primary-strong)" : "var(--text)",
+                                fontWeight: active ? 700 : 500,
+                              }}
+                            >
+                              <span className="truncate">{s.className || "Untitled"}</span>
+                              <span className="ml-auto text-[11px] font-medium shrink-0 tabular-nums" style={{ color: active ? "var(--primary-strong)" : "var(--text-3)" }}>
+                                {s.subjects.length}s · {s.teachers.length}t · {(SHIFTS[s.shift] || SHIFTS[DEFAULT_SHIFT]).label}
+                              </span>
+                              {active && <Check size={14} className="shrink-0" />}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* what to copy */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2" style={{ color: "var(--text-2)" }}>
+                      {[
+                        { k: "subjects", label: "Subjects (columns)" },
+                        { k: "teachers", label: "Teachers (rows)" },
+                        { k: "cells", label: "Lesson times" },
+                      ].map((o) => (
+                        <label key={o.k} className="flex items-center gap-2 text-xs font-semibold" style={{ color: "var(--text-2)" }}>
+                          <input
+                            type="checkbox"
+                            checked={copyOpts[o.k]}
+                            onChange={(e) => setCopyOpts((c) => ({ ...c, [o.k]: e.target.checked }))}
+                            className="accent-[var(--primary)]"
+                          />
+                          {o.label}
+                        </label>
+                      ))}
+                    </div>
+
+                    {/* footer */}
+                    <div className="flex justify-end gap-2 mt-4">
+                      <button className="btn btn-ghost h-9 px-4 text-sm" onClick={() => setCopyFrom(false)}>
+                        Cancel
+                      </button>
+                      <button
+                        onClick={applyCopy}
+                        disabled={!copySrc}
+                        className="btn btn-primary h-9 px-4 text-sm gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Copy size={14} /> Copy into {data.className || "this schedule"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>,
