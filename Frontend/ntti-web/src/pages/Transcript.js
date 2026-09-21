@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FileText,
@@ -16,6 +16,7 @@ import clsx from "clsx";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
+import { useDropPos, DropdownPanel } from "../components/Dropdown";
 import TranscriptImportModal from "../components/TranscriptImportModal";
 import { ACADEMIC_LEVELS, levelMeta, majorName, prettyDate, computeRate, todayISO, programYears, maxLevelForMajor } from "../data/seed";
 
@@ -92,91 +93,100 @@ const esc = (s) =>
 
 /* ── student picker (searchable) ─────────────────────────── */
 function StudentSelect({ students, value, onChange, placeholder = "Select a student" }) {
+  const ref = useRef(null);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const current = students.find((s) => s.id === value);
   const label = (s) => (s.khmerName ? `${s.khmerName} · ${s.firstName} ${s.lastName}` : `${s.firstName} ${s.lastName}`);
+
+  const close = () => {
+    setOpen(false);
+    setQ("");
+  };
 
   const qq = q.trim().toLowerCase();
   const filtered = qq
     ? students.filter((s) => `${s.firstName} ${s.lastName} ${s.khmerName || ""} ${s.studentId || ""}`.toLowerCase().includes(qq))
     : students;
 
+  const { pos, menuRef } = useDropPos(ref, open, {
+    rows: Math.min(filtered.length + 1, 7),
+    rowHeight: 46,
+    extraHeight: 62,
+    minWidth: 260,
+    maxWidth: 360,
+    maxHeight: 380,
+    onClose: close,
+  });
+
   const pick = (id) => {
     onChange(id);
-    setOpen(false);
-    setQ("");
+    close();
   };
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0 max-w-full">
       <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-10 w-full min-w-[210px] max-w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-medium transition"
+        ref={ref}
+        type="button"
+        onClick={() => (open ? close() : setOpen(true))}
+        className="flex h-10 w-full max-w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-medium transition"
         style={{
+          minWidth: "min(210px, 100%)",
           background: "var(--surface)",
           borderColor: open ? "var(--primary)" : "var(--border)",
           color: "var(--text)",
           boxShadow: open ? "0 0 0 3px var(--ring)" : "none",
         }}
       >
-        <span className="flex items-center gap-2 truncate">
+        <span className="flex min-w-0 items-center gap-2">
           <User2 className="h-4 w-4 shrink-0" style={{ color: "var(--primary-strong)" }} />
-          {current ? label(current) : placeholder}
+          <span className="truncate">{current ? label(current) : placeholder}</span>
         </span>
         <ChevronDown className="h-4 w-4 shrink-0" style={{ color: "var(--text-3)" }} />
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className="absolute left-0 top-[calc(100%+6px)] z-50 w-[min(340px,calc(100vw-20px))] rounded-2xl border p-2 shadow-lg animate-fade-up"
-            style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-          >
-            <div className="relative mb-1.5">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
-              <input
-                autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && filtered[0]) pick(filtered[0].id);
-                  if (e.key === "Escape") {
-                    setOpen(false);
-                    setQ("");
-                  }
+
+      <DropdownPanel pos={pos} menuRef={menuRef} onClose={close} className="p-2">
+        <div className="relative mb-1.5 shrink-0">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && filtered[0]) pick(filtered[0].id);
+              if (e.key === "Escape") close();
+            }}
+            placeholder="Search student…"
+            className="w-full rounded-lg border py-2 pl-8 pr-3 text-sm outline-none transition-colors focus:border-[var(--primary)]"
+            style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }}
+          />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto thin-scroll">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-3 text-xs" style={{ color: "var(--text-3)" }}>No student matches “{q}”</p>
+          ) : (
+            filtered.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => pick(s.id)}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--surface-2)]"
+                style={{
+                  color: s.id === value ? "var(--primary-strong)" : "var(--text)",
+                  fontWeight: s.id === value ? 700 : 500,
+                  background: s.id === value ? "var(--primary-soft)" : "transparent",
                 }}
-                placeholder="Search student…"
-                className="w-full rounded-lg border py-2 pl-8 pr-3 text-sm outline-none transition-colors focus:border-[var(--primary)]"
-                style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }}
-              />
-            </div>
-            <div className="max-h-72 overflow-y-auto thin-scroll">
-              {filtered.length === 0 ? (
-                <p className="px-3 py-3 text-xs" style={{ color: "var(--text-3)" }}>No student matches “{q}”</p>
-              ) : (
-                filtered.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => pick(s.id)}
-                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--surface-2)]"
-                    style={{
-                      color: s.id === value ? "var(--primary-strong)" : "var(--text)",
-                      fontWeight: s.id === value ? 700 : 500,
-                      background: s.id === value ? "var(--primary-soft)" : "transparent",
-                    }}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate">{label(s)}</span>
-                      <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>{s.studentId}</span>
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </>
-      )}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate">{label(s)}</span>
+                  <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>{s.studentId}</span>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </DropdownPanel>
     </div>
   );
 }
@@ -587,18 +597,22 @@ export default function Transcript() {
               >
                 <Upload size={15} /> Import scores
               </button>
-              <ClassSelect
-                value={classId}
-                onChange={setClassId}
-                placeholder="Select a class"
-                minWidth={200}
-                options={classes.map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                  sub: c.field || "",
-                }))}
-              />
-              <StudentSelect students={roster} value={studentId} onChange={setStudentId} />
+              <div className="min-w-0 flex-1 basis-[200px] sm:flex-none sm:basis-auto">
+                <ClassSelect
+                  value={classId}
+                  onChange={setClassId}
+                  placeholder="Select a class"
+                  minWidth={200}
+                  options={classes.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    sub: c.field || "",
+                  }))}
+                />
+              </div>
+              <div className="min-w-0 flex-1 basis-[210px] sm:flex-none sm:basis-auto">
+                <StudentSelect students={roster} value={studentId} onChange={setStudentId} />
+              </div>
             </>
           }
         />

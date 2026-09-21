@@ -253,16 +253,18 @@ export default function Scores() {
                 <FileSpreadsheet size={15} /> Import Excel
               </button>
             )}
-            <ClassSelect
-              value={classId}
-              onChange={setClassId}
-              minWidth={200}
-              options={scoredClasses.map((c) => ({
-                value: c.id,
-                label: c.name,
-                sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
-              }))}
-            />
+            <div className="min-w-0 flex-1 basis-[200px] sm:flex-none sm:basis-auto">
+              <ClassSelect
+                value={classId}
+                onChange={setClassId}
+                minWidth={200}
+                options={scoredClasses.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                  sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
+                }))}
+              />
+            </div>
           </>
         }
       />

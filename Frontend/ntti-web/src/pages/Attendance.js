@@ -10,6 +10,9 @@ import {
   Search,
   ChevronRight,
   ChevronDown,
+  ChevronsDown,
+  ChevronsRight,
+  Wand2,
   Check,
   X,
   Trash2,
@@ -23,6 +26,7 @@ import { majorName, shiftRange, weekKeyOf, lastNWeeks, todayISO } from "../data/
 import { StudentAvatar } from "../components/Badge";
 import StudentFormModal from "../components/StudentFormModal";
 import StudentAttendanceModal from "../components/StudentAttendanceModal";
+import { useDropPos } from "../components/Dropdown";
 
 /* ── weekly statuses (Excel tick letters) ────────────────── */
 const WEEK_STATUS = {
@@ -32,13 +36,17 @@ const WEEK_STATUS = {
   leave: { label: "Permission", short: "PE", color: "var(--info)", soft: "var(--info-soft)" },
 };
 
-const WEEK_OPTIONS = [
-  { value: "", label: "Not marked", color: "", soft: "", short: "" },
-  { value: "present", label: "Present", color: "var(--success)", soft: "var(--success-soft)", short: "P" },
-  { value: "late", label: "Late", color: "var(--warning)", soft: "var(--warning-soft)", short: "L" },
-  { value: "absent", label: "Absent", color: "var(--danger)", soft: "var(--danger-soft)", short: "A" },
-  { value: "leave", label: "Permission", color: "var(--info)", soft: "var(--info-soft)", short: "PE" },
+/* ── the marking toolbar: pick a tool, then click cells ──
+   Order matters: this is also the keyboard-shortcut order (1..4, then 0). */
+const MARK_TOOLS = [
+  { value: "present", label: "Present", short: "P", hint: "1", color: "var(--success)", soft: "var(--success-soft)" },
+  { value: "late", label: "Late", short: "L", hint: "2", color: "var(--warning)", soft: "var(--warning-soft)" },
+  { value: "absent", label: "Absent", short: "A", hint: "3", color: "var(--danger)", soft: "var(--danger-soft)" },
+  { value: "leave", label: "Permission", short: "PE", hint: "4", color: "var(--info)", soft: "var(--info-soft)" },
+  { value: "", label: "Erase", short: "–", hint: "0", color: "var(--text-3)", soft: "var(--surface-2)" },
 ];
+
+const toolOf = (v) => MARK_TOOLS.find((t) => t.value === v) || MARK_TOOLS[0];
 
 const rateTone = (r) => (r >= 85 ? "var(--success)" : r >= 70 ? "var(--warning)" : "var(--danger)");
 
@@ -207,134 +215,6 @@ function doExport(sheets, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/* ── portaled, flip-aware dropdown positioning ─────────── */
-function useDropPos(ref, open, { rows = 5, minWidth = 160, maxHeight = 280 } = {}) {
-  const menuRef = useRef(null);
-  const [pos, setPos] = useState(null);
-  useEffect(() => {
-    if (!open) {
-      setPos(null);
-      return;
-    }
-    const measure = () => {
-      const r = ref.current?.getBoundingClientRect();
-      if (!r) return;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const GAP = 4;
-      const MARGIN = 8;
-      const est = Math.min(maxHeight, rows * 34 + 12);
-      const spaceBelow = vh - r.bottom;
-      const spaceAbove = r.top;
-      const up = spaceBelow < est + GAP + MARGIN && spaceAbove > spaceBelow;
-      const width = Math.max(r.width, minWidth);
-      let left = r.left;
-      if (left + width > vw - MARGIN) left = Math.max(MARGIN, vw - MARGIN - width);
-      const avail = (up ? spaceAbove : spaceBelow) - GAP - MARGIN;
-      setPos({
-        left,
-        minWidth: Math.max(r.width, minWidth),
-        up,
-        maxHeight: Math.max(120, Math.min(est, avail)),
-        ...(up ? { bottom: vh - r.top + GAP } : { top: r.bottom + GAP }),
-      });
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") setPos(null);
-    };
-    const onScroll = (e) => {
-      const t = e.target;
-      if (menuRef.current && t instanceof Node && menuRef.current.contains(t)) return;
-      setPos(null);
-    };
-    const onResize = () => setPos(null);
-    measure();
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onResize);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, rows, minWidth, maxHeight]);
-  return { pos, menuRef };
-}
-
-/* ── per-week status dropdown (Excel-style data picker) ── */
-function WeekCellSelect({ status, w, weekNo, onPick, heading }) {
-  const ref = useRef(null);
-  const [open, setOpen] = useState(false);
-  const { pos, menuRef } = useDropPos(ref, open, { rows: 6, minWidth: 176 });
-  const meta = WEEK_STATUS[status];
-
-  return (
-    <div className="relative inline-block align-middle">
-      <button
-        ref={ref}
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="h-8 min-w-[88px] max-w-full rounded-md border px-1.5 transition-all duration-150 flex items-center justify-center gap-1 select-none"
-        style={
-          meta
-            ? { background: meta.soft, color: meta.color, borderColor: "transparent", boxShadow: "0 4px 10px -6px var(--text-2)" }
-            : { borderStyle: "dashed", borderColor: "var(--border)", background: "var(--surface-1)", color: "var(--text-3)" }
-        }
-        title={meta ? `${meta.label} — ${w.range}` : `Not marked — ${w.range}`}
-      >
-        <span className="text-[10px] font-bold shrink-0">{meta ? meta.short : "·"}</span>
-        <span className="text-[10px] font-medium truncate">{meta ? meta.label : "None"}</span>
-        <ChevronDown size={10} className="shrink-0 opacity-70" />
-      </button>
-
-      {open &&
-        pos &&
-        createPortal(
-          <>
-            <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
-            <div
-              ref={menuRef}
-              className={`fixed z-50 card p-1.5 shadow-lg ${pos.up ? "animate-fade-down" : "animate-fade-up"}`}
-              style={{ left: pos.left, minWidth: pos.minWidth, maxHeight: pos.maxHeight, top: pos.top, bottom: pos.bottom }}
-            >
-              <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                {heading || `W${weekNo} · ${w.range}`}
-              </div>
-              {WEEK_OPTIONS.map((o) => {
-                const active = status === o.value;
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => {
-                      onPick(o.value);
-                      setOpen(false);
-                    }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--surface-2)] ${active ? "" : ""}`}
-                    style={active ? { background: "var(--primary-soft)", color: "var(--primary-strong)" } : { color: "var(--text)" }}
-                  >
-                    <span
-                      className="flex h-4 w-4 items-center justify-center rounded-full shrink-0"
-                      style={{
-                        background: o.color || "transparent",
-                        border: `1px solid ${o.color || "var(--border)"}`,
-                      }}
-                    >
-                      {o.color ? <span className="h-1.5 w-1.5 rounded-full" style={{ background: o.color }} /> : null}
-                    </span>
-                    <span className="truncate font-medium">{o.label}</span>
-                    {active ? <Check size={13} className="ml-auto shrink-0" style={{ color: "var(--primary-strong)" }} /> : null}
-                  </button>
-                );
-              })}
-            </div>
-          </>,
-          document.body
-        )}
-    </div>
-  );
-}
-
 /* ── clickable class label → info popover ──────────────── */
 function ClassLabel({ cls, count, className, style, children }) {
   const ref = useRef(null);
@@ -383,7 +263,7 @@ function ClassLabel({ cls, count, className, style, children }) {
             <div
               ref={menuRef}
               className={`fixed z-50 card p-3 shadow-lg ${pos.up ? "animate-fade-down" : "animate-fade-up"}`}
-              style={{ left: pos.left, minWidth: pos.minWidth, maxHeight: pos.maxHeight, top: pos.top, bottom: pos.bottom }}
+              style={{ left: pos.left, width: pos.width, maxHeight: pos.maxHeight, top: pos.top, bottom: pos.bottom }}
             >
               <div className="flex items-center justify-between gap-3 mb-2">
                 <span className="text-sm font-bold truncate" style={{ color: "var(--text)" }}>{cls.name}</span>
@@ -591,12 +471,39 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
 }
 
 /* ── one class = one Excel-style sheet ─────────────────── */
-function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, onRemoveWeek, subjects, subject, onSelectSubject, dailyOf, onPick, onReset, onSave, dirtySubjects = [], onStudentClick }) {
+/* ── the marking sheet ───────────────────────────────────
+   Marking is a two-step "pick a pen, then click" model instead of a
+   dropdown per cell: choose a tool in the toolbar once, then every cell
+   is a single click (or a drag across several). Clicking a cell that
+   already holds the active tool's status clears it, so one control both
+   sets and unsets. */
+function ClassGrid({
+  cls,
+  students,
+  weeks,
+  focusKey,
+  onSelectWeek,
+  onAddWeek,
+  onRemoveWeek,
+  subjects,
+  subject,
+  onSelectSubject,
+  dailyOf,
+  onPick,
+  onPickMany,
+  onReset,
+  onSave,
+  dirtySubjects = [],
+  onStudentClick,
+  tool,
+  onToolChange,
+}) {
   const week = weeks.find((w) => w.key === focusKey) || weeks[weeks.length - 1] || null;
   const weekNo = week ? weeks.findIndex((w) => w.key === week.key) + 1 : 0;
   const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
   const activeSubj = subjects.find((x) => x.key === subject) || subjects[0];
   const hasRealSubjects = subjects.length > 1 || (subjects.length === 1 && subjects[0].key !== "general");
+  const activeTool = toolOf(tool);
 
   const statusOf = (s, date) => ((dailyOf[s.id] || {})[subject] || {})[date] || "";
 
@@ -611,55 +518,154 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
     ? Math.round(students.reduce((acc, s) => acc + rateFor(s), 0) / students.length)
     : 0;
 
-  // mark a day — nothing saves automatically. Every subject you touch is kept
-  // as a draft and written in one shot when you press "Save all subjects".
-  const handlePick = (s, day, status) => {
-    onPick(s, day.date, status);
+  /* how the week currently stands, for the summary chips */
+  const tally = useMemo(() => {
+    const out = { present: 0, late: 0, absent: 0, leave: 0, blank: 0 };
+    students.forEach((s) => {
+      days.forEach((d) => {
+        const st = statusOf(s, d.date);
+        if (st && out[st] !== undefined) out[st] += 1;
+        else out.blank += 1;
+      });
+    });
+    return out;
+  }, [students, days, dailyOf, subject]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const countsFor = (date) => {
+    const out = { present: 0, late: 0, absent: 0, leave: 0, blank: 0 };
+    students.forEach((s) => {
+      const st = statusOf(s, date);
+      if (st && out[st] !== undefined) out[st] += 1;
+      else out.blank += 1;
+    });
+    return out;
   };
 
+  /* drag-to-paint: mousedown starts a stroke, mouseenter continues it.
+     A plain click (no drag) toggles; dragging always paints the tool. */
+  const painting = useRef(false);
+  useEffect(() => {
+    const stop = () => {
+      painting.current = false;
+    };
+    window.addEventListener("mouseup", stop);
+    window.addEventListener("touchend", stop);
+    window.addEventListener("blur", stop);
+    return () => {
+      window.removeEventListener("mouseup", stop);
+      window.removeEventListener("touchend", stop);
+      window.removeEventListener("blur", stop);
+    };
+  }, []);
+
+  const startCell = (s, d) => {
+    painting.current = true;
+    // click on a cell that already has this status → clear it
+    onPick(s, d.date, statusOf(s, d.date) === tool ? "" : tool);
+  };
+
+  const dragCell = (s, d) => {
+    if (!painting.current) return;
+    if (statusOf(s, d.date) !== tool) onPick(s, d.date, tool);
+  };
+
+  /* bulk fills — all built on the active tool so there is only ever one
+     thing to understand: whatever the toolbar says is what gets written */
+  const fillColumn = (d) =>
+    onPickMany(students.map((s) => ({ student: s, date: d.date, status: tool })));
+
+  const fillRow = (s) => onPickMany(days.map((d) => ({ student: s, date: d.date, status: tool })));
+
+  const fillBlanks = () => {
+    const cells = [];
+    students.forEach((s) =>
+      days.forEach((d) => {
+        if (!statusOf(s, d.date)) cells.push({ student: s, date: d.date, status: tool });
+      })
+    );
+    if (cells.length) onPickMany(cells);
+  };
+
+  const stepLabel = (n, text) => (
+    <span className="mr-1 flex shrink-0 items-center gap-1.5">
+      <span
+        className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-extrabold"
+        style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}
+      >
+        {n}
+      </span>
+      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+        {text}
+      </span>
+    </span>
+  );
+
   return (
-    <div className="overflow-hidden rounded-2xl border shadow-sm" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-      {/* sheet header — h1 (class name) + one labeled h2 row per field */}
+    <div
+      className="overflow-hidden rounded-2xl border shadow-sm"
+      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+    >
+      {/* ── sheet header: who, when, and how the week stands ── */}
       <div className="px-5 py-4" style={{ background: "var(--surface-1)" }}>
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full shrink-0" style={{ background: "var(--primary)" }} />
-              <ClassLabel cls={cls} count={students.length} className="flex items-center gap-1.5 min-w-0 cursor-pointer group">
-                <h2 className="text-lg font-bold truncate transition-colors group-hover:text-[var(--primary-strong)]" style={{ color: "var(--text)" }}>
+              <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: "var(--primary)" }} />
+              <ClassLabel
+                cls={cls}
+                count={students.length}
+                className="group flex min-w-0 cursor-pointer items-center gap-1.5"
+              >
+                <h2
+                  className="truncate text-lg font-bold transition-colors group-hover:text-[var(--primary-strong)]"
+                  style={{ color: "var(--text)" }}
+                >
                   {cls.name}
                 </h2>
               </ClassLabel>
             </div>
-            <p className="text-[11px] mt-1" style={{ color: "var(--text-3)" }}>
-              {students.length} students · {week ? `W${weekNo} · ${week.range}` : "no week selected"} · {avgRate}% average
-              {hasRealSubjects ? <> · <b style={{ color: "var(--text-2)" }}>{subjectLabelOf(activeSubj)}</b></> : null}
+            <p className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
+              {students.length} students · {week ? `Week ${weekNo} · ${week.range}` : "no week selected"} · {avgRate}%
+              average
+              {hasRealSubjects ? (
+                <>
+                  {" "}
+                  · <b style={{ color: "var(--text-2)" }}>{subjectLabelOf(activeSubj)}</b>
+                </>
+              ) : null}
+              {" · "}
+              <span style={{ color: "var(--text-3)" }}>click the class name for full details</span>
             </p>
-            <div className="mt-3 text-[11px] w-full">
-              <div className="grid grid-cols-[96px_1fr] gap-x-4 gap-y-1.5">
-                {[
-                  ["Shift", cls.shift || "—"],
-                  ["Time", cls.shift ? shiftRange(cls.shift) || "—" : "—"],
-                  ["Semester", cls.semester || "—"],
-                  ["Year", cls.year || "—"],
-                  ["Major", majorName(cls.major) || "—"],
-                  ["Field", cls.field || "—"],
-                  ["Degree", cls.degree || "—"],
-                ].map(([k, v]) => (
-                  <Fragment key={k}>
-                    <span className="font-bold uppercase tracking-wider truncate" style={{ color: "var(--text-3)" }}>
-                      {k}:
-                    </span>
-                    <span className="font-medium break-words" style={{ color: "var(--text-2)" }}>{v}</span>
-                  </Fragment>
+
+            {/* at-a-glance tally for the week on screen */}
+            {week && students.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                {MARK_TOOLS.filter((t) => t.value).map((t) => (
+                  <span
+                    key={t.value}
+                    className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold"
+                    style={{ background: t.soft, color: t.color }}
+                    title={`${tally[t.value]} ${t.label.toLowerCase()} marks this week`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.color }} />
+                    {t.label} <b className="tabular-nums">{tally[t.value]}</b>
+                  </span>
                 ))}
+                <span
+                  className="flex items-center gap-1.5 rounded-lg border border-dashed px-2 py-1 text-[11px] font-semibold"
+                  style={{ borderColor: "var(--border)", color: "var(--text-3)" }}
+                  title="Cells still waiting to be marked for this subject"
+                >
+                  Not marked <b className="tabular-nums">{tally.blank}</b>
+                </span>
               </div>
-            </div>
+            )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
+
+          <div className="flex shrink-0 items-center gap-1.5">
             {dirtySubjects.length > 0 && (
               <span
-                className="flex h-8 items-center rounded-lg px-2 text-[10px] font-bold"
+                className="flex h-9 items-center rounded-lg px-2.5 text-[11px] font-bold"
                 style={{ background: "var(--warning-soft)", color: "var(--text-2)" }}
                 title={`Unsaved: ${dirtySubjects.map((s) => s.name).join(", ")}`}
               >
@@ -668,28 +674,32 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
             )}
             <button
               onClick={onReset}
-              className="flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-medium transition-colors bg-[var(--surface-2)] hover:bg-[var(--danger-soft)]"
+              className="flex h-9 items-center gap-1.5 rounded-lg border bg-[var(--surface-2)] px-3 text-xs font-medium transition-colors hover:bg-[var(--danger-soft)]"
               title="Clear every subject's marks for this week — nothing is written until you Save"
               style={{ borderColor: "var(--border)", color: "var(--danger)" }}
             >
-              <RotateCcw size={13} /> Reset week
+              <RotateCcw size={14} /> Reset week
             </button>
             <button
               onClick={onSave}
               disabled={dirtySubjects.length === 0}
-              className="flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold transition-colors bg-[var(--primary)] hover:bg-[var(--primary-strong)] text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[var(--primary-strong)] disabled:cursor-not-allowed disabled:opacity-50"
               title="Save the marked attendance for every subject in this class — one save for the whole sheet"
             >
-              <CheckCircle2 size={13} /> Save all subjects
+              <CheckCircle2 size={14} /> Save sheet
             </button>
           </div>
         </div>
       </div>
 
       {students.length === 0 ? (
-        <div className="px-5 py-6 flex flex-col items-center gap-2 text-center">
-          <span className="text-sm font-medium" style={{ color: "var(--text-2)" }}>No students in {cls.name} yet</span>
-          <span className="text-xs" style={{ color: "var(--text-3)" }}>Add students from the Students page.</span>
+        <div className="flex flex-col items-center gap-2 px-5 py-6 text-center">
+          <span className="text-sm font-medium" style={{ color: "var(--text-2)" }}>
+            No students in {cls.name} yet
+          </span>
+          <span className="text-xs" style={{ color: "var(--text-3)" }}>
+            Add students from the Students page.
+          </span>
         </div>
       ) : !week ? (
         <div className="px-5 py-6 text-center text-sm" style={{ color: "var(--text-3)" }}>
@@ -697,18 +707,15 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
         </div>
       ) : (
         <>
-          {/* subject/session bar — one class can meet several times a day
-              (e.g. Monday: Math, English, Khmer); pick which subject's
-              session you're taking attendance for before marking students.
-              Hidden for classes with no real timetable (just "General"). */}
+          {/* Step 1 — which session. One class can meet several times a day
+              (Monday: Math, English, Khmer), so each subject keeps its own
+              attendance. Hidden when the class has no timetable yet. */}
           {hasRealSubjects && (
             <div
-              className="flex items-center gap-1.5 overflow-x-auto thin-scroll px-5 py-2 border-b"
+              className="flex items-center gap-1.5 overflow-x-auto thin-scroll border-b px-5 py-2"
               style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
             >
-              <span className="shrink-0 mr-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                Subject
-              </span>
+              {stepLabel(1, "Subject")}
               {subjects.map((sub) => {
                 const active = sub.key === subject;
                 return (
@@ -716,18 +723,23 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
                     key={sub.key}
                     type="button"
                     onClick={() => onSelectSubject(sub.key)}
-                    className="shrink-0 flex flex-col items-start rounded-lg px-2.5 py-1 text-left transition-colors"
+                    className="flex shrink-0 flex-col items-start rounded-lg px-2.5 py-1 text-left transition-colors"
                     style={
                       active
                         ? { background: "var(--primary)", color: "#fff" }
                         : { background: "var(--surface-2)", color: "var(--text-2)" }
                     }
-                    title={sub.day ? `Meets ${sub.day}${sub.time ? ` · ${sub.time}` : ""}${sub.teacher ? ` · ${sub.teacher}` : ""}` : sub.name}
+                    title={
+                      sub.day
+                        ? `Meets ${sub.day}${sub.time ? ` · ${sub.time}` : ""}${sub.teacher ? ` · ${sub.teacher}` : ""}`
+                        : sub.name
+                    }
                   >
                     <span className="text-[11px] font-bold leading-tight">{sub.name}</span>
                     {sub.day ? (
                       <span className="text-[9px] leading-tight" style={{ opacity: active ? 0.85 : 0.7 }}>
-                        {sub.day}{sub.time ? ` · ${sub.time}` : ""}
+                        {sub.day}
+                        {sub.time ? ` · ${sub.time}` : ""}
                       </span>
                     ) : null}
                   </button>
@@ -736,14 +748,12 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
             </div>
           )}
 
-          {/* horizontal week bar — pick which week to mark */}
+          {/* Step 2 — which week */}
           <div
-            className="flex items-center gap-1.5 overflow-x-auto thin-scroll px-5 py-2 border-b"
+            className="flex items-center gap-1.5 overflow-x-auto thin-scroll border-b px-5 py-2"
             style={{ borderColor: "var(--border)", background: "var(--surface)" }}
           >
-            <span className="shrink-0 mr-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-              Week
-            </span>
+            {stepLabel(hasRealSubjects ? 2 : 1, "Week")}
             {weeks.map((w, i) => {
               const active = w.key === week.key;
               return (
@@ -766,7 +776,7 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
             <button
               type="button"
               onClick={onAddWeek}
-              className="shrink-0 flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
+              className="flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
               style={{ borderColor: "var(--border)", color: "var(--primary-strong)" }}
               title="Add a new week to this class only"
             >
@@ -776,7 +786,7 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
               type="button"
               onClick={() => onRemoveWeek(week.key)}
               disabled={weeks.length <= 1}
-              className="shrink-0 flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--danger-soft)] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
               style={{ borderColor: "var(--border)", color: "var(--danger)" }}
               title={`Delete week ${weekNo}${weeks.length <= 1 ? " — a sheet needs at least one week" : ""}`}
             >
@@ -784,91 +794,304 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
             </button>
           </div>
 
+          {/* Step 3 — the marking toolbar. Pick once, then click cells. */}
+          <div
+            className="border-b px-5 py-3"
+            style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {stepLabel(hasRealSubjects ? 3 : 2, "Mark with")}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {MARK_TOOLS.map((t) => {
+                  const active = t.value === tool;
+                  return (
+                    <button
+                      key={t.value || "erase"}
+                      type="button"
+                      onClick={() => onToolChange(t.value)}
+                      className="flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-bold transition-all"
+                      style={
+                        active
+                          ? {
+                              background: t.value ? t.color : "var(--surface-3)",
+                              borderColor: t.value ? t.color : "var(--text-3)",
+                              color: t.value ? "#fff" : "var(--text)",
+                              boxShadow: "0 6px 14px -8px var(--text-2)",
+                            }
+                          : { background: "var(--surface)", borderColor: "var(--border)", color: "var(--text-2)" }
+                      }
+                      title={`${t.label} — press ${t.hint}`}
+                      aria-pressed={active}
+                    >
+                      <span
+                        className="flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-extrabold"
+                        style={
+                          active
+                            ? { background: "rgba(255,255,255,.22)", color: "inherit" }
+                            : { background: t.soft, color: t.color }
+                        }
+                      >
+                        {t.short}
+                      </span>
+                      {t.label}
+                      <span className="text-[9px] font-semibold opacity-60">{t.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={fillBlanks}
+                  disabled={!tool}
+                  className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
+                  title={`Give every still-unmarked cell this week the "${activeTool.label}" status`}
+                >
+                  <Wand2 size={13} /> Fill empty cells
+                </button>
+              </div>
+            </div>
+
+            <p className="mt-2 text-[11px]" style={{ color: "var(--text-3)" }}>
+              Click a cell to mark it{" "}
+              <b style={{ color: activeTool.value ? activeTool.color : "var(--text-2)" }}>
+                {activeTool.value ? activeTool.label : "empty"}
+              </b>
+              . Hold and drag to mark a whole row or column at once. Click the same cell again to undo it. Keys{" "}
+              <b style={{ color: "var(--text-2)" }}>1–4</b> and <b style={{ color: "var(--text-2)" }}>0</b> switch tools.
+              Nothing is stored until you press <b style={{ color: "var(--text-2)" }}>Save sheet</b>.
+            </p>
+          </div>
+
           <div className="overflow-x-auto thin-scroll">
-            <table className="w-full text-sm" style={{ minWidth: 240 + days.length * 112 + 84, borderCollapse: "separate", borderSpacing: "0 8px" }}>
+            <table
+              className="w-full text-sm"
+              style={{ minWidth: 260 + days.length * 124 + 92, borderCollapse: "separate", borderSpacing: 0 }}
+            >
               <thead>
                 <tr>
                   <th
-                    className="sticky left-0 z-20 text-left px-4 py-2 text-[11px] font-bold uppercase tracking-wider"
-                    style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}
+                    className="sticky left-0 z-20 px-4 py-2 text-left text-[11px] font-bold uppercase tracking-wider"
+                    style={{
+                      background: "var(--surface)",
+                      color: "var(--text-3)",
+                      borderBottom: "1px solid var(--border)",
+                    }}
                   >
                     Student
                   </th>
                   {days.map((d) => {
                     const dShort = new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
                     const isSubjectDay = hasRealSubjects && activeSubj?.day && activeSubj.day === dShort;
+                    const c = countsFor(d.date);
                     return (
-                    <th
-                      key={d.date}
-                      className="text-center px-1 py-1.5 align-top"
-                      title={`${d.name} · ${d.short}${isSubjectDay ? ` · ${activeSubj.name} usually meets today` : ""}`}
-                      style={{
-                        borderBottom: "1px solid var(--border)",
-                        borderLeft: "1px solid var(--border)",
-                        background: isSubjectDay ? "var(--primary-soft)" : undefined,
-                      }}
-                    >
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span className="block text-center text-[10px] font-bold leading-tight" style={{ color: isSubjectDay ? "var(--primary-strong)" : "var(--text-2)" }}>
-                          {d.name}
-                        </span>
-                        <span className="block text-[9px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                          {d.short}
-                        </span>
-                      </div>
-                    </th>
+                      <th
+                        key={d.date}
+                        className="px-1.5 py-1.5 align-top"
+                        style={{
+                          borderBottom: "1px solid var(--border)",
+                          borderLeft: "1px solid var(--border)",
+                          background: isSubjectDay ? "var(--primary-soft)" : undefined,
+                        }}
+                      >
+                        <div className="flex flex-col items-stretch gap-1">
+                          <div className="flex flex-col items-center leading-tight">
+                            <span
+                              className="text-[11px] font-bold"
+                              style={{ color: isSubjectDay ? "var(--primary-strong)" : "var(--text-2)" }}
+                              title={
+                                isSubjectDay ? `${activeSubj.name} usually meets on ${d.name}` : `${d.name} · ${d.short}`
+                              }
+                            >
+                              {d.name}
+                            </span>
+                            <span className="text-[9px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                              {d.short}
+                              {c.blank > 0 ? ` · ${c.blank} left` : " · done"}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => fillColumn(d)}
+                            className="flex h-6 items-center justify-center gap-1 rounded-md border text-[10px] font-semibold transition-colors hover:bg-[var(--surface-2)]"
+                            style={{ borderColor: "var(--border)", color: "var(--text-3)" }}
+                            title={`Mark the whole class ${activeTool.label.toLowerCase()} on ${d.name}`}
+                          >
+                            <ChevronsDown size={11} /> All {activeTool.short || "–"}
+                          </button>
+                        </div>
+                      </th>
                     );
                   })}
                   <th
-                    className="text-right px-3 py-2 text-[11px] font-bold uppercase tracking-wider"
-                    style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}
+                    className="px-2 py-2 text-right text-[11px] font-bold uppercase tracking-wider"
+                    style={{
+                      background: "var(--surface)",
+                      color: "var(--text-3)",
+                      borderBottom: "1px solid var(--border)",
+                      borderLeft: "1px solid var(--border)",
+                    }}
                   >
                     Rate
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {students.map((s) => {
+                {students.map((s, rowIdx) => {
                   const rate = rateFor(s);
+                  const zebra = rowIdx % 2 === 1 ? "var(--surface-1)" : "var(--surface)";
                   return (
                     <tr key={s.id} className="group">
-                      <td className="sticky left-0 z-10 px-4 py-1.5" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
-                        <button
-                          type="button"
-                          onClick={() => onStudentClick?.(s)}
-                          className="flex items-center gap-2.5 min-w-0 text-left"
-                          title="Click to see this student's full attendance by day"
-                        >
-                          <StudentAvatar student={s} size="sm" />
-                          <div className="min-w-0">
-                            <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text)" }}>
-                              {s.khmerName || `${s.firstName} ${s.lastName}`}
-                            </p>
-                            {s.khmerName ? (
-                              <p className="text-[11px] leading-tight truncate" style={{ color: "var(--text-3)" }}>
-                                {s.firstName} {s.lastName}
+                      <td
+                        className="sticky left-0 z-10 px-4 py-1.5"
+                        style={{ background: zebra, borderBottom: "1px solid var(--border)" }}
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onStudentClick?.(s)}
+                            className="flex min-w-0 items-center gap-2.5 text-left"
+                            title="Open this student's full attendance history"
+                          >
+                            <StudentAvatar student={s} size="sm" />
+                            <div className="min-w-0">
+                              <p
+                                className="truncate text-[13px] font-semibold leading-tight"
+                                style={{ color: "var(--text)" }}
+                              >
+                                {s.khmerName || `${s.firstName} ${s.lastName}`}
                               </p>
-                            ) : null}
-                          </div>
-                        </button>
+                              {s.khmerName ? (
+                                <p className="truncate text-[11px] leading-tight" style={{ color: "var(--text-3)" }}>
+                                  {s.firstName} {s.lastName}
+                                </p>
+                              ) : null}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => fillRow(s)}
+                            className="ml-auto flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10px] font-semibold opacity-0 transition-opacity hover:bg-[var(--surface-2)] focus:opacity-100 group-hover:opacity-100"
+                            style={{ borderColor: "var(--border)", color: "var(--text-3)" }}
+                            title={`Mark the whole week ${activeTool.label.toLowerCase()} for this student`}
+                          >
+                            <ChevronsRight size={11} /> All {activeTool.short || "–"}
+                          </button>
+                        </div>
                       </td>
-                      {days.map((d) => (
-                        <td key={d.date} className="px-1 py-1 text-center" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
-                          <WeekCellSelect
-                            status={statusOf(s, d.date)}
-                            w={{ range: `${d.name} ${d.short}` }}
-                            heading={`${d.name} · ${d.short}`}
-                            onPick={(status) => handlePick(s, d, status)}
-                          />
-                        </td>
-                      ))}
-                      <td className="px-3 py-1.5 text-right" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
-                        <span className="text-xs font-bold tabular-nums" style={{ color: rateTone(rate) }}>{rate}%</span>
+
+                      {days.map((d) => {
+                        const st = statusOf(s, d.date);
+                        const meta = WEEK_STATUS[st];
+                        return (
+                          <td
+                            key={d.date}
+                            className="px-1.5 py-1"
+                            style={{
+                              background: zebra,
+                              borderBottom: "1px solid var(--border)",
+                              borderLeft: "1px solid var(--border)",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                startCell(s, d);
+                              }}
+                              onMouseEnter={() => dragCell(s, d)}
+                              className="flex h-9 w-full select-none items-center justify-center gap-1.5 rounded-lg border text-[11px] transition-all duration-100 hover:scale-[1.03]"
+                              style={
+                                meta
+                                  ? { background: meta.soft, color: meta.color, borderColor: "transparent", fontWeight: 700 }
+                                  : {
+                                      background: "transparent",
+                                      borderStyle: "dashed",
+                                      borderColor: "var(--border)",
+                                      color: "var(--text-3)",
+                                      fontWeight: 500,
+                                    }
+                              }
+                              aria-label={`${s.firstName} ${s.lastName} — ${d.name} ${d.short} — ${
+                                meta ? meta.label : "not marked"
+                              }`}
+                              title={
+                                meta
+                                  ? `${meta.label} — ${d.name} ${d.short}. Click to undo, or pick another tool first.`
+                                  : `Not marked — ${d.name} ${d.short}. Click to set ${activeTool.label}.`
+                              }
+                            >
+                              {meta ? (
+                                <>
+                                  <span className="text-[10px] font-extrabold">{meta.short}</span>
+                                  <span className="truncate">{meta.label}</span>
+                                </>
+                              ) : (
+                                <span className="opacity-70">+ mark</span>
+                              )}
+                            </button>
+                          </td>
+                        );
+                      })}
+
+                      <td
+                        className="px-2 py-1.5 text-right"
+                        style={{
+                          background: zebra,
+                          borderBottom: "1px solid var(--border)",
+                          borderLeft: "1px solid var(--border)",
+                        }}
+                      >
+                        <span className="text-xs font-bold tabular-nums" style={{ color: rateTone(rate) }}>
+                          {rate}%
+                        </span>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td
+                    className="sticky left-0 z-10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider"
+                    style={{ background: "var(--surface-1)", color: "var(--text-3)" }}
+                  >
+                    Day totals
+                  </td>
+                  {days.map((d) => {
+                    const c = countsFor(d.date);
+                    return (
+                      <td
+                        key={d.date}
+                        className="px-1.5 py-2 text-center"
+                        style={{ background: "var(--surface-1)", borderLeft: "1px solid var(--border)" }}
+                      >
+                        <div className="flex items-center justify-center gap-1 text-[10px] font-bold tabular-nums">
+                          {MARK_TOOLS.filter((t) => t.value && c[t.value] > 0).map((t) => (
+                            <span
+                              key={t.value}
+                              className="rounded px-1 py-0.5"
+                              style={{ background: t.soft, color: t.color }}
+                              title={`${c[t.value]} ${t.label.toLowerCase()}`}
+                            >
+                              {c[t.value]}
+                              {t.short}
+                            </span>
+                          ))}
+                          {c.blank > 0 && (
+                            <span style={{ color: "var(--text-3)" }} title={`${c.blank} not marked`}>
+                              {c.blank}·
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })}
+                  <td style={{ background: "var(--surface-1)", borderLeft: "1px solid var(--border)" }} />
+                </tr>
+              </tfoot>
             </table>
           </div>
         </>
@@ -1076,6 +1299,7 @@ export default function Attendance() {
   const [draft, setDraft] = useState({}); // staged cells: { studentId: { subjectKey: { dateISO: status } } } — saved only on Save
   const [subjectOf, setSubjectOf] = useState({}); // { classId: subjectKey } — which subject's session is being marked right now
   const [mode, setMode] = useState("mark"); // "mark" | "view"
+  const [tool, setTool] = useState("present"); // active marking tool — shared by every sheet on screen
   const [viewDay, setViewDay] = useState(null); // view scope: null = whole week, else a dateISO
   const [scheduleState] = useState(() => readScheduleState()); // read once; Schedule page owns live edits
   const [weekMap, setWeekMap] = useState(() => {
@@ -1263,6 +1487,37 @@ export default function Attendance() {
     });
   };
 
+  /* stage many cells in one write — used by the row / column / fill-empty
+     buttons so a 40-student column is a single state update, not 40 */
+  const pickMany = (cells, subject) => {
+    if (!cells.length) return;
+    setDraft((prev) => {
+      const next = { ...prev };
+      cells.forEach(({ student, date, status }) => {
+        const forStudent = { ...(next[student.id] || {}) };
+        forStudent[subject] = { ...(forStudent[subject] || {}), [date]: status };
+        next[student.id] = forStudent;
+      });
+      return next;
+    });
+  };
+
+  /* 1–4 pick a status, 0 erases — but never while the admin is typing */
+  useEffect(() => {
+    if (mode !== "mark") return undefined;
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
+      const hit = MARK_TOOLS.find((x) => x.hint === e.key);
+      if (!hit) return;
+      e.preventDefault();
+      setTool(hit.value);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode]);
+
   const resetSheet = (clsId) => {
     const list = roster.filter((s) => s.className === clsId);
     const ws = weeksOf[clsId] || [];
@@ -1440,7 +1695,7 @@ export default function Attendance() {
     <div>
       <PageHeader
         title="Attendance"
-        subtitle="Mark every subject first — nothing is saved until you press Save all. Use View report to see all students, all subjects, and exactly which subject each student missed."
+        subtitle="Pick a subject, a week and a marking tool, then click the cells — drag to mark a whole row or column. Nothing is saved until you press Save. Use View report to see which subject each student missed."
         actions={
           <div className="flex items-center gap-2">
             <div className="flex rounded-xl border p-0.5" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
@@ -1608,6 +1863,9 @@ export default function Attendance() {
                       onSelectSubject={(subj) => setSubjectOf((prev) => ({ ...prev, [g.cls.id]: subj }))}
                       dailyOf={dailyOf}
                       onPick={(s, date, status) => pickDay(s, date, currentSubject(g.cls.id), status)}
+                      onPickMany={(cells) => pickMany(cells, currentSubject(g.cls.id))}
+                      tool={tool}
+                      onToolChange={setTool}
                       onReset={() => resetSheet(g.cls.id)}
                       onSave={() => saveSheet(g.cls.id)}
                       dirtySubjects={dirtySubjectsOf(g.cls?.id)}
