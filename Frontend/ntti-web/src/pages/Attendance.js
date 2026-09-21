@@ -44,6 +44,68 @@ const rateTone = (r) => (r >= 85 ? "var(--success)" : r >= 70 ? "var(--warning)"
 
 const LS_EXTRA_WEEKS = "ntti.weekly.extra.v1";
 const LS_WEEKS = "ntti.weekly.weeks.v1";
+const LS_SCHED = "ntti.schedule.v2"; // mirrors Schedule.js's storage key exactly
+
+/* ── read the timetable (Schedule page) so Attendance knows how many
+   subjects meet on a given weekday, and can open one attendance session
+   per subject instead of one per day ─────────────────────────────── */
+function readScheduleState() {
+  try {
+    const raw = localStorage.getItem(LS_SCHED);
+    if (!raw) return { schedules: [] };
+    const v = JSON.parse(raw);
+    return v && Array.isArray(v.schedules) ? v : { schedules: [] };
+  } catch {
+    return { schedules: [] };
+  }
+}
+
+function scheduleForClassId(schedules, cls) {
+  if (!cls) return null;
+  return (
+    schedules.find((s) => s.classId && s.classId === cls.id) ||
+    schedules.find((s) => !s.classId && (s.className === cls.id || s.className === cls.name)) ||
+    null
+  );
+}
+
+const schedCellKey = (c, r) => `${c}|${r}`;
+
+/**
+ * Every subject taught to a class, tagged with the weekday + time it meets
+ * (read straight from the Schedule page's timetable). A class that hasn't
+ * set up a timetable yet — or has no subjects — falls back to a single
+ * "General" subject, so attendance behaves exactly as before for it.
+ */
+function subjectsForClass(schedules, cls) {
+  const sched = scheduleForClassId(schedules, cls);
+  if (!sched || !Array.isArray(sched.subjects) || !sched.subjects.length) {
+    return [{ key: "general", name: "General", day: "", time: "", teacher: "" }];
+  }
+  const teachers = sched.teachers || [];
+  const out = sched.subjects.map((name, c) => {
+    let day = "", time = "", teacher = "";
+    for (let r = 0; r < teachers.length; r++) {
+      const cell = sched.cells?.[schedCellKey(c, r)];
+      if (cell && cell.day) {
+        day = cell.day;
+        time = cell.time || "";
+        teacher = teachers[r] || "";
+        break;
+      }
+    }
+    // Use the subject name itself as the key so records saved before a
+    // timetable existed ("general") keep working alongside real subjects.
+    return { key: name || `subject-${c}`, name: name || `Subject ${c + 1}`, day, time, teacher };
+  });
+  return out.length ? out : [{ key: "general", name: "General", day: "", time: "", teacher: "" }];
+}
+
+function subjectLabelOf(subj) {
+  if (!subj) return "General";
+  return subj.day ? `${subj.name} · ${subj.day}${subj.time ? ` ${subj.time}` : ""}` : subj.name;
+}
+
 const pad2 = (n) => String(n).padStart(2, "0");
 const iso = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const monthShort = (d) => d.toLocaleDateString("en-US", { month: "short" });
@@ -98,7 +160,7 @@ function attendanceExportHTML(sheets) {
         th("Rate");
       const rows = s.students
         .map((st) => {
-          const map = (s.daily && s.daily[st.id]) || {};
+          const map = (s.daily && s.daily[st.id] && s.daily[st.id][s.subjectKey]) || {};
           let pres = 0;
           const cells = days
             .map((d) => {
@@ -114,7 +176,7 @@ function attendanceExportHTML(sheets) {
       const meta = (label, val) => `<p style="margin:1px 0;font-size:12px"><b>${esc(label)}:</b> ${esc(val)}</p>`;
       const weekLine = s.week ? `${s.weekLabel || ""} · ${s.week.range}` : "";
       return (
-        `<h3 style="margin:22px 0 4px">${esc(c.name)}</h3>` +
+        `<h3 style="margin:22px 0 4px">${esc(c.name)}${s.subjectLabel ? ` — ${esc(s.subjectLabel)}` : ""}</h3>` +
         (weekLine ? meta("Week", weekLine) : "") +
         meta("Shift", c.shift || "—") +
         meta("Time", c.shift ? shiftRange(c.shift) || "—" : "—") +
@@ -529,16 +591,18 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
 }
 
 /* ── one class = one Excel-style sheet ─────────────────── */
-function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, onRemoveWeek, dailyOf, onPick, onReset, onSave, onCompleteWeek, dirty, onStudentClick }) {
+function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, onRemoveWeek, subjects, subject, onSelectSubject, dailyOf, onPick, onReset, onSave, onCompleteWeek, dirty, dirtySubjects = [], onStudentClick }) {
   const week = weeks.find((w) => w.key === focusKey) || weeks[weeks.length - 1] || null;
   const weekNo = week ? weeks.findIndex((w) => w.key === week.key) + 1 : 0;
   const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
+  const activeSubj = subjects.find((x) => x.key === subject) || subjects[0];
+  const hasRealSubjects = subjects.length > 1 || (subjects.length === 1 && subjects[0].key !== "general");
 
-  const statusOf = (s, date) => (dailyOf[s.id] || {})[date] || "";
+  const statusOf = (s, date) => ((dailyOf[s.id] || {})[subject] || {})[date] || "";
 
   const rateFor = (s) => {
     if (!days.length) return 0;
-    const map = dailyOf[s.id] || {};
+    const map = (dailyOf[s.id] || {})[subject] || {};
     const pres = days.filter((d) => map[d.date] === "present" || map[d.date] === "late").length;
     return Math.round((pres / days.length) * 100);
   };
@@ -584,6 +648,7 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
             </div>
             <p className="text-[11px] mt-1" style={{ color: "var(--text-3)" }}>
               {students.length} students · {week ? `W${weekNo} · ${week.range}` : "no week selected"} · {avgRate}% average
+              {hasRealSubjects ? <> · <b style={{ color: "var(--text-2)" }}>{subjectLabelOf(activeSubj)}</b></> : null}
             </p>
             <div className="mt-3 text-[11px] w-full">
               <div className="grid grid-cols-[96px_1fr] gap-x-4 gap-y-1.5">
@@ -607,6 +672,15 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {dirtySubjects.filter((s) => s.key !== subject).length > 0 && (
+              <span
+                className="flex h-8 items-center rounded-lg px-2 text-[10px] font-bold"
+                style={{ background: "var(--danger-soft)", color: "var(--danger)" }}
+                title={`Also unsaved: ${dirtySubjects.filter((s) => s.key !== subject).map((s) => s.name).join(", ")}`}
+              >
+                +{dirtySubjects.filter((s) => s.key !== subject).length} other unsaved
+              </span>
+            )}
             {dirty && (
               <span
                 className="flex h-8 items-center rounded-lg px-2 text-[10px] font-bold uppercase tracking-wider"
@@ -647,6 +721,45 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
         </div>
       ) : (
         <>
+          {/* subject/session bar — one class can meet several times a day
+              (e.g. Monday: Math, English, Khmer); pick which subject's
+              session you're taking attendance for before marking students.
+              Hidden for classes with no real timetable (just "General"). */}
+          {hasRealSubjects && (
+            <div
+              className="flex items-center gap-1.5 overflow-x-auto thin-scroll px-5 py-2 border-b"
+              style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+            >
+              <span className="shrink-0 mr-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                Subject
+              </span>
+              {subjects.map((sub) => {
+                const active = sub.key === subject;
+                return (
+                  <button
+                    key={sub.key}
+                    type="button"
+                    onClick={() => onSelectSubject(sub.key)}
+                    className="shrink-0 flex flex-col items-start rounded-lg px-2.5 py-1 text-left transition-colors"
+                    style={
+                      active
+                        ? { background: "var(--primary)", color: "#fff" }
+                        : { background: "var(--surface-2)", color: "var(--text-2)" }
+                    }
+                    title={sub.day ? `Meets ${sub.day}${sub.time ? ` · ${sub.time}` : ""}${sub.teacher ? ` · ${sub.teacher}` : ""}` : sub.name}
+                  >
+                    <span className="text-[11px] font-bold leading-tight">{sub.name}</span>
+                    {sub.day ? (
+                      <span className="text-[9px] leading-tight" style={{ opacity: active ? 0.85 : 0.7 }}>
+                        {sub.day}{sub.time ? ` · ${sub.time}` : ""}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* horizontal week bar — pick which week to mark */}
           <div
             className="flex items-center gap-1.5 overflow-x-auto thin-scroll px-5 py-2 border-b"
@@ -705,15 +818,22 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
                   >
                     Student
                   </th>
-                  {days.map((d) => (
+                  {days.map((d) => {
+                    const dShort = new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+                    const isSubjectDay = hasRealSubjects && activeSubj?.day && activeSubj.day === dShort;
+                    return (
                     <th
                       key={d.date}
                       className="text-center px-1 py-1.5 align-top"
-                      title={`${d.name} · ${d.short}`}
-                      style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}
+                      title={`${d.name} · ${d.short}${isSubjectDay ? ` · ${activeSubj.name} usually meets today` : ""}`}
+                      style={{
+                        borderBottom: "1px solid var(--border)",
+                        borderLeft: "1px solid var(--border)",
+                        background: isSubjectDay ? "var(--primary-soft)" : undefined,
+                      }}
                     >
                       <div className="flex flex-col items-center gap-0.5">
-                        <span className="block text-center text-[10px] font-bold leading-tight" style={{ color: "var(--text-2)" }}>
+                        <span className="block text-center text-[10px] font-bold leading-tight" style={{ color: isSubjectDay ? "var(--primary-strong)" : "var(--text-2)" }}>
                           {d.name}
                         </span>
                         <span className="block text-[9px] tabular-nums" style={{ color: "var(--text-3)" }}>
@@ -721,7 +841,8 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
                         </span>
                       </div>
                     </th>
-                  ))}
+                    );
+                  })}
                   <th
                     className="text-right px-3 py-2 text-[11px] font-bold uppercase tracking-wider"
                     style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}
@@ -799,7 +920,9 @@ export default function Attendance() {
   const [dlChecked, setDlChecked] = useState({});
   const [dayStudent, setDayStudent] = useState(null); // student whose day log is open
   const [focusKey, setFocusKey] = useState(() => weekKeyOf(todayISO())); // selected week (shared by all sheets)
-  const [draft, setDraft] = useState({}); // staged cells: { studentId: { dateISO: status } } — saved only on Save
+  const [draft, setDraft] = useState({}); // staged cells: { studentId: { subjectKey: { dateISO: status } } } — saved only on Save
+  const [subjectOf, setSubjectOf] = useState({}); // { classId: subjectKey } — which subject's session is being marked right now
+  const [scheduleState] = useState(() => readScheduleState()); // read once; Schedule page owns live edits
   const [weekMap, setWeekMap] = useState(() => {
     const base = lastNWeeks(15).map((w) => w.key);
     try {
@@ -842,7 +965,10 @@ export default function Attendance() {
   const attendanceOf = useMemo(() => {
     const map = {};
     attendance.forEach((r) => {
-      (map[r.studentId] = map[r.studentId] || {})[r.date] = r.status;
+      const subj = r.subject || "general";
+      map[r.studentId] = map[r.studentId] || {};
+      map[r.studentId][subj] = map[r.studentId][subj] || {};
+      map[r.studentId][subj][r.date] = r.status;
     });
     return map;
   }, [attendance]);
@@ -852,6 +978,19 @@ export default function Attendance() {
     classes.forEach((c) => (map[c.id] = c));
     return map;
   }, [classes]);
+
+  /* every subject a class is taught, tagged with the weekday/time it meets —
+     this is what lets "Monday · 3 subjects" become 3 separate attendance
+     sessions instead of one shared day slot */
+  const subjectsOf = useMemo(() => {
+    const map = {};
+    classes.forEach((c) => {
+      map[c.id] = subjectsForClass(scheduleState.schedules, c);
+    });
+    return map;
+  }, [classes, scheduleState]);
+
+  const currentSubject = (clsId) => subjectOf[clsId] || subjectsOf[clsId]?.[0]?.key || "general";
 
   const classOptions = useMemo(
     () =>
@@ -909,19 +1048,27 @@ export default function Attendance() {
     return ids.map((id) => ({ cls: classById[id], list: map[id] }));
   }, [roster, classById]);
 
-  /* staged view = persisted daily attendance + unsaved draft overrides */
+  /* staged view = persisted daily attendance + unsaved draft overrides,
+     now keyed student -> subject -> date, so each subject's session for a
+     day is independent of every other subject's session that same day */
   const dailyOf = useMemo(() => {
     const map = {};
     Object.keys(attendanceOf).forEach((id) => {
-      map[id] = { ...(attendanceOf[id] || {}) };
-    });
-    Object.entries(draft).forEach(([id, days]) => {
-      const dm = { ...(map[id] || {}) };
-      Object.entries(days).forEach(([date, st]) => {
-        if (st) dm[date] = st;
-        else delete dm[date];
+      map[id] = {};
+      Object.entries(attendanceOf[id] || {}).forEach(([subj, days]) => {
+        map[id][subj] = { ...days };
       });
-      map[id] = dm;
+    });
+    Object.entries(draft).forEach(([id, subjMap]) => {
+      map[id] = map[id] || {};
+      Object.entries(subjMap).forEach(([subj, days]) => {
+        const dm = { ...(map[id][subj] || {}) };
+        Object.entries(days).forEach(([date, st]) => {
+          if (st) dm[date] = st;
+          else delete dm[date];
+        });
+        map[id][subj] = dm;
+      });
     });
     return map;
   }, [attendanceOf, draft]);
@@ -933,21 +1080,26 @@ export default function Attendance() {
       const wk = ws.find((w) => w.key === focusKey) || ws[ws.length - 1];
       if (!wk) return acc;
       const days = weekDays(wk.start);
-      const map = dailyOf[s.id] || {};
+      const subj = currentSubject(s.className);
+      const map = (dailyOf[s.id] || {})[subj] || {};
       const pres = days.filter((d) => map[d.date] === "present" || map[d.date] === "late").length;
       return acc + Math.round((pres / days.length) * 100);
     }, 0);
     return Math.round(total / roster.length);
-  }, [roster, dailyOf, weeksOf, focusKey]);
+  }, [roster, dailyOf, weeksOf, focusKey, subjectOf, subjectsOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pickDay = (s, date, status) => {
-    setDraft((prev) => ({
-      ...prev,
-      [s.id]: { ...(prev[s.id] || {}), [date]: status },
-    }));
+  const pickDay = (s, date, subject, status) => {
+    setDraft((prev) => {
+      const forStudent = prev[s.id] || {};
+      const forSubject = forStudent[subject] || {};
+      return {
+        ...prev,
+        [s.id]: { ...forStudent, [subject]: { ...forSubject, [date]: status } },
+      };
+    });
   };
 
-  const resetSheet = (clsId) => {
+  const resetSheet = (clsId, subject) => {
     const list = roster.filter((s) => s.className === clsId);
     const ws = weeksOf[clsId] || [];
     const wk = ws.find((w) => w.key === focusKey) || ws[ws.length - 1];
@@ -956,28 +1108,32 @@ export default function Attendance() {
     setDraft((prev) => {
       const next = { ...prev };
       list.forEach((s) => {
-        const dm = { ...(next[s.id] || {}) };
+        const forStudent = { ...(next[s.id] || {}) };
+        const forSubject = { ...(forStudent[subject] || {}) };
         days.forEach((d) => {
-          dm[d.date] = "";
+          forSubject[d.date] = "";
         });
-        next[s.id] = dm;
+        forStudent[subject] = forSubject;
+        next[s.id] = forStudent;
       });
       return next;
     });
-    showToast(`Week ${wk.range} cleared for ${classById[clsId]?.name || clsId} — press Save attendance to keep it`);
+    const subj = (subjectsOf[clsId] || []).find((x) => x.key === subject);
+    showToast(`Week ${wk.range} cleared for ${classById[clsId]?.name || clsId} · ${subjectLabelOf(subj)} — press Save attendance to keep it`);
   };
 
-  const saveSheet = (clsId) => {
+  const saveSheet = (clsId, subject) => {
     const list = roster.filter((s) => s.className === clsId);
     const records = [];
     list.forEach((s) => {
-      const dm = draft[s.id];
+      const dm = draft[s.id]?.[subject];
       if (!dm) return;
       Object.entries(dm).forEach(([date, st]) => {
         records.push({
-          id: `${s.id}-${date}`,
+          id: `${s.id}-${date}-${subject}`,
           studentId: s.id,
           date,
+          subject,
           status: st,
           checkIn: st === "present" ? "07:30" : st === "late" ? "08:20" : null,
         });
@@ -991,25 +1147,31 @@ export default function Attendance() {
     setDraft((prev) => {
       const next = { ...prev };
       list.forEach((s) => {
-        delete next[s.id];
+        if (next[s.id]) {
+          const forStudent = { ...next[s.id] };
+          delete forStudent[subject];
+          next[s.id] = forStudent;
+        }
       });
       return next;
     });
-    showToast(`${records.length} attendance edit${records.length === 1 ? "" : "s"} saved for ${classById[clsId]?.name || clsId}`);
+    const subj = (subjectsOf[clsId] || []).find((x) => x.key === subject);
+    showToast(`${records.length} attendance edit${records.length === 1 ? "" : "s"} saved for ${classById[clsId]?.name || clsId} · ${subjectLabelOf(subj)}`);
   };
 
   /* Week fully marked → save it automatically and slide to the next week (no manual Save needed) */
-  const completeWeek = (clsId, extra) => {
+  const completeWeek = (clsId, subject, extra) => {
     const list = roster.filter((s) => s.className === clsId);
     const records = [];
     list.forEach((s) => {
-      const dm = { ...(draft[s.id] || {}) };
+      const dm = { ...(draft[s.id]?.[subject] || {}) };
       if (extra && extra.studentId === s.id) dm[extra.date] = extra.status;
       Object.entries(dm).forEach(([date, st]) => {
         records.push({
-          id: `${s.id}-${date}`,
+          id: `${s.id}-${date}-${subject}`,
           studentId: s.id,
           date,
+          subject,
           status: st,
           checkIn: st === "present" ? "07:30" : st === "late" ? "08:20" : null,
         });
@@ -1020,7 +1182,11 @@ export default function Attendance() {
       setDraft((prev) => {
         const next = { ...prev };
         list.forEach((s) => {
-          delete next[s.id];
+          if (next[s.id]) {
+            const forStudent = { ...next[s.id] };
+            delete forStudent[subject];
+            next[s.id] = forStudent;
+          }
         });
         return next;
       });
@@ -1037,7 +1203,12 @@ export default function Attendance() {
     }
   };
 
-  const classDirty = (clsId) => roster.some((s) => s.className === clsId && draft[s.id] && Object.keys(draft[s.id]).length > 0);
+  const classDirty = (clsId, subject) =>
+    roster.some((s) => s.className === clsId && draft[s.id]?.[subject] && Object.keys(draft[s.id][subject]).length > 0);
+
+  // every subject with unsaved edits for a class, even ones not currently
+  // being viewed — so switching subjects never hides forgotten drafts
+  const dirtySubjectsOf = (clsId) => (subjectsOf[clsId] || []).filter((sub) => classDirty(clsId, sub.key));
 
   const addWeek = (clsId) => {
     const cls = classById[clsId];
@@ -1080,10 +1251,11 @@ export default function Attendance() {
   const noSelected = dlSel && !dlAll && !classes.some((c) => dlChecked[c.id]);
   const dlSheets = () => {
     const list = dlAll ? classes : classes.filter((c) => dlChecked[c.id]);
-    return list.map((c) => {
+    const sheets = [];
+    list.forEach((c) => {
       const ws = weeksOf[c.id] || [];
       const wk = ws.find((w) => w.key === focusKey) || ws[ws.length - 1] || null;
-      return {
+      const base = {
         cls: c,
         students: students.filter((s) => s.className === c.id && s.status !== "Graduate"),
         week: wk,
@@ -1091,14 +1263,20 @@ export default function Attendance() {
         days: wk ? weekDays(wk.start) : [],
         daily: dailyOf,
       };
+      // one exported sheet per subject, so a class with 3–4 subjects a day
+      // exports as 3–4 separate tables instead of mixing their attendance
+      (subjectsOf[c.id] || []).forEach((sub) => {
+        sheets.push({ ...base, subjectKey: sub.key, subjectLabel: subjectLabelOf(sub) });
+      });
     });
+    return sheets;
   };
 
   return (
     <div>
       <PageHeader
         title="Attendance"
-        subtitle="Pick classes with the tick dropdown, then mark each student Present / Late / Absent / Permission — one week at a time, Monday to Sunday."
+        subtitle="Pick classes with the tick dropdown, then mark each student Present / Late / Absent / Permission — one week at a time. Classes with more than one subject a day show a Subject picker so each session is marked separately."
         actions={
           <button
             onClick={() => {
@@ -1242,12 +1420,16 @@ export default function Attendance() {
                     onSelectWeek={setFocusKey}
                     onAddWeek={() => addWeek(g.cls.id)}
                     onRemoveWeek={(k) => removeWeek(g.cls.id, k)}
+                    subjects={subjectsOf[g.cls?.id] || []}
+                    subject={currentSubject(g.cls?.id)}
+                    onSelectSubject={(subj) => setSubjectOf((prev) => ({ ...prev, [g.cls.id]: subj }))}
                     dailyOf={dailyOf}
-                    onPick={pickDay}
-                    onReset={() => resetSheet(g.cls.id)}
-                    onSave={() => saveSheet(g.cls.id)}
-                    onCompleteWeek={(extra) => completeWeek(g.cls.id, extra)}
-                    dirty={classDirty(g.cls.id)}
+                    onPick={(s, date, status) => pickDay(s, date, currentSubject(g.cls.id), status)}
+                    onReset={() => resetSheet(g.cls.id, currentSubject(g.cls.id))}
+                    onSave={() => saveSheet(g.cls.id, currentSubject(g.cls.id))}
+                    onCompleteWeek={(extra) => completeWeek(g.cls.id, currentSubject(g.cls.id), extra)}
+                    dirty={classDirty(g.cls.id, currentSubject(g.cls.id))}
+                    dirtySubjects={dirtySubjectsOf(g.cls?.id)}
                     onStudentClick={setDayStudent}
                   />
                 ))}

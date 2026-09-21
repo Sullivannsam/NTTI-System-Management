@@ -63,7 +63,7 @@ export default function AttendanceDayTable({ records = [], weeks, maxHeight = 46
   const byDate = useMemo(() => {
     const map = {};
     records.forEach((r) => {
-      map[r.date] = r;
+      (map[r.date] = map[r.date] || []).push(r);
     });
     return map;
   }, [records]);
@@ -113,7 +113,7 @@ export default function AttendanceDayTable({ records = [], weeks, maxHeight = 46
           <tbody>
             {weekList.map((w, i) => {
               const days = daysOfWeek(w.start);
-              const marked = days.map((d) => byDate[d.date]).filter(Boolean);
+              const marked = days.flatMap((d) => byDate[d.date] || []);
               const pres = marked.filter((r) => r.status === "present" || r.status === "late").length;
               const rate = marked.length ? Math.round((pres / marked.length) * 100) : null;
               return (
@@ -129,28 +129,37 @@ export default function AttendanceDayTable({ records = [], weeks, maxHeight = 46
                     </div>
                   </td>
                   {days.map((d) => {
-                    const rec = byDate[d.date];
-                    const meta = rec ? STATUS[rec.status] : null;
+                    const recs = byDate[d.date] || [];
                     return (
                       <td
                         key={d.date}
                         className="text-center"
                         title={
-                          rec
-                            ? `${d.name} ${d.short} · ${meta?.label || rec.status}${rec.checkIn ? ` · ${rec.checkIn}` : ""}`
+                          recs.length
+                            ? `${d.name} ${d.short} · ` +
+                              recs
+                                .map((r) => `${r.subject && r.subject !== "general" ? `${r.subject}: ` : ""}${STATUS[r.status]?.label || r.status}${r.checkIn ? ` (${r.checkIn})` : ""}`)
+                                .join(" · ")
                             : `${d.name} ${d.short} · no record`
                         }
                       >
-                        {meta ? (
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ color: meta.color, background: meta.soft }}>
-                              {meta.short}
-                            </span>
-                            {rec.checkIn ? (
-                              <span className="text-[9px] tabular-nums" style={{ color: "var(--text-3)" }}>
-                                {rec.checkIn}
-                              </span>
-                            ) : null}
+                        {recs.length ? (
+                          <div className="flex flex-col items-center gap-1">
+                            {recs.map((rec, ri) => {
+                              const meta = STATUS[rec.status];
+                              return (
+                                <div key={ri} className="flex flex-col items-center gap-0.5">
+                                  {rec.subject && rec.subject !== "general" ? (
+                                    <span className="text-[8px] font-semibold leading-none truncate max-w-[54px]" style={{ color: "var(--text-3)" }}>
+                                      {rec.subject}
+                                    </span>
+                                  ) : null}
+                                  <span className="rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ color: meta?.color, background: meta?.soft }}>
+                                    {meta?.short || rec.status}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
                           <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
