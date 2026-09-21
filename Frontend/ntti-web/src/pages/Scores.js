@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
+  Plus,
   Save,
   RotateCcw,
   AlertTriangle,
@@ -13,8 +14,8 @@ import ClassSelect from "../components/ClassSelect";
 import ScoreImportModal from "../components/ScoreImportModal";
 
 const SCORES_KEY = "ntti.scores.v1";
-const SEL_KEY = "ntti.scores.selected.v1";
 const SCHED_KEY = "ntti.schedule.v2";
+const NONE_META_KEY = "ntti.scores.none.v1";
 
 function loadScores() {
   try {
@@ -34,6 +35,17 @@ function loadSchedules() {
   }
 }
 
+/* the "(No class)" cheatsheet — subjects + rows come straight from an imported file */
+function loadNoneMeta() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NONE_META_KEY));
+    if (raw && Array.isArray(raw.subjects) && Array.isArray(raw.rows)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 const gradeOf = (avg) => {
   if (avg == null) return null;
   if (avg >= 90) return { g: "A", tone: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" };
@@ -43,11 +55,127 @@ const gradeOf = (avg) => {
   return { g: "F", tone: "bg-red-500/15 text-red-600 border-red-500/30" };
 };
 
+/* "(No class)" cheatsheet — built from an imported file, so the subjects and
+   student names are exactly what the file contains (nothing guessed). */
+function NoneSheet({ meta, onScore, onClear }) {
+  const { subjects = [], rows = [], scores = {} } = meta || {};
+  if (!rows.length) return null;
+  return (
+    <div className="overflow-hidden">
+      {/* header bar */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+        <div>
+          <p className="text-base font-bold" style={{ color: "var(--text)" }}>(No class) — cheatsheet</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--text-2)" }}>
+            {subjects.length} subject{subjects.length === 1 ? "" : "s"} · {rows.length} student{rows.length === 1 ? "" : "s"} — columns and names come straight from the imported file
+          </p>
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            onClick={onClear}
+            className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500"
+            title="Remove this (No class) cheatsheet"
+          >
+            <RotateCcw size={14} /> Clear
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto thin-scroll">
+        <table className="w-full min-w-[860px] text-sm">
+          <thead>
+            <tr className="text-left text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+              <th className="sticky left-0 z-10 min-w-[190px] px-5 py-3.5" style={{ background: "var(--surface)" }}>
+                Student
+              </th>
+              {subjects.map((sub, i) => (
+                <th
+                  key={i}
+                  className="px-2 py-3 text-center align-bottom"
+                  title={sub}
+                  style={{ minWidth: 108, maxWidth: 180, whiteSpace: "normal", lineHeight: 1.2, wordBreak: "break-word" }}
+                >
+                  {sub}
+                </th>
+              ))}
+              <th className="px-2 py-3.5 text-center">Avg</th>
+              <th className="px-4 py-3.5 text-center" style={{ paddingRight: 20 }}>Grade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const nums = subjects
+                .map((sub) => Number((scores[r.key] || {})[sub]))
+                .filter((n) => Number.isFinite(n));
+              const avg = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+              const gr = gradeOf(avg);
+              return (
+                <tr key={r.key} className="border-t transition-colors hover:bg-[var(--surface-2)]" style={{ borderColor: "var(--border)" }}>
+                  <td className="sticky left-0 z-10 px-5 py-2.5" style={{ background: "var(--surface)" }}>
+                    <div className="min-w-0">
+                      <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>
+                        {r.name || "—"}
+                      </span>
+                      {r.sidRaw && (
+                        <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
+                          {r.sidRaw}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  {subjects.map((sub, si) => {
+                    const v = (scores[r.key] || {})[sub] ?? "";
+                    return (
+                      <td key={si} className="px-2 py-2">
+                        <div className="mx-auto w-full min-w-[68px] max-w-[130px]">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            maxLength={6}
+                            value={v}
+                            onChange={(e) => onScore(r.key, sub, e.target.value)}
+                            placeholder="–"
+                            className="w-full bg-transparent border-b-2 border-transparent py-1.5 text-center text-[13px] font-bold outline-none transition-colors hover:border-[var(--border)] focus:border-[var(--primary)]"
+                            style={{ color: "var(--text)" }}
+                          />
+                        </div>
+                      </td>
+                    );
+                  })}
+                  <td className="px-2 py-2.5 text-center font-extrabold tabular-nums" style={{ color: avg == null ? "var(--text-3)" : "var(--text)" }}>
+                    {avg == null ? "–" : avg.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-2.5 text-center" style={{ paddingRight: 20 }}>
+                    {gr && (
+                      <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border text-xs font-extrabold ${gr.tone}`}>
+                        {gr.g}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-5 py-3 border-t text-[11px]"
+        style={{ borderColor: "var(--border)", color: "var(--text-3)" }}
+      >
+        <span>Scores 0–100 · auto-saved as you type</span>
+        <span className="ml-auto">Subjects match the imported file exactly</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Scores() {
   const { students, classes, logAudit, showToast } = useApp();
   const [scores, setScores] = useState(loadScores);
   const [schedules, setSchedules] = useState(loadSchedules);
-  const [classId, setClassId] = useState(() => localStorage.getItem(SEL_KEY) || "");
+  const [noneMeta, setNoneMeta] = useState(loadNoneMeta);
+  const [classId, setClassId] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
@@ -76,30 +204,35 @@ export default function Scores() {
     [classes, schedules]
   );
 
-  // keep a valid selection
+  // Selection always starts empty ("None"). If the chosen class vanishes, go back
+  // to None rather than forcing a class — the sheet stays hidden until the user picks one.
   useEffect(() => {
-    if (!classId || !classes.some((c) => c.id === classId)) {
-      if (scoredClasses.length) setClassId(scoredClasses[0].id);
-      return;
-    }
-    if (!scoredClasses.some((c) => c.id === classId) && scoredClasses.length) {
-      setClassId(scoredClasses[0].id);
-    }
+    if (classId && !scoredClasses.some((c) => c.id === classId)) setClassId("");
   }, [classes, schedules, classId, scoredClasses]);
 
+  // persist the "(No class)" cheatsheet so it survives a refresh
   useEffect(() => {
-    if (classId) {
-      try {
-        localStorage.setItem(SEL_KEY, classId);
-      } catch {
-        /* ignore */
-      }
+    try {
+      if (noneMeta) localStorage.setItem(NONE_META_KEY, JSON.stringify(noneMeta));
+      else localStorage.removeItem(NONE_META_KEY);
+    } catch {
+      /* ignore */
     }
-  }, [classId]);
+  }, [noneMeta]);
 
   const cls = classes.find((c) => c.id === classId);
   const sched = cls ? scheduleFor(cls) : null;
   const subjects = sched ? sched.subjects.filter(Boolean) : [];
+
+  /* class dropdown starts with "None" so the sheet can (re)start empty */
+  const classOptions = [
+    { value: "", label: "None", sub: "no class" },
+    ...scoredClasses.map((c) => ({
+      value: c.id,
+      label: c.name,
+      sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
+    })),
+  ];
 
   const roster = useMemo(() => {
     if (!cls) return [];
@@ -218,8 +351,73 @@ export default function Scores() {
     showToast(`Scores cleared for ${cls?.name || "class"}`, "info");
   };
 
+  /* append new subject columns to this class's schedule so the new score columns exist
+     next time (used by import and by the "Add subject" button) */
+  const extendSubjects = (names) => {
+    const clean = Array.from(new Set((names || []).map((n) => String(n ?? "").trim()).filter(Boolean)));
+    if (!clean.length || !sched) return 0;
+    const current = (sched.subjects || []).filter(Boolean);
+    const merged = Array.from(new Set([...current, ...clean]));
+    if (merged.length === current.length) return 0;
+    setSchedules((prev) => {
+      const next = prev.map((s) => {
+        const same = s.id ? s.id === sched.id : s === sched;
+        return same ? { ...s, subjects: merged } : s;
+      });
+      try {
+        const raw = JSON.parse(localStorage.getItem(SCHED_KEY) || "{}");
+        localStorage.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    return clean.length;
+  };
+
+  /* a brand-new empty score column, ready for typing or import */
+  const addSubjectColumn = () => {
+    const n = `Subject ${(sched?.subjects || []).filter(Boolean).length + 1}`;
+    if (extendSubjects([n])) showToast(`Added empty column "${n}" — scores go in here`);
+    else showToast("That column already exists", "info");
+  };
+
+  /* edit one cell of the "(No class)" cheatsheet */
+  const setNoneMetaScore = (rowKey, subject, raw) => {
+    const v = cleanScore(raw);
+    setNoneMeta((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        scores: { ...(prev.scores || {}), [rowKey]: { ...((prev.scores || {})[rowKey] || {}), [subject]: v } },
+      };
+    });
+  };
+
+  const clearNone = () => {
+    setNoneMeta(null);
+    showToast("Cheatsheet cleared", "info");
+  };
+
   /* merge imported rows ({ studentId: { subject: "score" } }) into the class sheet */
-  const applyImport = (rows, { matched, cells }) => {
+  const applyImport = (rows, { matched, cells }, newSubjects = [], extras) => {
+    /* no class selected → "(No class)" cheatsheet: the sheet mirrors the file */
+    if (!cls) {
+      const fileRows = extras?.fileRows || [];
+      const keep = fileRows.filter((fr) => rows[fr.key] && Object.keys(rows[fr.key]).length);
+      const meta = {
+        subjects: newSubjects.length ? newSubjects : [],
+        rows: keep.map((fr) => ({ key: fr.key, name: fr.name, sidRaw: fr.sidRaw })),
+        scores: Object.fromEntries(keep.map((fr) => [fr.key, rows[fr.key]])),
+      };
+      setNoneMeta(meta);
+      showToast(
+        `Cheatsheet imported — ${meta.subjects.length} subject${meta.subjects.length === 1 ? "" : "s"} · ${meta.rows.length} student${meta.rows.length === 1 ? "" : "s"} (columns match the file)`
+      );
+      logAudit("import_scores_none", `Imported cheatsheet: ${meta.subjects.length} subjects, ${meta.rows.length} rows`);
+      setImportOpen(false);
+      return;
+    }
     setScores((prev) => {
       const next = { ...prev, [classId]: { ...(prev[classId] || {}) } };
       Object.entries(rows).forEach(([sid, subjMap]) => {
@@ -232,8 +430,16 @@ export default function Scores() {
       }
       return next;
     });
-    logAudit("import_scores", `Imported ${cells} score cells for ${matched} students into ${cls?.name || "class"}`);
-    showToast(`Imported ${cells} scores for ${matched} students`);
+    const added = extendSubjects(newSubjects);
+    logAudit(
+      "import_scores",
+      `Imported ${cells} score cells for ${matched} students into ${cls?.name || "class"}` +
+        (added ? ` (+${added} new subject column${added === 1 ? "" : "s"})` : "")
+    );
+    showToast(
+      `Imported ${cells} scores for ${matched} students` +
+        (added ? ` · added ${added} new subject column${added === 1 ? "" : "s"}` : "")
+    );
     setImportOpen(false);
   };
 
@@ -241,49 +447,47 @@ export default function Scores() {
     <div className="max-w-[1500px] mx-auto space-y-5 animate-fade-up">
       <PageHeader
         title="Scores"
-        subtitle="Pick a class — its subject columns come straight from the class schedule."
+        subtitle="Pick a class for a live score sheet, or keep None and import a cheatsheet — its columns become the subjects exactly as written in the file."
         actions={
           <>
-            {subjects.length > 0 && (
-              <button
-                onClick={() => setImportOpen(true)}
-                className="btn btn-outline h-10 shrink-0 px-3.5 text-sm gap-1.5"
-                title="Import scores for this class from an Excel or CSV file (one subject per column, one row per student)"
-              >
-                <FileSpreadsheet size={15} /> Import Excel
-              </button>
-            )}
+            <button
+              onClick={() => setImportOpen(true)}
+              className="btn btn-outline h-10 shrink-0 px-3.5 text-sm gap-1.5"
+              title={
+                classId
+                  ? "Import scores for this class from an Excel or CSV file (one subject per column, one row per student)"
+                  : "Import an Excel cheatsheet — its columns become the score subjects exactly as written in the file"
+              }
+            >
+              <FileSpreadsheet size={15} /> Import Excel
+            </button>
             <div className="min-w-0 flex-1 basis-[200px] sm:flex-none sm:basis-auto">
-              <ClassSelect
-                value={classId}
-                onChange={setClassId}
-                minWidth={200}
-                options={scoredClasses.map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                  sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
-                }))}
-              />
+              <ClassSelect value={classId} onChange={setClassId} minWidth={200} options={classOptions} />
             </div>
           </>
         }
       />
 
-      {scoredClasses.length === 0 && (
+      {!classId && (
         <div className="card">
-          <EmptyState
-            icon={ClipboardList}
-            title="No scheduled classes yet"
-            subtitle="Create a class, then give it subjects on the Schedule page — score columns follow the schedule automatically."
-            action={
-              <button
-                onClick={() => (window.location.href = "/schedule")}
-                className="btn btn-primary"
-              >
-                <Link2 className="h-4 w-4" /> Open Schedule
-              </button>
-            }
-          />
+          {noneMeta ? (
+            <NoneSheet meta={noneMeta} onScore={setNoneMetaScore} onClear={clearNone} />
+          ) : (
+            <EmptyState
+              icon={ClipboardList}
+              title="No class selected"
+              subtitle={
+                scoredClasses.length === 0
+                  ? "Create a class and give it subjects on the Schedule page for a live score sheet — or import an Excel cheatsheet and its columns become the score subjects exactly as written in the file."
+                  : "Subject columns and student names stay hidden until you pick a class — or import an Excel cheatsheet and its columns become the score subjects exactly as written in the file."
+              }
+              action={
+                <button onClick={() => setImportOpen(true)} className="btn btn-primary">
+                  <FileSpreadsheet className="h-4 w-4" /> Import Excel
+                </button>
+              }
+            />
+          )}
         </div>
       )}
 
@@ -322,7 +526,14 @@ export default function Scores() {
                 {filledCount}/{roster.length} scored
               </span>
             )}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <button
+                onClick={addSubjectColumn}
+                className="btn btn-outline h-9 px-3 text-sm gap-1.5"
+                title="Add a new empty score column (subject) for this class — scores go in here for everyone"
+              >
+                <Plus size={14} /> Add subject
+              </button>
               <button
                 onClick={() => setConfirmReset(true)}
                 className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500"
@@ -338,7 +549,7 @@ export default function Scores() {
 
           {subjects.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-3)" }}>
-              This class has a schedule but no subjects yet — add subject columns on the Schedule page.
+              This class has a schedule but no subjects yet — click <b style={{ color: "var(--text-2)" }}>+ Add subject</b> above, or add subject columns on the Schedule page.
             </p>
           ) : (
             <div className="overflow-x-auto thin-scroll">
@@ -472,6 +683,7 @@ export default function Scores() {
         cls={cls}
         subjects={subjects}
         roster={roster}
+        noneMode={!cls}
         onImport={applyImport}
       />
     </div>

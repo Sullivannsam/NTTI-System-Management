@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 
 const isIdCol = (h) => {
   const s = String(h ?? "").trim();
-  return /(student\s*id|student\s*code|id\b|code\b|roll\b|no\.?$|num)/i.test(s) && !/name/i.test(s);
+  return /(student\s*id|student\s*code|id\b|code\b|roll\b|no\.?$|num|លេខកូដ|ល\.រ)/i.test(s) && !/name/i.test(s);
 };
 const isNameCol = (h) => /(name|ឈ្មោះ)/i.test(String(h ?? ""));
 
@@ -25,7 +25,7 @@ function detectHeader(rows) {
  * import every student's scores into the score sheet for a class — no typing
  * per student. Expects a header row like:  No | Student Name | Mathematics | Khmer | …
  */
-export default function ScoreImportModal({ open, onClose, cls, subjects, roster, onImport }) {
+export default function ScoreImportModal({ open, onClose, cls, subjects, roster, onImport, noneMode = false }) {
   const [file, setFile] = useState(null);
   const [wb, setWb] = useState(null);
   const [sheetIdx, setSheetIdx] = useState(0);
@@ -74,13 +74,24 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     );
   };
 
+  /* a file column with no matching subject becomes a NEW score column in the sheet */
+  const newSubjectName = (c) => {
+    const t = String(c?.header ?? "").replace(/\s+/g, " ").trim();
+    return t || `Subject ${subjects.length + 1}`;
+  };
+  /* existing subject name, new-subject name for "__new__" columns, or null when skipped */
+  const subjectKeyOf = (c) => {
+    if (c?.kind !== "subject" || !c.subject || c.subject === "_skip") return null;
+    return c.subject === "__new__" ? newSubjectName(c) : c.subject;
+  };
+
   const roleOfCell = (h, i) => {
     const s = String(h ?? "").trim();
     if (!s) return { kind: "idle" };
     if (isIdCol(s)) return { kind: "sid", header: s };
     if (isNameCol(s)) return { kind: "name", header: s };
     const matched = subjects.find((x) => x.trim().toLowerCase() === s.toLowerCase());
-    return { kind: "subject", header: s, subject: matched || "_skip" };
+    return { kind: "subject", header: s, subject: matched || "__new__" };
   };
 
   /* parse the chosen file */
@@ -152,9 +163,13 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
       if (!row.some((c) => c != null && String(c).trim() !== "")) continue;
       const sidRaw = sidIdx >= 0 ? String(row[sidIdx] ?? "").trim() : "";
       const nameRaw = nameIdx >= 0 ? String(row[nameIdx] ?? "").trim() : "";
-      const student = sidRaw ? matchById(sidRaw) || matchByName(nameRaw) : matchByName(nameRaw);
+      /* in "None" mode there is no class roster — every file row is kept as-is */
+      let student = null;
+      if (!noneMode) {
+        student = sidRaw ? matchById(sidRaw) || matchByName(nameRaw) : matchByName(nameRaw);
+      }
       const cells = effectiveCols.map((c, i) => {
-        if (c.kind === "subject" && c.subject && c.subject !== "_skip") {
+        if (subjectKeyOf(c)) {
           const n = Number(String(row[i] ?? "").replace(/,/g, "").trim());
           if (Number.isFinite(n) && n >= 0 && n <= 100) return n.toFixed(2);
         }
@@ -164,23 +179,57 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveCols, rawRows, headerRow, roster]);
+  }, [effectiveCols, rawRows, headerRow, roster, noneMode]);
 
   const matchedStudents = preview.filter((p) => p.student).length;
   const totalCells = preview.reduce((a, p) => a + p.cells.filter((c) => c !== "").length, 0);
   const unmatched = preview.length - matchedStudents;
   const shown = showAll ? preview : preview.slice(0, 60);
+  const newColCount = effectiveCols.filter((c) => c.subject === "__new__").length;
 
   const doImport = () => {
+    /* every file column aimed at a new subject (default for unmatched subject columns) becomes a new score column */
+    const created = new Set(
+      effectiveCols
+        .filter((c) => c.subject === "__new__")
+        .map((c) => subjectKeyOf(c))
+        .filter(Boolean)
+    );
+
+    if (noneMode) {
+      /* "None" mode: no class roster — keep every file row and pass subjects straight through */
+      const rows = {};
+      const fileRows = [];
+      preview.forEach((p, ri) => {
+        const st = {};
+        effectiveCols.forEach((c, i) => {
+          const key = subjectKeyOf(c);
+          if (!key) return;
+          const v = p.cells[i];
+          if (v !== "") st[key] = v;
+        });
+        if (!Object.keys(st).length) return;
+        const key = `r:${ri}`;
+        rows[key] = st;
+        fileRows.push({ key, name: p.nameRaw || p.sidRaw || "—", sidRaw: p.sidRaw });
+      });
+      if (!Object.keys(rows).length) {
+        setError("Nothing to import — no scores found in the file.");
+        return;
+      }
+      onImport(rows, { matched: preview.length, cells: totalCells }, [...created], { fileRows });
+      return;
+    }
+
     const rows = {};
     preview.forEach((p) => {
       if (!p.student) return;
       const st = {};
       effectiveCols.forEach((c, i) => {
-        if (c.kind === "subject" && c.subject && c.subject !== "_skip") {
-          const v = p.cells[i];
-          if (v !== "") st[c.subject] = v;
-        }
+        const key = subjectKeyOf(c);
+        if (!key) return;
+        const v = p.cells[i];
+        if (v !== "") st[key] = v;
       });
       if (Object.keys(st).length) rows[p.student.id] = st;
     });
@@ -188,7 +237,7 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
       setError("Nothing to import — no rows matched a student in this class.");
       return;
     }
-    onImport(rows, { matched: matchedStudents, cells: totalCells });
+    onImport(rows, { matched: matchedStudents, cells: totalCells }, [...created]);
   };
 
   return (
@@ -196,12 +245,22 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
       open={open}
       onClose={onClose}
       size="xl"
-      title={`Import scores · ${cls?.name || "class"}`}
-      subtitle="Upload an Excel/CSV first (one subject per column), check the preview, then import — existing scores for the same student + subject are replaced."
+      title={`Import scores · ${cls?.name || "no class"}`}
+      subtitle={
+        noneMode
+          ? "No class selected — every data row is kept and every column becomes a score subject exactly as written in the file."
+          : "Upload an Excel/CSV first (one subject per column), check the preview, then import — existing scores for the same student + subject are replaced."
+      }
       footer={
         <div className="flex w-full items-center gap-2">
           <span className="text-xs mr-auto" style={{ color: "var(--text-3)" }}>
-            {rawRows.length ? `${preview.length} data rows · ${matchedStudents} matched · ${totalCells} scores` : "No file loaded yet"}
+            {rawRows.length
+              ? noneMode
+                ? `${preview.length} rows · ${totalCells} scores` +
+                  (newColCount ? ` · ${newColCount} subject${newColCount === 1 ? "" : "s"} straight from the file` : "")
+                : `${preview.length} data rows · ${matchedStudents} matched · ${totalCells} scores` +
+                  (newColCount ? ` · ${newColCount} new column${newColCount === 1 ? "" : "s"}` : "")
+              : "No file loaded yet"}
           </span>
           <button onClick={onClose} className="btn btn-outline h-10 px-4 text-sm">
             Cancel
@@ -210,7 +269,13 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
             onClick={doImport}
             disabled={!rawRows.length || totalCells === 0}
             className="btn btn-primary h-10 px-5 text-sm gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={totalCells ? `Write ${totalCells} scores into the ${subjects.length}-subject score sheet` : "Load a file with scores first"}
+            title={
+              totalCells
+                ? noneMode
+                  ? `Create a cheatsheet with ${totalCells} scores — subjects straight from the file`
+                  : `Write ${totalCells} scores into the ${subjects.length}-subject score sheet`
+                : "Load a file with scores first"
+            }
           >
             <CheckCircle2 size={15} /> Import {totalCells} scores
           </button>
@@ -226,7 +291,14 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
           <b style={{ color: "var(--text)" }}>Expected format:</b> a header row with a{" "}
           <b style={{ color: "var(--text)" }}>Student ID</b> or <b style={{ color: "var(--text)" }}>Name</b> column, then one column per
           subject — <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>No | Student Name | Mathematics | Khmer | Physics | …</code>. Each mark needs a single
-          row per student. Students are matched by ID first, then by name. Unmatched rows are skipped (shown in red).
+          row per student.{" "}
+          {noneMode ? (
+            <>With <b style={{ color: "var(--text)" }}>None</b> selected, every column becomes a score subject from the file — nothing is guessed.</>
+          ) : (
+            <>Students are matched by ID first, then by name. Columns whose subject isn't in this class yet are{" "}
+            <b style={{ color: "var(--primary-strong)" }}>created as new score columns automatically</b> — change a column to "Skip" if you
+            don't want it. Unmatched rows are skipped (shown in red).</>
+          )}
         </div>
 
         {error && (
@@ -318,19 +390,29 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
                           {c.kind === "sid" ? "→ Student ID" : c.kind === "name" ? "→ Name" : "Column"}
                         </span>
                         {c.kind === "subject" ? (
-                          <select
-                            className="input h-7 w-full min-w-[104px] text-[11px] py-0.5 font-semibold"
-                            value={c.subject || "_skip"}
-                            onChange={(e) => setColRole(i, e.target.value)}
-                            title={rawHeader[i]}
-                          >
-                            <option value="_skip">— Skip column —</option>
-                            {subjects.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
+                          <>
+                            <select
+                              className="input h-7 w-full min-w-[110px] text-[11px] py-0.5 font-semibold"
+                              value={c.subject || "_skip"}
+                              onChange={(e) => setColRole(i, e.target.value)}
+                              title={rawHeader[i]}
+                            >
+                              <option value="_skip">— Skip column —</option>
+                              {c.subject === "__new__" && (
+                                <option value="__new__">＋ New subject: {newSubjectName(c)}</option>
+                              )}
+                              {subjects.map((s) => (
+                                <option key={s} value={s}>
+                                  {s}
+                                </option>
+                              ))}
+                            </select>
+                            {c.subject === "__new__" && (
+                              <span className="block text-[10px] font-bold uppercase tracking-wide mt-1" style={{ color: "var(--primary-strong)" }}>
+                                ＋ new column
+                              </span>
+                            )}
+                          </>
                         ) : (
                           <span className="block max-w-[140px] truncate font-medium" style={{ color: "var(--text-2)" }} title={rawHeader[i]}>
                             {rawHeader[i] || "—"}
@@ -363,6 +445,17 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
                               </span>
                             </span>
                           </span>
+                        ) : noneMode ? (
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <span className="truncate text-xs font-semibold" style={{ color: "var(--text)" }}>
+                              {p.nameRaw || "—"}
+                            </span>
+                            {p.sidRaw && (
+                              <span className="truncate text-[10px]" style={{ color: "var(--text-3)" }}>
+                                {p.sidRaw}
+                              </span>
+                            )}
+                          </span>
                         ) : (
                           <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--danger)" }}>
                             <Search size={12} /> {[p.sidRaw, p.nameRaw].filter(Boolean).join(" · ") || "row"}
@@ -391,7 +484,7 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
               </button>
             )}
 
-            {unmatched > 0 && (
+            {!noneMode && unmatched > 0 && (
               <p className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--warning)" }}>
                 <AlertTriangle size={13} /> {unmatched} row{unmatched === 1 ? "" : "s"} didn't match a student in {cls?.name} and will be skipped.
               </p>
