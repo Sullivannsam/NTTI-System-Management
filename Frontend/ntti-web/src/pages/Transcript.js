@@ -10,12 +10,14 @@ import {
   ChevronDown,
   User2,
   Link2,
+  Upload,
 } from "lucide-react";
 import clsx from "clsx";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
-import { ACADEMIC_LEVELS, levelMeta, majorName, prettyDate, computeRate, todayISO, programYears } from "../data/seed";
+import TranscriptImportModal from "../components/TranscriptImportModal";
+import { ACADEMIC_LEVELS, levelMeta, majorName, prettyDate, computeRate, todayISO, programYears, maxLevelForMajor } from "../data/seed";
 
 const SCORES_KEY = "ntti.scores.v1";
 const SCHED_KEY = "ntti.schedule.v2";
@@ -110,7 +112,7 @@ function StudentSelect({ students, value, onChange, placeholder = "Select a stud
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex h-10 w-full min-w-[240px] items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-medium transition"
+        className="flex h-10 w-full min-w-[210px] max-w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-medium transition"
         style={{
           background: "var(--surface)",
           borderColor: open ? "var(--primary)" : "var(--border)",
@@ -128,7 +130,7 @@ function StudentSelect({ students, value, onChange, placeholder = "Select a stud
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 w-[340px] rounded-2xl border p-2 shadow-lg animate-fade-up"
+            className="absolute left-0 top-[calc(100%+6px)] z-50 w-[min(340px,calc(100vw-20px))] rounded-2xl border p-2 shadow-lg animate-fade-up"
             style={{ background: "var(--surface)", borderColor: "var(--border)" }}
           >
             <div className="relative mb-1.5">
@@ -193,7 +195,9 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
     ["Shift", cls?.shift || "—"],
     ["Degree", cls?.degree || "—"],
     ["Programme", `${majorName(student.major)} · ${programYears(student.major)} years`],
-  ];
+    ["Thesis", student.thesisTitle ? `${student.thesisTitle}${student.thesisScore != null ? ` · ${student.thesisScore}%` : ""}` : student.thesisScore != null ? `${student.thesisScore}%` : null],
+    ["Exit exam", student.exitExam != null ? `${student.exitExam}%` : null],
+  ].filter(([, v]) => v != null);
 
   const infoCells = info
     .map(([k, v]) => `<td style="padding:4px 10px;border:1px solid #cbd5e1;color:#475569"><b>${esc(k)}</b></td><td style="padding:4px 10px;border:1px solid #cbd5e1;color:#0f172a">${esc(v)}</td>`)
@@ -266,7 +270,7 @@ function downloadFile(html, filename, type) {
 
 /* ── main page ───────────────────────────────────────────── */
 export default function Transcript() {
-  const { students, classes, attendance, logAudit, showToast } = useApp();
+  const { students, classes, attendance, addStudent, updateStudent, logAudit, showToast } = useApp();
   const navigate = useNavigate();
   const [scores, setScores] = useState(loadScores);
   const [schedules, setSchedules] = useState(loadSchedules);
@@ -277,6 +281,7 @@ export default function Transcript() {
   const [classId, setClassId] = useState(initialStudent?.className || classes[0]?.id || "");
   const [studentId, setStudentId] = useState(initialStudent?.id || null);
   const [scope, setScope] = useState("all");
+  const [importOpen, setImportOpen] = useState(false);
 
   // re-read latest scores/schedules when the page opens
   useEffect(() => {
@@ -298,7 +303,7 @@ export default function Transcript() {
   const roster = useMemo(
     () =>
       students
-        .filter((s) => s.className === classId)
+        .filter((s) => s.className === classId || !s.className) // class students + class-less students (imported transcripts)
         .sort((a, b) => String(a.studentId || "").localeCompare(String(b.studentId || ""), undefined, { numeric: true })),
     [students, classId]
   );
@@ -318,7 +323,10 @@ export default function Transcript() {
   }, [studentId]);
 
   const student = students.find((s) => s.id === studentId) || null;
-  const cls = classes.find((c) => c.id === (student?.className || classId)) || null;
+  // class info comes from the student's own class (a class-less student → null)
+  const cls = student
+    ? classes.find((c) => c.id === student.className) || null
+    : classes.find((c) => c.id === classId) || null;
   const yearsInProgram = student ? programYears(student.major) : 4;
 
   /* every recorded term: archived history + the live (current) term */
@@ -435,6 +443,93 @@ export default function Transcript() {
     showToast(`Transcript exported as ${type === "word" ? "Word" : "Excel"}`);
   };
 
+  /** Merge imported cheatsheet terms into a student's transcript history. */
+  const mergeTermsInto = (existing, entries) => {
+    const map = new Map((existing || []).map((h) => [h.level, h]));
+    entries.forEach((e) => {
+      const cur = map.get(e.level);
+      const subjects = Array.from(new Set([...(cur?.subjects || []), ...(e.subjects || [])]));
+      map.set(e.level, {
+        ...(cur || {
+          level: e.level,
+          year: levelMeta(e.level).year,
+          semester: levelMeta(e.level).semester,
+          archived: true,
+        }),
+        level: e.level,
+        subjects,
+        scores: { ...(cur?.scores || {}), ...(e.scores || {}) },
+      });
+    });
+    return [...map.values()];
+  };
+
+  /** Apply the transcript import: update matched students, create class-less ones. */
+  const handleTranscriptImport = (rows, stats) => {
+    if (!rows.length) return;
+    let updated = 0;
+    let created = 0;
+    let nextId = Math.max(0, ...students.map((s) => s.id));
+    const createdIds = [];
+    rows.forEach((row) => {
+      const entries = (row.entries || [])
+        .filter((e) => e.scores && Object.keys(e.scores).length)
+        .map((e) => ({
+          level: e.level,
+          year: levelMeta(e.level).year,
+          semester: levelMeta(e.level).semester,
+          archived: true,
+          subjects: e.subjects || Object.keys(e.scores),
+          scores: e.scores,
+        }));
+      if (!entries.length) return;
+      const extra = {};
+      if (row.identity?.thesisTitle) extra.thesisTitle = row.identity.thesisTitle;
+      if (row.identity?.thesisScore != null) extra.thesisScore = row.identity.thesisScore;
+      if (row.identity?.exitExam != null) extra.exitExam = row.identity.exitExam;
+      if (row.matched) {
+        updateStudent(row.matched.id, {
+          history: mergeTermsInto(row.matched.history, entries),
+          ...extra,
+        });
+        updated++;
+      } else {
+        nextId += 1;
+        createdIds.push(nextId);
+        const i = row.identity || {};
+        const lastLevel = entries[entries.length - 1]?.level || "S1Y1";
+        const finished = entries.some((e) => e.level === maxLevelForMajor("it"));
+        addStudent({
+          firstName: i.firstName || i.khmerName || "Student",
+          lastName: i.lastName || "",
+          khmerName: i.khmerName || "",
+          studentId: i.studentId || `NTTI-${String(nextId).padStart(3, "0")}`,
+          gender: i.gender || "",
+          dob: i.dob || "",
+          major: "it",
+          field: "Information Technology",
+          level: lastLevel,
+          status: finished ? "Graduate" : "Learning",
+          className: "",
+          ...extra,
+          history: entries,
+        });
+        created++;
+      }
+    });
+    setImportOpen(false);
+    if (createdIds.length) {
+      setStudentId(createdIds[0]);
+      const fresh = students.find((s) => s.id === createdIds[0]);
+      if (fresh && fresh.className) setClassId(fresh.className);
+    }
+    logAudit(
+      "import_transcript",
+      `Imported transcript scores from cheatsheet: ${updated} student(s) updated, ${created} created (${stats?.scores || 0} scores)`
+    );
+    showToast(`${stats?.scores || 0} scores imported — ${updated} updated · ${created} new students`);
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-5 animate-fade-up">
       {/* print rules + watermark styling: hide chrome, keep the document */}
@@ -484,11 +579,19 @@ export default function Transcript() {
           title="Transcript"
           subtitle="Pick a class and student, choose the term(s), then print or download the official record."
           actions={
-            <div className="flex flex-wrap items-center gap-2">
+            <>
+              <button
+                onClick={() => setImportOpen(true)}
+                className="btn btn-outline h-10 shrink-0 px-3.5 text-sm gap-1.5"
+                title="Import a score cheatsheet (Excel/CSV) into student transcripts — works for students without a class"
+              >
+                <Upload size={15} /> Import scores
+              </button>
               <ClassSelect
                 value={classId}
                 onChange={setClassId}
                 placeholder="Select a class"
+                minWidth={200}
                 options={classes.map((c) => ({
                   value: c.id,
                   label: c.name,
@@ -496,10 +599,17 @@ export default function Transcript() {
                 }))}
               />
               <StudentSelect students={roster} value={studentId} onChange={setStudentId} />
-            </div>
+            </>
           }
         />
       </div>
+
+      <TranscriptImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        students={students}
+        onImport={handleTranscriptImport}
+      />
 
       {!student && (
         <div className="card no-print">
@@ -639,7 +749,10 @@ export default function Transcript() {
                   ["Shift", cls?.shift || "—"],
                   ["Degree", cls?.degree || "—"],
                   ["Programme", `${majorName(student.major)} · ${yearsInProgram} years`],
+                  ["Thesis", student.thesisTitle ? `${student.thesisTitle}${student.thesisScore != null ? ` · ${student.thesisScore}%` : ""}` : student.thesisScore != null ? `${student.thesisScore}%` : null],
+                  ["Exit exam", student.exitExam != null ? `${student.exitExam}%` : null],
                 ]
+                  .filter(([, v]) => v != null)
                   .reduce((pairs, row, i) => {
                     if (i % 2 === 0) pairs.push([row]);
                     else pairs[pairs.length - 1].push(row);

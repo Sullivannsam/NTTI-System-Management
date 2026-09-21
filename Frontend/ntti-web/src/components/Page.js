@@ -13,7 +13,7 @@ export default function PageHeader({ title, subtitle, actions }) {
           </p>
         )}
       </div>
-      {actions && <div className="flex items-center gap-3 flex-wrap">{actions}</div>}
+      {actions && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">{actions}</div>}
     </div>
   );
 }

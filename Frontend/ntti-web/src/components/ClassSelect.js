@@ -34,6 +34,7 @@ export default function ClassSelect({
         className="flex h-10 w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-medium transition"
         style={{
           minWidth,
+          maxWidth: "100%",
           background: "var(--surface)",
           borderColor: open ? "var(--primary)" : "var(--border)",
           color: "var(--text)",
@@ -50,7 +51,7 @@ export default function ClassSelect({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 w-[300px] rounded-2xl border p-2 shadow-lg animate-fade-up"
+            className="absolute left-0 top-[calc(100%+6px)] z-50 w-[min(320px,calc(100vw-20px))] rounded-2xl border p-2 shadow-lg animate-fade-up"
             style={{ background: "var(--surface)", borderColor: "var(--border)" }}
           >
             {/* search */}

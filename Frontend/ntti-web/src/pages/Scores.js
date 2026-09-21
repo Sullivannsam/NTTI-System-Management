@@ -4,11 +4,13 @@ import {
   Save,
   RotateCcw,
   AlertTriangle,
+  FileSpreadsheet,
   Link2,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
+import ScoreImportModal from "../components/ScoreImportModal";
 
 const SCORES_KEY = "ntti.scores.v1";
 const SEL_KEY = "ntti.scores.selected.v1";
@@ -47,6 +49,7 @@ export default function Scores() {
   const [schedules, setSchedules] = useState(loadSchedules);
   const [classId, setClassId] = useState(() => localStorage.getItem(SEL_KEY) || "");
   const [confirmReset, setConfirmReset] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // re-read latest schedules (subjects follow the Schedule page after Save)
   useEffect(() => {
@@ -215,21 +218,52 @@ export default function Scores() {
     showToast(`Scores cleared for ${cls?.name || "class"}`, "info");
   };
 
+  /* merge imported rows ({ studentId: { subject: "score" } }) into the class sheet */
+  const applyImport = (rows, { matched, cells }) => {
+    setScores((prev) => {
+      const next = { ...prev, [classId]: { ...(prev[classId] || {}) } };
+      Object.entries(rows).forEach(([sid, subjMap]) => {
+        next[classId][sid] = { ...(next[classId][sid] || {}), ...subjMap };
+      });
+      try {
+        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    logAudit("import_scores", `Imported ${cells} score cells for ${matched} students into ${cls?.name || "class"}`);
+    showToast(`Imported ${cells} scores for ${matched} students`);
+    setImportOpen(false);
+  };
+
   return (
     <div className="max-w-[1500px] mx-auto space-y-5 animate-fade-up">
       <PageHeader
         title="Scores"
         subtitle="Pick a class — its subject columns come straight from the class schedule."
         actions={
-          <ClassSelect
-            value={classId}
-            onChange={setClassId}
-            options={scoredClasses.map((c) => ({
-              value: c.id,
-              label: c.name,
-              sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
-            }))}
-          />
+          <>
+            {subjects.length > 0 && (
+              <button
+                onClick={() => setImportOpen(true)}
+                className="btn btn-outline h-10 shrink-0 px-3.5 text-sm gap-1.5"
+                title="Import scores for this class from an Excel or CSV file (one subject per column, one row per student)"
+              >
+                <FileSpreadsheet size={15} /> Import Excel
+              </button>
+            )}
+            <ClassSelect
+              value={classId}
+              onChange={setClassId}
+              minWidth={200}
+              options={scoredClasses.map((c) => ({
+                value: c.id,
+                label: c.name,
+                sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
+              }))}
+            />
+          </>
         }
       />
 
@@ -429,6 +463,15 @@ export default function Scores() {
           </div>
         </div>
       )}
+
+      <ScoreImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        cls={cls}
+        subjects={subjects}
+        roster={roster}
+        onImport={applyImport}
+      />
     </div>
   );
 }
