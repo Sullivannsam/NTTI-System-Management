@@ -348,13 +348,19 @@ export default function Classes() {
             )}
             <button
               onClick={() => setEndOpen(true)}
-              disabled={sel.completed}
-              title={sel.completed ? "This class has completed its programme" : "Archive this term and open the next semester"}
-              className="btn h-9 px-3 text-xs font-medium transition-colors border bg-[var(--surface-2)] hover:bg-[var(--primary-soft)] disabled:opacity-50"
+              disabled={sel.completed || !nextLevelCode}
+              title={
+                sel.completed
+                  ? "This class has completed its programme"
+                  : !nextLevelCode
+                  ? "No next semester is available for this class — nothing to advance to"
+                  : "Archive this term and open the next semester"
+              }
+              className="btn h-9 px-3 text-xs font-medium transition-colors border bg-[var(--surface-2)] hover:bg-[var(--primary-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
             >
               <Flag size={13} />
-              {sel.completed ? "Programme complete" : nextLevelCode ? `Next semester · ${nextLevelCode}` : "Finish programme"}
+              {sel.completed ? "Programme complete" : nextLevelCode ? `Next semester · ${nextLevelCode}` : "No next semester"}
             </button>
             <button onClick={() => setAddStudentOpen(true)} className="btn btn-primary h-9 px-3 text-xs">
               <UserRoundPlus size={14} /> Add student

@@ -386,12 +386,18 @@ export default function ClassDetail() {
           </div>
           <button
             onClick={() => setEndOpen(true)}
-            disabled={cls.completed}
-            title={cls.completed ? "This class has completed its programme" : "Archive this term and open the next semester"}
-            className="ml-auto btn btn-outline h-10 px-4 text-sm gap-1.5 disabled:opacity-50"
+            disabled={cls.completed || !nextLevelCode}
+            title={
+              cls.completed
+                ? "This class has completed its programme"
+                : !nextLevelCode
+                ? "No next semester is available for this class — nothing to advance to"
+                : "Archive this term and open the next semester"
+            }
+            className="ml-auto btn btn-outline h-10 px-4 text-sm gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Flag size={16} />
-            {cls.completed ? "Programme complete" : nextLevelCode ? `Next semester · ${nextLevelCode}` : "Finish programme"}
+            {cls.completed ? "Programme complete" : nextLevelCode ? `Next semester · ${nextLevelCode}` : "No next semester"}
           </button>
         </div>
 

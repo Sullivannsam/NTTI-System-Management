@@ -591,7 +591,7 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
 }
 
 /* ── one class = one Excel-style sheet ─────────────────── */
-function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, onRemoveWeek, subjects, subject, onSelectSubject, dailyOf, onPick, onReset, onSave, onCompleteWeek, dirty, dirtySubjects = [], onStudentClick }) {
+function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, onRemoveWeek, subjects, subject, onSelectSubject, dailyOf, onPick, onReset, onSave, dirtySubjects = [], onStudentClick }) {
   const week = weeks.find((w) => w.key === focusKey) || weeks[weeks.length - 1] || null;
   const weekNo = week ? weeks.findIndex((w) => w.key === week.key) + 1 : 0;
   const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
@@ -611,29 +611,14 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
     ? Math.round(students.reduce((acc, s) => acc + rateFor(s), 0) / students.length)
     : 0;
 
-  // every student marked for every day of this week? (pending = a just-picked cell)
-  const isWeekFull = (pending) =>
-    students.length > 0 &&
-    days.length > 0 &&
-    students.every((st) =>
-      days.every((d) => {
-        const v =
-          pending && pending.studentId === st.id && pending.date === d.date ? pending.status : statusOf(st, d.date);
-        return !!v;
-      })
-    );
-
-  // mark a day; once the whole week is filled, save it and slide to the next week
+  // mark a day — nothing saves automatically. Every subject you touch is kept
+  // as a draft and written in one shot when you press "Save all subjects".
   const handlePick = (s, day, status) => {
-    const wasFull = isWeekFull();
     onPick(s, day.date, status);
-    if (status && !wasFull && isWeekFull({ studentId: s.id, date: day.date, status })) {
-      onCompleteWeek?.({ studentId: s.id, date: day.date, status });
-    }
   };
 
   return (
-    <div>
+    <div className="overflow-hidden rounded-2xl border shadow-sm" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
       {/* sheet header — h1 (class name) + one labeled h2 row per field */}
       <div className="px-5 py-4" style={{ background: "var(--surface-1)" }}>
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -672,39 +657,30 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {dirtySubjects.filter((s) => s.key !== subject).length > 0 && (
+            {dirtySubjects.length > 0 && (
               <span
                 className="flex h-8 items-center rounded-lg px-2 text-[10px] font-bold"
-                style={{ background: "var(--danger-soft)", color: "var(--danger)" }}
-                title={`Also unsaved: ${dirtySubjects.filter((s) => s.key !== subject).map((s) => s.name).join(", ")}`}
-              >
-                +{dirtySubjects.filter((s) => s.key !== subject).length} other unsaved
-              </span>
-            )}
-            {dirty && (
-              <span
-                className="flex h-8 items-center rounded-lg px-2 text-[10px] font-bold uppercase tracking-wider"
                 style={{ background: "var(--warning-soft)", color: "var(--text-2)" }}
-                title="There are unsaved changes in this sheet"
+                title={`Unsaved: ${dirtySubjects.map((s) => s.name).join(", ")}`}
               >
-                unsaved
+                {dirtySubjects.length} subject{dirtySubjects.length === 1 ? "" : "s"} unsaved
               </span>
             )}
             <button
               onClick={onReset}
               className="flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-medium transition-colors bg-[var(--surface-2)] hover:bg-[var(--danger-soft)]"
-              title="Clear this week's days for this sheet — press Save attendance to keep it"
+              title="Clear every subject's marks for this week — nothing is written until you Save"
               style={{ borderColor: "var(--border)", color: "var(--danger)" }}
             >
               <RotateCcw size={13} /> Reset week
             </button>
             <button
               onClick={onSave}
-              disabled={!dirty}
+              disabled={dirtySubjects.length === 0}
               className="flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold transition-colors bg-[var(--primary)] hover:bg-[var(--primary-strong)] text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Save the checked attendance for this sheet"
+              title="Save the marked attendance for every subject in this class — one save for the whole sheet"
             >
-              <CheckCircle2 size={13} /> Save attendance
+              <CheckCircle2 size={13} /> Save all subjects
             </button>
           </div>
         </div>
@@ -901,6 +877,183 @@ function ClassGrid({ cls, students, weeks, focusKey, onSelectWeek, onAddWeek, on
   );
 }
 
+/* ── read-only view: every student × every subject, who missed what ── */
+function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay }) {
+  const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
+  const dayObj = scopeDay ? days.find((d) => d.date === scopeDay) || null : null;
+  const allWeek = !dayObj;
+  const dayShort = dayObj ? new Date(dayObj.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" }) : "";
+  const subMeetsDay = (sub, d) => !sub.day || sub.day === new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+
+  const statusAt = (s, sub, date) => ((dailyOf[s.id] || {})[sub.key] || {})[date] || "";
+
+  const weekStat = (s, sub) => {
+    const map = (dailyOf[s.id] || {})[sub.key] || {};
+    let marked = 0, pres = 0, abs = 0;
+    days.forEach((d) => {
+      const st = map[d.date];
+      if (!st) return;
+      marked++;
+      if (st === "present" || st === "late") pres++;
+      else abs++;
+    });
+    return { marked, pres, abs };
+  };
+
+  const missedOn = (s) => {
+    const out = [];
+    subjects.forEach((sub) => {
+      if (allWeek) {
+        const { abs } = weekStat(s, sub);
+        if (abs > 0) out.push({ sub, n: abs });
+      } else {
+        const st = statusAt(s, sub, dayObj.date);
+        if (st === "absent" || st === "leave") out.push({ sub, n: 1, st });
+      }
+    });
+    return out;
+  };
+
+  const overall = (s) => {
+    let marked = 0, pres = 0;
+    subjects.forEach((sub) => {
+      if (allWeek) {
+        const w = weekStat(s, sub);
+        marked += w.marked;
+        pres += w.pres;
+      } else {
+        const st = statusAt(s, sub, dayObj.date);
+        if (st) {
+          marked++;
+          if (st === "present" || st === "late") pres++;
+        }
+      }
+    });
+    return { marked, rate: marked ? Math.round((pres / marked) * 100) : null };
+  };
+
+  const subjectAbs = (sub) =>
+    students.reduce((a, s) => {
+      if (allWeek) return a + weekStat(s, sub).abs;
+      const st = statusAt(s, sub, dayObj.date);
+      return a + (st === "absent" || st === "leave" ? 1 : 0);
+    }, 0);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border shadow-sm" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <div className="px-5 py-3.5 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ background: "var(--surface-1)" }}>
+        <span className="h-3 w-3 rounded-full shrink-0" style={{ background: "var(--primary)" }} />
+        <h2 className="text-lg font-bold truncate" style={{ color: "var(--text)" }}>{cls.name}</h2>
+        <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+          {students.length} students · {allWeek ? weekLabel : `${dayObj.name} · ${dayObj.short}`} · {subjects.length} subject{subjects.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <div className="overflow-x-auto thin-scroll">
+        <table className="w-full text-sm" style={{ minWidth: 280 + subjects.length * 118 + 210, borderCollapse: "separate", borderSpacing: "0 6px" }}>
+          <thead>
+            <tr>
+              <th className="sticky left-0 z-20 text-left px-4 py-2 text-[11px] font-bold uppercase tracking-wider" style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+                Student
+              </th>
+              {subjects.map((sub) => {
+                const abs = subjectAbs(sub);
+                const meets = allWeek || subMeetsDay(sub, dayObj);
+                return (
+                  <th key={sub.key} className="text-center px-1.5 py-2 align-top" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)", background: !allWeek && meets ? "var(--primary-soft)" : undefined }}>
+                    <span className="block text-[11px] font-bold leading-tight" style={{ color: !allWeek && meets ? "var(--primary-strong)" : "var(--text-2)" }}>{sub.name}</span>
+                    <span className="block text-[9px] leading-tight" style={{ color: "var(--text-3)" }}>{sub.day ? `${sub.day}${sub.time ? ` · ${sub.time}` : ""}` : "no timetable"}</span>
+                    {abs > 0 ? <span className="block text-[9px] font-bold leading-tight" style={{ color: "var(--danger)" }}>{abs} absent</span> : null}
+                  </th>
+                );
+              })}
+              <th className="text-left px-3 py-2 text-[11px] font-bold uppercase tracking-wider" style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                Missed subjects
+              </th>
+              <th className="text-right px-3 py-2 text-[11px] font-bold uppercase tracking-wider" style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                Rate
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {students.map((s) => {
+              const missed = missedOn(s);
+              const ov = overall(s);
+              return (
+                <tr key={s.id}>
+                  <td className="sticky left-0 z-10 px-4 py-1.5" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+                    <button type="button" className="flex items-center gap-2.5 min-w-0 text-left" title={`${s.firstName} ${s.lastName}`}>
+                      <StudentAvatar student={s} size="sm" />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text)" }}>{s.khmerName || `${s.firstName} ${s.lastName}`}</p>
+                        <p className="text-[10px] leading-tight truncate" style={{ color: "var(--text-3)" }}>{s.studentId || ""}</p>
+                      </div>
+                    </button>
+                  </td>
+
+                  {subjects.map((sub) => {
+                    if (allWeek) {
+                      const w = weekStat(s, sub);
+                      const rate = w.marked ? Math.round((w.pres / w.marked) * 100) : null;
+                      return (
+                        <td key={sub.key} className="px-1.5 py-1.5 text-center" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                          {rate == null ? (
+                            <span className="text-[11px]" style={{ color: "var(--text-3)" }}>—</span>
+                          ) : (
+                            <span className="inline-flex flex-col items-center gap-0.5">
+                              <span className="text-xs font-bold tabular-nums" style={{ color: rateTone(rate) }}>{rate}%</span>
+                              {w.abs > 0 ? (
+                                <span className="rounded-full px-1.5 py-px text-[9px] font-bold" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>{w.abs} absent</span>
+                              ) : null}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    }
+                    const st = statusAt(s, sub, dayObj.date);
+                    const meta = WEEK_STATUS[st];
+                    const meets = subMeetsDay(sub, dayObj);
+                    return (
+                      <td key={sub.key} className="px-1.5 py-1.5 text-center" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                        {meta ? (
+                          <span className="inline-flex h-7 min-w-[54px] items-center justify-center rounded-md px-1.5 text-[11px] font-bold" style={{ background: meta.soft, color: meta.color }}>{meta.short}</span>
+                        ) : (
+                          <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{meets ? "·" : "–"}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+
+                  <td className="px-3 py-1.5" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                    {missed.length === 0 ? (
+                      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>—</span>
+                    ) : (
+                      <span className="flex flex-wrap gap-1">
+                        {missed.map((m) => (
+                          <span key={m.sub.key} className="rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>
+                            {m.sub.name}{allWeek && m.n > 1 ? ` ×${m.n}` : ""}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-right" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                    {ov.rate == null ? (
+                      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>—</span>
+                    ) : (
+                      <span className="text-xs font-bold tabular-nums" style={{ color: rateTone(ov.rate) }}>{ov.rate}%</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ── page ──────────────────────────────────────────────── */
 export default function Attendance() {
   const { students, classes, attendance, saveAttendance, showToast, logAudit } = useApp();
@@ -922,6 +1075,8 @@ export default function Attendance() {
   const [focusKey, setFocusKey] = useState(() => weekKeyOf(todayISO())); // selected week (shared by all sheets)
   const [draft, setDraft] = useState({}); // staged cells: { studentId: { subjectKey: { dateISO: status } } } — saved only on Save
   const [subjectOf, setSubjectOf] = useState({}); // { classId: subjectKey } — which subject's session is being marked right now
+  const [mode, setMode] = useState("mark"); // "mark" | "view"
+  const [viewDay, setViewDay] = useState(null); // view scope: null = whole week, else a dateISO
   const [scheduleState] = useState(() => readScheduleState()); // read once; Schedule page owns live edits
   const [weekMap, setWeekMap] = useState(() => {
     const base = lastNWeeks(15).map((w) => w.key);
@@ -1048,6 +1203,15 @@ export default function Attendance() {
     return ids.map((id) => ({ cls: classById[id], list: map[id] }));
   }, [roster, classById]);
 
+  /* view mode: the week + day the report is scoped to */
+  const viewWeeks = useMemo(() => {
+    for (const id of visibleSel) if (weeksOf[id]?.length) return weeksOf[id];
+    return [];
+  }, [visibleSel, weeksOf]);
+  const viewWeek = viewWeeks.find((w) => w.key === focusKey) || viewWeeks[viewWeeks.length - 1] || null;
+  const viewWeekNo = viewWeek ? viewWeeks.findIndex((w) => w.key === viewWeek.key) + 1 : 0;
+  const viewDays = useMemo(() => (viewWeek ? weekDays(viewWeek.start) : []), [viewWeek]);
+
   /* staged view = persisted daily attendance + unsaved draft overrides,
      now keyed student -> subject -> date, so each subject's session for a
      day is independent of every other subject's session that same day */
@@ -1099,108 +1263,108 @@ export default function Attendance() {
     });
   };
 
-  const resetSheet = (clsId, subject) => {
+  const resetSheet = (clsId) => {
     const list = roster.filter((s) => s.className === clsId);
     const ws = weeksOf[clsId] || [];
     const wk = ws.find((w) => w.key === focusKey) || ws[ws.length - 1];
     if (!list.length || !wk) return;
     const days = weekDays(wk.start);
+    const subs = subjectsOf[clsId] || [];
     setDraft((prev) => {
       const next = { ...prev };
       list.forEach((s) => {
         const forStudent = { ...(next[s.id] || {}) };
-        const forSubject = { ...(forStudent[subject] || {}) };
-        days.forEach((d) => {
-          forSubject[d.date] = "";
+        subs.forEach((sub) => {
+          const forSubject = { ...(forStudent[sub.key] || {}) };
+          days.forEach((d) => {
+            forSubject[d.date] = "";
+          });
+          forStudent[sub.key] = forSubject;
         });
-        forStudent[subject] = forSubject;
         next[s.id] = forStudent;
       });
       return next;
     });
-    const subj = (subjectsOf[clsId] || []).find((x) => x.key === subject);
-    showToast(`Week ${wk.range} cleared for ${classById[clsId]?.name || clsId} · ${subjectLabelOf(subj)} — press Save attendance to keep it`);
+    showToast(`Week ${wk.range} cleared for ${classById[clsId]?.name || clsId} (all subjects) — press Save to keep it`);
   };
 
-  const saveSheet = (clsId, subject) => {
-    const list = roster.filter((s) => s.className === clsId);
+  /* build attendance records from the current draft for some students + subjects */
+  const draftRecords = (list, subKeys) => {
     const records = [];
     list.forEach((s) => {
-      const dm = draft[s.id]?.[subject];
-      if (!dm) return;
-      Object.entries(dm).forEach(([date, st]) => {
-        records.push({
-          id: `${s.id}-${date}-${subject}`,
-          studentId: s.id,
-          date,
-          subject,
-          status: st,
-          checkIn: st === "present" ? "07:30" : st === "late" ? "08:20" : null,
+      subKeys.forEach((subKey) => {
+        const dm = draft[s.id]?.[subKey];
+        if (!dm) return;
+        Object.entries(dm).forEach(([date, st]) => {
+          records.push({
+            id: `${s.id}-${date}-${subKey}`,
+            studentId: s.id,
+            date,
+            subject: subKey,
+            status: st,
+            checkIn: st === "present" ? "07:30" : st === "late" ? "08:20" : null,
+          });
         });
       });
     });
+    return records;
+  };
+
+  const clearDraftFor = (list, subKeys) => {
+    setDraft((prev) => {
+      const next = { ...prev };
+      list.forEach((s) => {
+        if (!next[s.id]) return;
+        const forStudent = { ...next[s.id] };
+        subKeys.forEach((k) => delete forStudent[k]);
+        next[s.id] = forStudent;
+      });
+      return next;
+    });
+  };
+
+  /* save every subject of one class sheet in a single write */
+  const saveSheet = (clsId) => {
+    const list = roster.filter((s) => s.className === clsId);
+    const subKeys = (subjectsOf[clsId] || []).filter((sub) => classDirty(clsId, sub.key)).map((sub) => sub.key);
+    const records = draftRecords(list, subKeys);
     if (!records.length) {
       showToast("No changes to save for this sheet");
       return;
     }
     saveAttendance(records);
-    setDraft((prev) => {
-      const next = { ...prev };
-      list.forEach((s) => {
-        if (next[s.id]) {
-          const forStudent = { ...next[s.id] };
-          delete forStudent[subject];
-          next[s.id] = forStudent;
-        }
-      });
-      return next;
-    });
-    const subj = (subjectsOf[clsId] || []).find((x) => x.key === subject);
-    showToast(`${records.length} attendance edit${records.length === 1 ? "" : "s"} saved for ${classById[clsId]?.name || clsId} · ${subjectLabelOf(subj)}`);
+    clearDraftFor(list, subKeys);
+    const saved = records.filter((r) => r.status).length;
+    showToast(`${saved} attendance record${saved === 1 ? "" : "s"} saved for ${classById[clsId]?.name || clsId} (${subKeys.length} subject${subKeys.length === 1 ? "" : "s"})`);
   };
 
-  /* Week fully marked → save it automatically and slide to the next week (no manual Save needed) */
-  const completeWeek = (clsId, subject, extra) => {
-    const list = roster.filter((s) => s.className === clsId);
-    const records = [];
-    list.forEach((s) => {
-      const dm = { ...(draft[s.id]?.[subject] || {}) };
-      if (extra && extra.studentId === s.id) dm[extra.date] = extra.status;
-      Object.entries(dm).forEach(([date, st]) => {
-        records.push({
-          id: `${s.id}-${date}-${subject}`,
-          studentId: s.id,
-          date,
-          subject,
-          status: st,
-          checkIn: st === "present" ? "07:30" : st === "late" ? "08:20" : null,
-        });
-      });
-    });
-    if (records.length) {
-      saveAttendance(records);
-      setDraft((prev) => {
-        const next = { ...prev };
-        list.forEach((s) => {
-          if (next[s.id]) {
-            const forStudent = { ...next[s.id] };
-            delete forStudent[subject];
-            next[s.id] = forStudent;
-          }
-        });
-        return next;
-      });
+  /* every unsaved edit on the page, across all classes and subjects */
+  const totalDraftEdits = useMemo(
+    () =>
+      Object.values(draft).reduce(
+        (a, subMap) => a + Object.values(subMap).reduce((b, days) => b + Object.values(days).filter(Boolean).length, 0),
+        0
+      ),
+    [draft]
+  );
+
+  /* one button saves every marked cell — all subjects, all students shown */
+  const saveAll = () => {
+    const subKeys = Array.from(new Set(roster.flatMap((s) => Object.keys(draft[s.id] || {}))));
+    const records = draftRecords(roster, subKeys);
+    if (!records.length) {
+      showToast("Nothing to save — mark some attendance first");
+      return;
     }
-    const ws = weeksOf[clsId] || [];
-    const wk = ws.find((w) => w.key === focusKey) || ws[ws.length - 1];
-    const idx = wk ? ws.findIndex((w) => w.key === wk.key) : -1;
-    const next = idx >= 0 ? ws[idx + 1] : null;
-    if (next) {
-      setFocusKey(next.key);
-      showToast(`Week ${idx + 1} complete — saved, moved to W${idx + 2}`);
-    } else if (idx >= 0) {
-      showToast(`Week ${idx + 1} complete — saved`);
-    }
+    saveAttendance(records);
+    clearDraftFor(roster, subKeys);
+    const saved = records.filter((r) => r.status).length;
+    showToast(`${saved} attendance record${saved === 1 ? "" : "s"} saved across ${roster.length} student${roster.length === 1 ? "" : "s"}`);
+  };
+
+  const discardAll = () => {
+    setDraft({});
+    showToast("All unsaved attendance discarded");
   };
 
   const classDirty = (clsId, subject) =>
@@ -1276,19 +1440,37 @@ export default function Attendance() {
     <div>
       <PageHeader
         title="Attendance"
-        subtitle="Pick classes with the tick dropdown, then mark each student Present / Late / Absent / Permission — one week at a time. Classes with more than one subject a day show a Subject picker so each session is marked separately."
+        subtitle="Mark every subject first — nothing is saved until you press Save all. Use View report to see all students, all subjects, and exactly which subject each student missed."
         actions={
-          <button
-            onClick={() => {
-              setDlAll(false);
-              setDlChecked(Object.fromEntries(visibleSel.map((id) => [id, true])));
-              setDlSel(true);
-            }}
-            className="btn btn-outline h-10 px-4 text-sm gap-1.5"
-            title="Export the selected week for one or more classes to Excel or Word"
-          >
-            <FileDown size={15} /> Export
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-xl border p-0.5" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
+              {[
+                { k: "mark", label: "Mark" },
+                { k: "view", label: "View report" },
+              ].map((t) => (
+                <button
+                  key={t.k}
+                  onClick={() => setMode(t.k)}
+                  className="h-9 rounded-lg px-3 text-sm font-semibold transition-colors"
+                  style={mode === t.k ? { background: "var(--primary)", color: "#fff" } : { color: "var(--text-2)" }}
+                  title={t.k === "mark" ? "Mark attendance for the week" : "See every student's attendance by subject"}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                setDlAll(false);
+                setDlChecked(Object.fromEntries(visibleSel.map((id) => [id, true])));
+                setDlSel(true);
+              }}
+              className="btn btn-outline h-10 px-4 text-sm gap-1.5"
+              title="Export the selected week for one or more classes to Excel or Word"
+            >
+              <FileDown size={15} /> Export
+            </button>
+          </div>
         }
       />
 
@@ -1384,72 +1566,183 @@ export default function Attendance() {
         )}
       </div>
 
-      {/* weekly grid */}
-      <div className="card overflow-hidden animate-fade-up" style={{ animationDelay: "80ms" }}>
-        {visibleSel.length === 0 ? (
-          <div className="px-2">
-            <EmptyState
-              icon={Users}
-              title={sel.length === 0 && !classQ && !q.trim() ? "Start a search" : "No classes match"}
-              subtitle={
-                sel.length === 0 && !classQ && !q.trim()
-                  ? "No class is selected yet — start typing a class name or a student name above, or tick classes in the dropdown."
-                  : "No classes match your current search — try a different name."
-              }
-            />
-          </div>
-        ) : (
-          <>
-            {groups.length === 0 ? (
-              <div className="px-2">
-                <EmptyState
-                  icon={Search}
-                  title="No students match"
-                  subtitle="Try a different student name or ID, or add a new student with the row inside each class sheet."
-                />
+      {mode === "mark" ? (
+        /* ── mark mode: draft every subject first, then save once ── */
+        <div className="card overflow-hidden animate-fade-up" style={{ animationDelay: "80ms" }}>
+          {visibleSel.length === 0 ? (
+            <div className="px-2">
+              <EmptyState
+                icon={Users}
+                title={sel.length === 0 && !classQ && !q.trim() ? "Start a search" : "No classes match"}
+                subtitle={
+                  sel.length === 0 && !classQ && !q.trim()
+                    ? "No class is selected yet — start typing a class name or a student name above, or tick classes in the dropdown."
+                    : "No classes match your current search — try a different name."
+                }
+              />
+            </div>
+          ) : (
+            <>
+              {groups.length === 0 ? (
+                <div className="px-2">
+                  <EmptyState
+                    icon={Search}
+                    title="No students match"
+                    subtitle="Try a different student name or ID, or add a new student with the row inside each class sheet."
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-6">
+                  {groups.map((g) => (
+                    <ClassGrid
+                      key={g.cls?.id || "g"}
+                      cls={g.cls}
+                      students={g.list}
+                      weeks={weeksOf[g.cls?.id] || []}
+                      focusKey={focusKey}
+                      onSelectWeek={setFocusKey}
+                      onAddWeek={() => addWeek(g.cls.id)}
+                      onRemoveWeek={(k) => removeWeek(g.cls.id, k)}
+                      subjects={subjectsOf[g.cls?.id] || []}
+                      subject={currentSubject(g.cls?.id)}
+                      onSelectSubject={(subj) => setSubjectOf((prev) => ({ ...prev, [g.cls.id]: subj }))}
+                      dailyOf={dailyOf}
+                      onPick={(s, date, status) => pickDay(s, date, currentSubject(g.cls.id), status)}
+                      onReset={() => resetSheet(g.cls.id)}
+                      onSave={() => saveSheet(g.cls.id)}
+                      dirtySubjects={dirtySubjectsOf(g.cls?.id)}
+                      onStudentClick={setDayStudent}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {roster.length > 0 && (
+            <>
+              <div className="px-5 py-4 border-t flex items-center gap-4" style={{ borderColor: "var(--border)" }}>
+                <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-3)" }}>
+                  <Percent size={14} /> Average attendance
+                  <b className="tabular-nums" style={{ color: avgRate ? rateTone(avgRate) : "var(--text-2)" }}>{avgRate}%</b>
+                </div>
+                <div className="flex-1">
+                  <ProgressBar value={avgRate} tone={avgRate >= 85 ? "success" : avgRate >= 70 ? "warning" : "danger"} />
+                </div>
               </div>
-            ) : (
-              <div className="flex flex-col gap-4">
+              {totalDraftEdits > 0 && (
+                <div className="px-5 py-3 border-t flex flex-wrap items-center gap-3" style={{ borderColor: "var(--border)", background: "var(--primary-soft)" }}>
+                  <span className="text-xs font-bold" style={{ color: "var(--primary-strong)" }}>
+                    {totalDraftEdits} unsaved mark{totalDraftEdits === 1 ? "" : "s"} — save once when you're done
+                  </span>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <button
+                      onClick={discardAll}
+                      className="btn btn-ghost h-9 px-3 text-xs"
+                      style={{ color: "var(--danger)" }}
+                      title="Throw away every unsaved mark"
+                    >
+                      <RotateCcw size={13} /> Discard all
+                    </button>
+                    <button
+                      onClick={saveAll}
+                      className="btn btn-primary h-9 px-4 text-xs"
+                      title="Save every marked subject for all students at once"
+                    >
+                      <CheckCircle2 size={14} /> Save all attendance
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        /* ── view report mode: all students × all subjects, who missed what ── */
+        <div className="card overflow-hidden animate-fade-up" style={{ animationDelay: "80ms" }}>
+          {visibleSel.length === 0 ? (
+            <div className="px-2">
+              <EmptyState icon={Users} title="No classes selected" subtitle="Tick classes above to view their attendance by subject." />
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="px-2">
+              <EmptyState icon={Search} title="No students match" subtitle="Try a different student name or ID." />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5 overflow-x-auto thin-scroll px-5 py-2 border-b" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+                <span className="shrink-0 mr-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                  Week
+                </span>
+                {viewWeeks.map((w, i) => (
+                  <button
+                    key={w.key}
+                    type="button"
+                    onClick={() => setFocusKey(w.key)}
+                    className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold tabular-nums transition-colors"
+                    style={w.key === viewWeek?.key ? { background: "var(--primary)", color: "#fff" } : { background: "var(--surface-2)", color: "var(--text-2)" }}
+                  >
+                    W{i + 1}
+                  </button>
+                ))}
+                <span className="shrink-0 ml-4 mr-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                  Day
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setViewDay(null)}
+                  className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors"
+                  style={viewDay === null ? { background: "var(--accent)", color: "#fff" } : { background: "var(--surface-2)", color: "var(--text-2)" }}
+                >
+                  Whole week
+                </button>
+                {viewDays.map((d) => {
+                  const active = viewDay === d.date;
+                  const dayShort = new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+                  return (
+                    <button
+                      key={d.date}
+                      type="button"
+                      onClick={() => setViewDay(d.date)}
+                      className="shrink-0 flex flex-col items-start rounded-lg px-2 py-1 text-left transition-colors"
+                      title={`${d.name} · ${d.short}`}
+                      style={active ? { background: "var(--accent)", color: "#fff" } : { background: "var(--surface-2)", color: "var(--text-2)" }}
+                    >
+                      <span className="text-[11px] font-bold leading-tight">{dayShort}</span>
+                      <span className="text-[9px] leading-tight tabular-nums" style={{ opacity: 0.75 }}>{d.short}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-col gap-6">
                 {groups.map((g) => (
-                  <ClassGrid
+                  <ClassView
                     key={g.cls?.id || "g"}
                     cls={g.cls}
                     students={g.list}
-                    weeks={weeksOf[g.cls?.id] || []}
-                    focusKey={focusKey}
-                    onSelectWeek={setFocusKey}
-                    onAddWeek={() => addWeek(g.cls.id)}
-                    onRemoveWeek={(k) => removeWeek(g.cls.id, k)}
+                    week={viewWeek}
+                    weekLabel={viewWeek ? `W${viewWeekNo} · ${viewWeek.range}` : ""}
                     subjects={subjectsOf[g.cls?.id] || []}
-                    subject={currentSubject(g.cls?.id)}
-                    onSelectSubject={(subj) => setSubjectOf((prev) => ({ ...prev, [g.cls.id]: subj }))}
                     dailyOf={dailyOf}
-                    onPick={(s, date, status) => pickDay(s, date, currentSubject(g.cls.id), status)}
-                    onReset={() => resetSheet(g.cls.id, currentSubject(g.cls.id))}
-                    onSave={() => saveSheet(g.cls.id, currentSubject(g.cls.id))}
-                    onCompleteWeek={(extra) => completeWeek(g.cls.id, currentSubject(g.cls.id), extra)}
-                    dirty={classDirty(g.cls.id, currentSubject(g.cls.id))}
-                    dirtySubjects={dirtySubjectsOf(g.cls?.id)}
-                    onStudentClick={setDayStudent}
+                    scopeDay={viewDay}
                   />
                 ))}
               </div>
-            )}
-          </>
-        )}
 
-        {roster.length > 0 && (
-          <div className="px-5 py-4 border-t flex items-center gap-4" style={{ borderColor: "var(--border)" }}>
-            <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-3)" }}>
-              <Percent size={14} /> Average attendance
-              <b className="tabular-nums" style={{ color: avgRate ? rateTone(avgRate) : "var(--text-2)" }}>{avgRate}%</b>
-            </div>
-            <div className="flex-1">
-              <ProgressBar value={avgRate} tone={avgRate >= 85 ? "success" : avgRate >= 70 ? "warning" : "danger"} />
-            </div>
-          </div>
-        )}
-      </div>
+              <div className="px-5 py-3 border-t flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]" style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
+                <span className="text-[10px] font-bold uppercase tracking-wider">Legend</span>
+                {Object.entries(WEEK_STATUS).map(([k, m]) => (
+                  <span key={k} className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-sm" style={{ background: m.color }} /> {m.label}
+                  </span>
+                ))}
+                <span className="ml-auto">Missed subjects = any subject with Absent or Permission.</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <StudentFormModal open={formOpen} onClose={() => setFormOpen(false)} lockedClass={formClass} />
 
