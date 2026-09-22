@@ -13,6 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import clsx from "clsx";
+import * as XLSX from "xlsx";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
@@ -25,7 +26,30 @@ const SCHED_KEY = "ntti.schedule.v2";
 const INSTITUTION_KM = "វិទ្យាស្ថានជាតិបណ្តុះបណ្តាលបច្ចេកទេស";
 const INSTITUTION_EN = "National Technical Training Institute";
 const LOGO_SRC = "/ntti-logo.png";
-const GRADE_POINTS = { A: 4, B: 3, C: 2, D: 1, F: 0 };
+
+/* ── official NTTI transcript layout (mirrors the “ex” sheet of the office file) ── */
+const INSTITUTION_LINES = {
+  country: "KINGDOM OF CAMBODIA",
+  motto: "Nation Religion King",
+  ministry: "Ministry of Labour and Vocational Training",
+  institute: "National Technical Training Institute",
+  noLine: "N0: ……………………….NTTI",
+  certNo: "ISO  9001 : 2015 / Cert NO : 720466/NTTI/DDA/PR-012/FR-004",
+  address1:
+    "National Technical Training Institute (NTTI), along Russian Federation Blvd, Teuk Thlar Commune, Sen Sok District, Phnom Penh",
+  address2: "Cambodia, Phone/Fax: (855)23 883039, website: www.ntti.edu.kh, E-mail:info@ntti.edu.kh",
+};
+
+/* official grading scale printed on the transcript */
+const NTTI_SCALE = [
+  { min: 85, max: 100, grade: "A", meaning: "Excellent", point: "4" },
+  { min: 80, max: 84, grade: "B+", meaning: "Very good", point: "3.5" },
+  { min: 70, max: 79, grade: "B", meaning: "Good", point: "3" },
+  { min: 65, max: 69, grade: "C+", meaning: "Fairly Good", point: "2.5" },
+  { min: 50, max: 64, grade: "C", meaning: "Fair", point: "2" },
+  { min: 0, max: 49, grade: "F", meaning: "Fail", point: "1.5" },
+];
+const GRADE_POINTS = { A: 4, "B+": 3.5, B: 3, "C+": 2.5, C: 2, F: 1.5 };
 
 /* document ink colours — fixed (not theme vars) so dark mode still prints correctly */
 const INK = "#0f172a";
@@ -51,7 +75,7 @@ function loadSchedules() {
   }
 }
 
-const letterOf = (n) => (n == null ? null : n >= 90 ? "A" : n >= 80 ? "B" : n >= 70 ? "C" : n >= 60 ? "D" : "F");
+const letterOf = (n) => (n == null ? null : NTTI_SCALE.find((g) => n >= g.min)?.grade ?? "F");
 
 const numOrNull = (v) => {
   if (v === undefined || v === null || v === "") return null;
@@ -59,11 +83,12 @@ const numOrNull = (v) => {
   return isNaN(n) ? null : n;
 };
 
-/** One row per subject for a term: { subject, score, grade }. */
+/** One row per subject for a term: { subject, score, grade, hour }. */
 const rowsOf = (term) =>
   (term.subjects || []).map((sub) => {
     const n = numOrNull((term.scores || {})[sub]);
-    return { subject: sub, score: n, grade: letterOf(n) };
+    const h = numOrNull((term.hours || {})[sub]);
+    return { subject: sub, score: n, grade: letterOf(n), hour: h };
   });
 
 /** Term average + grade + how many subjects actually have a score. */
@@ -78,8 +103,12 @@ const statsOf = (term) => {
 const gradeTone = (g) =>
   g === "A"
     ? { color: "#047857", background: "rgba(16,185,129,.12)", border: "1px solid rgba(16,185,129,.35)" }
+    : g === "B+"
+    ? { color: "#0369a1", background: "rgba(14,165,233,.16)", border: "1px solid rgba(14,165,233,.45)" }
     : g === "B"
     ? { color: "#0369a1", background: "rgba(14,165,233,.12)", border: "1px solid rgba(14,165,233,.35)" }
+    : g === "C+"
+    ? { color: "#b45309", background: "rgba(245,158,11,.18)", border: "1px solid rgba(245,158,11,.45)" }
     : g === "C"
     ? { color: "#b45309", background: "rgba(245,158,11,.14)", border: "1px solid rgba(245,158,11,.35)" }
     : g === "D"
@@ -410,6 +439,34 @@ export default function Transcript() {
       : allTerms.some((t) => t.level === scope);
     if (!ok) setScope("all");
   }, [allTerms, scope]);
+
+  const ysPresent = useMemo(
+    () =>
+      [...new Set(allTerms.map((t) => String(t.level || "")[3]).filter(Boolean))].sort((a, b) => Number(a) - Number(b)),
+    [allTerms]
+  );
+
+  /* group scoped terms into YEAR blocks with Semester I (left) and Semester II (right),
+     so the document mirrors the official “ex” sheet exactly. */
+  const yearBlocks = useMemo(() => {
+    const byYear = {};
+    terms.forEach((t) => {
+      const y = String(t.level || "")[3];
+      if (!y) return;
+      (byYear[y] ||= {})[String(t.level).slice(0, 2)] = t; // "S1" / "S2"
+    });
+    return Object.entries(byYear)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([y, m]) => ({ y, s1: m.S1 || null, s2: m.S2 || null }));
+  }, [terms]);
+
+  /* ordinal for the YEAR column: "1 st", "2 nd", "3 rd" … */
+  const ordinal = (n) => {
+    const j = Number(n) % 100;
+    if (j >= 11 && j <= 13) return `${n} th`;
+    const r = j % 10;
+    return `${n}${r === 1 ? "st" : r === 2 ? "nd" : r === 3 ? "rd" : "th"}`;
+  };
 
   const overall = useMemo(() => {
     const rows = terms.flatMap((t) => rowsOf(t)).filter((r) => r.score != null);

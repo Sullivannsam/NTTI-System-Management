@@ -7,6 +7,8 @@ import {
   AlertTriangle,
   FileSpreadsheet,
   Link2,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState } from "../components/Page";
@@ -59,7 +61,56 @@ const gradeOf = (avg) => {
    student names are exactly what the file contains (nothing guessed). */
 function NoneSheet({ meta, onScore, onClear }) {
   const { subjects = [], rows = [], scores = {} } = meta || {};
+  const [frozen, setFrozen] = useState(false);
+  const noneRefs = useRef({});
   if (!rows.length) return null;
+
+  /* spreadsheet-style cell navigation: arrow keys + Enter jump between cells */
+  const noneOrder = [];
+  rows.forEach((r) => subjects.forEach((sub, si) => noneOrder.push({ key: `${r.key}:${si}`, si })));
+  const focusNoneCell = (key) => {
+    const el = noneRefs.current[key];
+    if (el) {
+      el.focus();
+      try {
+        el.select();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+  const noneKeyDown = (e, key) => {
+    const idx = noneOrder.findIndex((c) => c.key === key);
+    if (idx === -1) return;
+    const el = e.currentTarget;
+    const len = el.value.length;
+    const sel = (el.selectionEnd || 0) - (el.selectionStart || 0);
+    const move = (delta) => {
+      e.preventDefault();
+      const next = noneOrder[idx + delta];
+      if (next) focusNoneCell(next.key);
+    };
+    switch (e.key) {
+      case "ArrowRight":
+        if (sel > 0 || (el.selectionEnd || 0) >= len) move(1);
+        break;
+      case "ArrowLeft":
+        if (sel > 0 || (el.selectionStart || 0) <= 0) move(-1);
+        break;
+      case "ArrowUp":
+        move(-subjects.length);
+        break;
+      case "ArrowDown":
+        move(subjects.length);
+        break;
+      case "Enter":
+        move(1);
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <div className="overflow-hidden">
       {/* header bar */}
@@ -72,6 +123,17 @@ function NoneSheet({ meta, onScore, onClear }) {
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <button
+            onClick={() => setFrozen((f) => !f)}
+            className={`btn h-9 px-3 text-sm gap-1.5 ${frozen ? "btn-primary" : "btn-outline"}`}
+            title={
+              frozen
+                ? "Unlock the header — the subject row and name column scroll away again"
+                : "Freeze header like Excel — the subject row and name column stay fixed while you scroll"
+            }
+          >
+            {frozen ? <><PinOff size={14} /> Unfreeze</> : <><Pin size={14} /> Freeze</>}
+          </button>
+          <button
             onClick={onClear}
             className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500"
             title="Remove this (No class) cheatsheet"
@@ -81,25 +143,46 @@ function NoneSheet({ meta, onScore, onClear }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto thin-scroll">
+      <div className={frozen ? "max-h-[62vh] overflow-auto thin-scroll" : "overflow-x-auto thin-scroll"}>
         <table className="w-full min-w-[860px] text-sm">
           <thead>
             <tr className="text-left text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-              <th className="sticky left-0 z-10 min-w-[190px] px-5 py-3.5" style={{ background: "var(--surface)" }}>
+              <th
+                className={`sticky left-0 min-w-[190px] px-5 py-3.5 ${frozen ? "top-0 z-30" : "z-10"}`}
+                style={{ background: "var(--surface)", ...(frozen ? { borderBottom: "1px solid var(--border)" } : {}) }}
+              >
                 Student
               </th>
               {subjects.map((sub, i) => (
                 <th
                   key={i}
-                  className="px-2 py-3 text-center align-bottom"
+                  className={`px-2 py-3 text-center align-bottom${frozen ? " sticky top-0 z-20" : ""}`}
                   title={sub}
-                  style={{ minWidth: 108, maxWidth: 180, whiteSpace: "normal", lineHeight: 1.2, wordBreak: "break-word" }}
+                  style={{
+                    minWidth: 108,
+                    maxWidth: 180,
+                    whiteSpace: "normal",
+                    lineHeight: 1.2,
+                    wordBreak: "break-word",
+                    background: frozen ? "var(--surface)" : undefined,
+                    ...(frozen ? { borderBottom: "1px solid var(--border)" } : {}),
+                  }}
                 >
                   {sub}
                 </th>
               ))}
-              <th className="px-2 py-3.5 text-center">Avg</th>
-              <th className="px-4 py-3.5 text-center" style={{ paddingRight: 20 }}>Grade</th>
+              <th
+                className={`px-2 py-3.5 text-center${frozen ? " sticky top-0 z-20" : ""}`}
+                style={{ background: frozen ? "var(--surface)" : undefined, ...(frozen ? { borderBottom: "1px solid var(--border)" } : {}) }}
+              >
+                Avg
+              </th>
+              <th
+                className={`px-4 py-3.5 text-center${frozen ? " sticky top-0 z-20" : ""}`}
+                style={{ paddingRight: 20, background: frozen ? "var(--surface)" : undefined, ...(frozen ? { borderBottom: "1px solid var(--border)" } : {}) }}
+              >
+                Grade
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -129,11 +212,16 @@ function NoneSheet({ meta, onScore, onClear }) {
                       <td key={si} className="px-2 py-2">
                         <div className="mx-auto w-full min-w-[68px] max-w-[130px]">
                           <input
+                            ref={(el) => {
+                              if (el) noneRefs.current[`${r.key}:${si}`] = el;
+                            }}
                             type="text"
                             inputMode="decimal"
                             maxLength={6}
                             value={v}
                             onChange={(e) => onScore(r.key, sub, e.target.value)}
+                            onKeyDown={(e) => noneKeyDown(e, `${r.key}:${si}`)}
+                            onFocus={(e) => e.target.select()}
                             placeholder="–"
                             className="w-full bg-transparent border-b-2 border-transparent py-1.5 text-center text-[13px] font-bold outline-none transition-colors hover:border-[var(--border)] focus:border-[var(--primary)]"
                             style={{ color: "var(--text)" }}
@@ -163,7 +251,7 @@ function NoneSheet({ meta, onScore, onClear }) {
         className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-5 py-3 border-t text-[11px]"
         style={{ borderColor: "var(--border)", color: "var(--text-3)" }}
       >
-        <span>Scores 0–100 · auto-saved as you type</span>
+        <span>Scores 0–100 · auto-saved as you type · arrow keys / Enter move between cells</span>
         <span className="ml-auto">Subjects match the imported file exactly</span>
       </div>
     </div>
@@ -178,6 +266,7 @@ export default function Scores() {
   const [classId, setClassId] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [frozen, setFrozen] = useState(false);
 
   // re-read latest schedules (subjects follow the Schedule page after Save)
   useEffect(() => {
@@ -411,8 +500,14 @@ export default function Scores() {
         scores: Object.fromEntries(keep.map((fr) => [fr.key, rows[fr.key]])),
       };
       setNoneMeta(meta);
+      /* explicit save so the import is durable the moment it lands (not only via the effect) */
+      try {
+        localStorage.setItem(NONE_META_KEY, JSON.stringify(meta));
+      } catch {
+        /* ignore */
+      }
       showToast(
-        `Cheatsheet imported — ${meta.subjects.length} subject${meta.subjects.length === 1 ? "" : "s"} · ${meta.rows.length} student${meta.rows.length === 1 ? "" : "s"} (columns match the file)`
+        `Cheatsheet imported & saved — ${meta.subjects.length} subject${meta.subjects.length === 1 ? "" : "s"} · ${meta.rows.length} student${meta.rows.length === 1 ? "" : "s"} (columns match the file)`
       );
       logAudit("import_scores_none", `Imported cheatsheet: ${meta.subjects.length} subjects, ${meta.rows.length} rows`);
       setImportOpen(false);
@@ -437,7 +532,7 @@ export default function Scores() {
         (added ? ` (+${added} new subject column${added === 1 ? "" : "s"})` : "")
     );
     showToast(
-      `Imported ${cells} scores for ${matched} students` +
+      `Imported & saved ${cells} scores for ${matched} students` +
         (added ? ` · added ${added} new subject column${added === 1 ? "" : "s"}` : "")
     );
     setImportOpen(false);
@@ -527,6 +622,19 @@ export default function Scores() {
               </span>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              {subjects.length > 0 && (
+                <button
+                  onClick={() => setFrozen((f) => !f)}
+                  className={`btn h-9 px-3 text-sm gap-1.5 ${frozen ? "btn-primary" : "btn-outline"}`}
+                  title={
+                    frozen
+                      ? "Unlock the header — the subject row and name column scroll away again"
+                      : "Freeze header like Excel — the subject row and name column stay fixed while you scroll"
+                  }
+                >
+                  {frozen ? <><PinOff size={14} /> Unfreeze</> : <><Pin size={14} /> Freeze</>}
+                </button>
+              )}
               <button
                 onClick={addSubjectColumn}
                 className="btn btn-outline h-9 px-3 text-sm gap-1.5"
@@ -552,25 +660,46 @@ export default function Scores() {
               This class has a schedule but no subjects yet — click <b style={{ color: "var(--text-2)" }}>+ Add subject</b> above, or add subject columns on the Schedule page.
             </p>
           ) : (
-            <div className="overflow-x-auto thin-scroll">
+            <div className={frozen ? "max-h-[62vh] overflow-auto thin-scroll" : "overflow-x-auto thin-scroll"}>
               <table className="w-full min-w-[860px] text-sm">
                 <thead>
                   <tr className="text-left text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    <th className="sticky left-0 z-10 min-w-[190px] px-5 py-3.5" style={{ background: "var(--surface)" }}>
+                    <th
+                      className={`sticky left-0 min-w-[190px] px-5 py-3.5 ${frozen ? "top-0 z-30" : "z-10"}`}
+                      style={{ background: "var(--surface)", ...(frozen ? { borderBottom: "1px solid var(--border)" } : {}) }}
+                    >
                       Student
                     </th>
                     {subjects.map((sub, i) => (
                       <th
                         key={i}
-                        className="px-2 py-3 text-center align-bottom"
+                        className={`px-2 py-3 text-center align-bottom${frozen ? " sticky top-0 z-20" : ""}`}
                         title={sub}
-                        style={{ minWidth: 108, maxWidth: 180, whiteSpace: "normal", lineHeight: 1.2, wordBreak: "break-word" }}
+                        style={{
+                          minWidth: 108,
+                          maxWidth: 180,
+                          whiteSpace: "normal",
+                          lineHeight: 1.2,
+                          wordBreak: "break-word",
+                          background: frozen ? "var(--surface)" : undefined,
+                          ...(frozen ? { borderBottom: "1px solid var(--border)" } : {}),
+                        }}
                       >
                         {sub}
                       </th>
                     ))}
-                    <th className="px-2 py-3.5 text-center">Avg</th>
-                    <th className="px-4 py-3.5 text-center" style={{ paddingRight: 20 }}>Grade</th>
+                    <th
+                      className={`px-2 py-3.5 text-center${frozen ? " sticky top-0 z-20" : ""}`}
+                      style={{ background: frozen ? "var(--surface)" : undefined, ...(frozen ? { borderBottom: "1px solid var(--border)" } : {}) }}
+                    >
+                      Avg
+                    </th>
+                    <th
+                      className={`px-4 py-3.5 text-center${frozen ? " sticky top-0 z-20" : ""}`}
+                      style={{ paddingRight: 20, background: frozen ? "var(--surface)" : undefined, ...(frozen ? { borderBottom: "1px solid var(--border)" } : {}) }}
+                    >
+                      Grade
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -645,7 +774,7 @@ export default function Scores() {
           )}
 
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-5 py-3 border-t text-[11px]" style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
-            <span>Scores 0–100 · auto-saved as you type</span>
+            <span>Scores 0–100 · auto-saved as you type · arrow keys / Enter move between cells</span>
             <span className="ml-auto">Subjects follow the class schedule · edit on the Schedule page</span>
           </div>
         </div>

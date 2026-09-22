@@ -6,18 +6,32 @@ import * as XLSX from "xlsx";
 
 const isIdCol = (h) => {
   const s = String(h ?? "").trim();
-  return /(student\s*id|student\s*code|id\b|code\b|roll\b|no\.?$|num|លេខកូដ|ល\.រ)/i.test(s) && !/name/i.test(s);
+  return (
+    /(student\s*id|student\s*code|(^|\s)(id|code|roll|stt|ord|no|num)s?\.?(\s|$)|nº|លេខកូដ|ល\.រ|ល\.កូដ)/i.test(s) &&
+    !/name|ឈ្មោះ|នាម/i.test(s)
+  );
 };
-const isNameCol = (h) => /(name|ឈ្មោះ)/i.test(String(h ?? ""));
+const isNameCol = (h) => /(name|ឈ្មោះ|នាម|អក្សរឡាតាំង)/i.test(String(h ?? ""));
+/* administrative columns (DOB, gender, birth place, thesis, exit exam…) — NOT score subjects */
+const isMetaCol = (h) =>
+  /(ភេទ|gender|ថ្ងៃខែ|ឆ្នាំកំនើត|birth|ទីកន្លែង|ប្រធានបទសារណា|ពិន្ទុសារណា|ពិន្ទុប្រឡងចេញ|ហត្ថលេខា|signature)/i.test(
+    String(h ?? "")
+  );
 
-/** First row that looks like a column header (ID / Name / subject), skipping title rows. */
+/** First row that looks like a column header (ID / Name / subject), skipping title rows. Falls back to the widest row. */
 function detectHeader(rows) {
+  let widest = -1;
+  let widestCells = 0;
   for (let r = 0; r < Math.min(rows.length, 8); r++) {
     const cells = (rows[r] || []).filter((c) => c != null && String(c).trim() !== "");
     if (cells.length < 2) continue;
     if (cells.some((c) => isIdCol(c) || isNameCol(c))) return r;
+    if (cells.length > widestCells) {
+      widestCells = cells.length;
+      widest = r;
+    }
   }
-  return 0;
+  return widest >= 0 ? widest : 0;
 }
 
 /**
@@ -90,8 +104,61 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     if (!s) return { kind: "idle" };
     if (isIdCol(s)) return { kind: "sid", header: s };
     if (isNameCol(s)) return { kind: "name", header: s };
+    if (isMetaCol(s)) return { kind: "meta", header: s };
     const matched = subjects.find((x) => x.trim().toLowerCase() === s.toLowerCase());
     return { kind: "subject", header: s, subject: matched || "__new__" };
+  };
+
+  /* pick the sheet that looks most like a score sheet: most subject-ish columns + most data rows */
+  const pickBestSheet = (book) => {
+    let best = -1;
+    let bestScore = 0;
+    book.SheetNames.forEach((name, i) => {
+      try {
+        const rows = XLSX.utils.sheet_to_json(book.Sheets[name], { header: 1, defval: "" });
+        if (!rows.length) return;
+        const hr = detectHeader(rows);
+        if (hr < 0 || hr >= rows.length) return;
+        const header = rows[hr] || [];
+        let subjects = 0;
+        for (const h of header) {
+          const t = String(h ?? "").trim();
+          if (!t || isIdCol(t) || isNameCol(t) || isMetaCol(t)) continue;
+          subjects++;
+        }
+        if (!subjects) return;
+        const subjectIdxs = [];
+        header.forEach((h, i) => {
+          const t = String(h ?? "").trim();
+          if (t && !isIdCol(t) && !isNameCol(t) && !isMetaCol(t)) subjectIdxs.push(i);
+        });
+        const sidI = header.findIndex((h) => isIdCol(h));
+        const nameI = header.findIndex((h) => isNameCol(h));
+        let dataRows = 0;
+        let content = 0;
+        for (let r = hr + 1; r < rows.length; r++) {
+          const row = rows[r] || [];
+          const a = sidI >= 0 ? String(row[sidI] ?? "").trim() : "";
+          const b = nameI >= 0 ? String(row[nameI] ?? "").trim() : "";
+          if (a || b) dataRows++;
+          for (const idx of subjectIdxs) {
+            const raw = String(row[idx] ?? "").replace(/,/g, "").trim();
+            if (raw !== "") {
+              const n = Number(raw);
+              if (Number.isFinite(n) && n >= 0 && n <= 100) content++;
+            }
+          }
+        }
+        const score = content * 1000 + dataRows * 10 + subjects;
+        if (score > bestScore) {
+          bestScore = score;
+          best = i;
+        }
+      } catch {
+        /* unreadable sheet — skip */
+      }
+    });
+    return best;
   };
 
   /* parse the chosen file */
@@ -101,10 +168,14 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     const readRows = (data) => {
       try {
         const book = XLSX.read(data, { type: data instanceof ArrayBuffer ? "array" : "string" });
-        const ws = book.Sheets[book.SheetNames[0]];
+        const idx = (() => {
+          const best = pickBestSheet(book);
+          return best >= 0 ? best : 0;
+        })();
+        const ws = book.Sheets[book.SheetNames[idx]];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         setWb(book);
-        setSheetIdx(0);
+        setSheetIdx(idx);
         setRawRows(rows);
         setHeaderRow(detectHeader(rows));
         setColRoles(null);
@@ -145,24 +216,56 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
 
   const switchSheet = (idx) => {
     if (!wb) return;
-    const ws = wb.Sheets[wb.SheetNames[idx]];
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-    setSheetIdx(idx);
-    setRawRows(rows);
-    setHeaderRow(detectHeader(rows));
-    setColRoles(null);
+    try {
+      const ws = wb.Sheets[wb.SheetNames[idx]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      setSheetIdx(idx);
+      setRawRows(rows);
+      setHeaderRow(detectHeader(rows));
+      setColRoles(null);
+    } catch (e) {
+      setError(`Could not read sheet "${wb.SheetNames[idx]}": ${e.message}`);
+    }
   };
 
   const preview = useMemo(() => {
     if (!effectiveCols.length) return [];
-    const sidIdx = effectiveCols.findIndex((c) => c.kind === "sid");
-    const nameIdx = effectiveCols.findIndex((c) => c.kind === "name");
+    const sidIdxs = [];
+    const nameIdxs = [];
+    effectiveCols.forEach((c, i) => {
+      if (c.kind === "sid") sidIdxs.push(i);
+      if (c.kind === "name") nameIdxs.push(i);
+    });
+    let sidIdx = sidIdxs[0] ?? -1;
+    /* several ID columns (e.g. ល.រ sequence + លេខកូដ code): prefer the one whose values look like real student codes */
+    if (sidIdxs.length > 1) {
+      let bestI = sidIdxs[0];
+      let bestScore = -1;
+      for (const idx of sidIdxs) {
+        let score = 0;
+        for (let r = headerRow + 1; r < Math.min(headerRow + 6, rawRows.length); r++) {
+          const v = String(rawRows[r]?.[idx] ?? "").trim();
+          if (!v) continue;
+          if (/[a-z-]/i.test(v)) score += 3;
+          else if (/^[0-9]+$/.test(v) && v.length > 2) score += 1;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestI = idx;
+        }
+      }
+      sidIdx = bestI;
+    }
+    const nameIdx = nameIdxs[0] ?? -1;
+    const hasIdentity = sidIdx >= 0 || nameIdx >= 0;
     const out = [];
     for (let r = headerRow + 1; r < rawRows.length; r++) {
       const row = rawRows[r] || [];
       if (!row.some((c) => c != null && String(c).trim() !== "")) continue;
       const sidRaw = sidIdx >= 0 ? String(row[sidIdx] ?? "").trim() : "";
       const nameRaw = nameIdx >= 0 ? String(row[nameIdx] ?? "").trim() : "";
+      /* when the file has ID/name columns, skip rows that carry neither (title rows, column-number rows, stray labels) */
+      if (hasIdentity && !sidRaw && !nameRaw) continue;
       /* in "None" mode there is no class roster — every file row is kept as-is */
       let student = null;
       if (!noneMode) {
@@ -170,8 +273,11 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
       }
       const cells = effectiveCols.map((c, i) => {
         if (subjectKeyOf(c)) {
-          const n = Number(String(row[i] ?? "").replace(/,/g, "").trim());
-          if (Number.isFinite(n) && n >= 0 && n <= 100) return n.toFixed(2);
+          const raw = String(row[i] ?? "").replace(/,/g, "").trim();
+          if (raw !== "") {
+            const n = Number(raw);
+            if (Number.isFinite(n) && n >= 0 && n <= 100) return n.toFixed(2);
+          }
         }
         return "";
       });
@@ -290,7 +396,11 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
         >
           <b style={{ color: "var(--text)" }}>Expected format:</b> a header row with a{" "}
           <b style={{ color: "var(--text)" }}>Student ID</b> or <b style={{ color: "var(--text)" }}>Name</b> column, then one column per
-          subject — <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>No | Student Name | Mathematics | Khmer | Physics | …</code>. Each mark needs a single
+          subject — <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>No | Student Name | Mathematics | Khmer | Physics | …</code>. Cheatsheet headings like{" "}
+          <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>ល.រ</code>,{" "}
+          <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>លេខកូដ</code> and{" "}
+          <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>គោត្តនាម-នាម</code> are
+          recognized automatically. Each mark needs a single{" "}
           row per student.{" "}
           {noneMode ? (
             <>With <b style={{ color: "var(--text)" }}>None</b> selected, every column becomes a score subject from the file — nothing is guessed.</>
@@ -387,7 +497,7 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
                     {effectiveCols.map((c, i) => (
                       <th key={i} className="px-2 py-2 align-top" style={{ minWidth: 120 }}>
                         <span className="block text-[10px] mb-1" style={{ color: "var(--text-3)" }}>
-                          {c.kind === "sid" ? "→ Student ID" : c.kind === "name" ? "→ Name" : "Column"}
+                          {c.kind === "sid" ? "→ Student ID" : c.kind === "name" ? "→ Name" : c.kind === "meta" ? "→ Info (skipped)" : "Column"}
                         </span>
                         {c.kind === "subject" ? (
                           <>
