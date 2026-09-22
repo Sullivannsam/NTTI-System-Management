@@ -253,11 +253,21 @@ export default function Classes() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredClasses.map((c) => (
+          {filteredClasses.map((c) => {
+            const cLevels = levelsForMajor(c.major);
+            const cSem = String(c.semester || "").match(/\d+/)?.[0] || "1";
+            const cYear = String(c.year || "").match(/\d+/)?.[0] || "1";
+            const cCode = `S${cSem}Y${cYear}`;
+            const cIdx = cLevels.indexOf(cCode);
+            const stepNo = cIdx >= 0 ? cIdx + 1 : 1;
+            const totalSteps = cLevels.length || 1;
+            const cNextCode = cIdx >= 0 && cIdx < cLevels.length - 1 ? cLevels[cIdx + 1] : null;
+            const pct = Math.round((stepNo / totalSteps) * 100);
+            return (
             <button
               key={c.id}
               onClick={() => openClass(c.id)}
-              className="card p-5 text-left transition-all duration-150 hover:-translate-y-0.5 hover:shadow-soft animate-fade-up group"
+              className="card p-5 text-left transition-all duration-150 hover:-translate-y-0.5 hover:shadow-soft animate-fade-up group relative"
             >
               <div className="flex items-start gap-3">
                 <span
@@ -274,12 +284,54 @@ export default function Classes() {
                     {c.field || c.name} · {c.shift} shift
                   </p>
                 </div>
+                {/* quick promote — no need to open the class to move it to the next semester */}
+                {!c.completed && cNextCode && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelId(c.id);
+                      setEndOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setSelId(c.id);
+                        setEndOpen(true);
+                      }
+                    }}
+                    title={`Move ${c.name} to ${cNextCode}`}
+                    className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--surface-2)]"
+                    style={{ color: "var(--primary-strong)" }}
+                  >
+                    <Flag size={15} />
+                  </span>
+                )}
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-1.5">
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 {c.field && <Badge tone="neutral">{c.field}</Badge>}
-                <Badge tone="neutral">{c.year}</Badge>
+                <Badge tone="neutral">Semester {cSem} · Year {cYear}</Badge>
+                {c.completed && <Badge tone="success">Programme complete</Badge>}
               </div>
+
+              {/* plain-English progress toward graduation, so "where is this class right now" is answered at a glance — no need to open it */}
+              {!c.completed && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-[10px] mb-1" style={{ color: "var(--text-3)" }}>
+                    <span>
+                      Step {stepNo} of {totalSteps}
+                      {cNextCode ? ` · next: ${cNextCode}` : ""}
+                    </span>
+                    <span className="font-semibold tabular-nums">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "var(--surface-2)" }}>
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: ACCENT[c.major] || ACCENT.it }} />
+                  </div>
+                </div>
+              )}
 
               <div className="mt-4 flex items-center justify-between text-xs">
                 <span style={{ color: "var(--text-2)" }}>
@@ -291,7 +343,8 @@ export default function Classes() {
                 </span>
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </>
