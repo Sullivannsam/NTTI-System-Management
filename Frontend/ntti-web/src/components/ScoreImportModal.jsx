@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, X, Search } from "lucide-react";
 import Modal from "./Modal";
 import { StudentAvatar } from "./Badge";
 import * as XLSX from "xlsx";
+import { detectGroupRow, groupsFromRow, matchSheetColumn } from "./scoreSheetModel";
 
 const isIdCol = (h) => {
   const s = String(h ?? "").trim();
@@ -34,12 +35,15 @@ function detectHeader(rows) {
   return widest >= 0 ? widest : 0;
 }
 
+const subjectLike = (s) => !isIdCol(s) && !isNameCol(s) && !isMetaCol(s);
+
 /**
  * Upload an Excel (.xlsx/.xls) or CSV file with one subject per column and
- * import every student's scores into the score sheet for a class — no typing
- * per student. Expects a header row like:  No | Student Name | Mathematics | Khmer | …
+ * import every student's scores into the score sheet — no typing per student.
+ * Optional two-row header: a group row (e.g. "S1Y1" merged over several
+ * subjects) directly above the subject row is detected and kept.
  */
-export default function ScoreImportModal({ open, onClose, cls, subjects, roster, onImport, noneMode = false }) {
+export default function ScoreImportModal({ open, onClose, cls, columns = [], roster, onImport, noneMode = false }) {
   const [file, setFile] = useState(null);
   const [wb, setWb] = useState(null);
   const [sheetIdx, setSheetIdx] = useState(0);
@@ -88,16 +92,11 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     );
   };
 
-  /* a file column with no matching subject becomes a NEW score column in the sheet */
-  const newSubjectName = (c) => {
+  /* a file column with no matching sheet column becomes a NEW score column */
+  const newSubjectName = useCallback((c) => {
     const t = String(c?.header ?? "").replace(/\s+/g, " ").trim();
-    return t || `Subject ${subjects.length + 1}`;
-  };
-  /* existing subject name, new-subject name for "__new__" columns, or null when skipped */
-  const subjectKeyOf = (c) => {
-    if (c?.kind !== "subject" || !c.subject || c.subject === "_skip") return null;
-    return c.subject === "__new__" ? newSubjectName(c) : c.subject;
-  };
+    return t || `Subject ${columns.length + 1}`;
+  }, [columns]);
 
   const roleOfCell = (h, i) => {
     const s = String(h ?? "").trim();
@@ -105,8 +104,7 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     if (isIdCol(s)) return { kind: "sid", header: s };
     if (isNameCol(s)) return { kind: "name", header: s };
     if (isMetaCol(s)) return { kind: "meta", header: s };
-    const matched = subjects.find((x) => x.trim().toLowerCase() === s.toLowerCase());
-    return { kind: "subject", header: s, subject: matched || "__new__" };
+    return { kind: "subject", header: s, subject: matchSheetColumn(columns, s) ? s : "__new__" };
   };
 
   /* pick the sheet that looks most like a score sheet: most subject-ish columns + most data rows */
@@ -123,14 +121,14 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
         let subjects = 0;
         for (const h of header) {
           const t = String(h ?? "").trim();
-          if (!t || isIdCol(t) || isNameCol(t) || isMetaCol(t)) continue;
+          if (!t || !subjectLike(t)) continue;
           subjects++;
         }
         if (!subjects) return;
         const subjectIdxs = [];
         header.forEach((h, i) => {
           const t = String(h ?? "").trim();
-          if (t && !isIdCol(t) && !isNameCol(t) && !isMetaCol(t)) subjectIdxs.push(i);
+          if (t && subjectLike(t)) subjectIdxs.push(i);
         });
         const sidI = header.findIndex((h) => isIdCol(h));
         const nameI = header.findIndex((h) => isNameCol(h));
@@ -161,7 +159,6 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     return best;
   };
 
-  /* parse the chosen file */
   const handleFile = (f) => {
     setFile(f);
     setError("");
@@ -195,14 +192,13 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
 
   const sheetNames = wb ? wb.SheetNames : [];
 
-  /* which column plays which role (auto-detected, editable in the preview) */
   const rawHeader = (rawRows[headerRow] || []).map((h) => String(h ?? ""));
 
   const effectiveCols = useMemo(() => {
     const header = rawRows[headerRow] || [];
     return header.map((h, i) => (colRoles ? colRoles[i] || roleOfCell(h, i) : roleOfCell(h, i)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawRows, headerRow, colRoles, subjects]);
+  }, [rawRows, headerRow, colRoles, columns]);
 
   const setColRole = (i, subject) => {
     setColRoles((prev) => {
@@ -228,6 +224,19 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     }
   };
 
+  /* group-header row (the row above the chosen subject row), e.g. "S1Y1" merged over subjects */
+  const groupRowIdx = useMemo(
+    () => detectGroupRow(rawRows, headerRow, { subjectLike, min: 1 }),
+    [rawRows, headerRow]
+  );
+
+  const groupInfo = useMemo(() => {
+    if (groupRowIdx < 0) return { groups: [], perColumn: {} };
+    const cells = rawRows[groupRowIdx] || [];
+    const count = Math.max(cells.length, (rawRows[headerRow] || []).length);
+    return groupsFromRow(cells, count);
+  }, [groupRowIdx, rawRows, headerRow]);
+
   const preview = useMemo(() => {
     if (!effectiveCols.length) return [];
     const sidIdxs = [];
@@ -237,7 +246,6 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
       if (c.kind === "name") nameIdxs.push(i);
     });
     let sidIdx = sidIdxs[0] ?? -1;
-    /* several ID columns (e.g. ល.រ sequence + លេខកូដ code): prefer the one whose values look like real student codes */
     if (sidIdxs.length > 1) {
       let bestI = sidIdxs[0];
       let bestScore = -1;
@@ -264,15 +272,13 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
       if (!row.some((c) => c != null && String(c).trim() !== "")) continue;
       const sidRaw = sidIdx >= 0 ? String(row[sidIdx] ?? "").trim() : "";
       const nameRaw = nameIdx >= 0 ? String(row[nameIdx] ?? "").trim() : "";
-      /* when the file has ID/name columns, skip rows that carry neither (title rows, column-number rows, stray labels) */
       if (hasIdentity && !sidRaw && !nameRaw) continue;
-      /* in "None" mode there is no class roster — every file row is kept as-is */
       let student = null;
       if (!noneMode) {
         student = sidRaw ? matchById(sidRaw) || matchByName(nameRaw) : matchByName(nameRaw);
       }
       const cells = effectiveCols.map((c, i) => {
-        if (subjectKeyOf(c)) {
+        if (c.kind === "subject" && c.subject !== "_skip") {
           const raw = String(row[i] ?? "").replace(/,/g, "").trim();
           if (raw !== "") {
             const n = Number(raw);
@@ -291,28 +297,38 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
   const totalCells = preview.reduce((a, p) => a + p.cells.filter((c) => c !== "").length, 0);
   const unmatched = preview.length - matchedStudents;
   const shown = showAll ? preview : preview.slice(0, 60);
-  const newColCount = effectiveCols.filter((c) => c.subject === "__new__").length;
+
+  /* map each subject column of the file to a sheet column key (or null = new), keeping duplicate subjects distinct */
+  const perColAndGroups = useMemo(() => {
+    const used = new Set();
+    const perCol = [];
+    effectiveCols.forEach((c, i) => {
+      if (c.kind !== "subject" || c.subject === "_skip") return;
+      const label = c.subject === "__new__" ? newSubjectName(c) : String(c.subject).trim();
+      if (!label) return;
+      let key = null;
+      if (!noneMode) {
+        const col = columns.find((x) => !used.has(x.key) && (x.label === label || x.key === label));
+        if (col) {
+          key = col.key;
+          used.add(col.key);
+        }
+      }
+      perCol.push({ idx: i, label, key, gid: groupInfo.perColumn[i] || null });
+    });
+    return { perCol, groups: groupInfo.groups };
+  }, [effectiveCols, columns, noneMode, groupInfo, newSubjectName]);
 
   const doImport = () => {
-    /* every file column aimed at a new subject (default for unmatched subject columns) becomes a new score column */
-    const created = new Set(
-      effectiveCols
-        .filter((c) => c.subject === "__new__")
-        .map((c) => subjectKeyOf(c))
-        .filter(Boolean)
-    );
-
     if (noneMode) {
-      /* "None" mode: no class roster — keep every file row and pass subjects straight through */
+      const created = perColAndGroups.perCol.filter((p) => !p.key);
       const rows = {};
       const fileRows = [];
       preview.forEach((p, ri) => {
         const st = {};
-        effectiveCols.forEach((c, i) => {
-          const key = subjectKeyOf(c);
-          if (!key) return;
-          const v = p.cells[i];
-          if (v !== "") st[key] = v;
+        perColAndGroups.perCol.forEach((pc, pi) => {
+          const v = p.cells[pc.idx];
+          if (v !== "") st[pi] = v;
         });
         if (!Object.keys(st).length) return;
         const key = `r:${ri}`;
@@ -323,7 +339,7 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
         setError("Nothing to import — no scores found in the file.");
         return;
       }
-      onImport(rows, { matched: preview.length, cells: totalCells }, [...created], { fileRows });
+      onImport({ rows, matched: preview.length, cells: totalCells, perCol: perColAndGroups.perCol, groups: created.length ? perColAndGroups.groups : [], fileRows });
       return;
     }
 
@@ -331,11 +347,9 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
     preview.forEach((p) => {
       if (!p.student) return;
       const st = {};
-      effectiveCols.forEach((c, i) => {
-        const key = subjectKeyOf(c);
-        if (!key) return;
-        const v = p.cells[i];
-        if (v !== "") st[key] = v;
+      perColAndGroups.perCol.forEach((pc, pi) => {
+        const v = p.cells[pc.idx];
+        if (v !== "") st[pi] = v;
       });
       if (Object.keys(st).length) rows[p.student.id] = st;
     });
@@ -343,8 +357,30 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
       setError("Nothing to import — no rows matched a student in this class.");
       return;
     }
-    onImport(rows, { matched: matchedStudents, cells: totalCells }, [...created]);
+    onImport({ rows, matched: matchedStudents, cells: totalCells, perCol: perColAndGroups.perCol, groups: perColAndGroups.groups });
   };
+
+  /* header cells for the preview's group row, mirroring every column (spacers for non-subject columns) */
+  const previewGroupCells = useMemo(() => {
+    const out = [];
+    let cur = null;
+    effectiveCols.forEach((c, i) => {
+      if (c.kind !== "subject" || c.subject === "_skip") {
+        out.push({ type: "spacer", span: 1 });
+        cur = null;
+        return;
+      }
+      const gid = groupInfo.perColumn[i] || null;
+      if (cur && cur.gid === gid) cur.span++;
+      else {
+        cur = { type: "group", span: 1, name: gid ? groupInfo.groups.find((g) => g.id === gid)?.name : "", gid };
+        out.push(cur);
+      }
+    });
+    return out;
+  }, [effectiveCols, groupInfo]);
+
+  const groupBadge = groupRowIdx >= 0 ? groupInfo.groups.filter((g) => g.name && g.name !== "—").map((g) => g.name) : [];
 
   return (
     <Modal
@@ -355,7 +391,7 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
       subtitle={
         noneMode
           ? "No class selected — every data row is kept and every column becomes a score subject exactly as written in the file."
-          : "Upload an Excel/CSV first (one subject per column), check the preview, then import — existing scores for the same student + subject are replaced."
+          : "Upload an Excel/CSV first (one subject per column), check the preview, then import — existing scores for the same student + column are replaced."
       }
       footer={
         <div className="flex w-full items-center gap-2">
@@ -363,9 +399,9 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
             {rawRows.length
               ? noneMode
                 ? `${preview.length} rows · ${totalCells} scores` +
-                  (newColCount ? ` · ${newColCount} subject${newColCount === 1 ? "" : "s"} straight from the file` : "")
+                  (perColAndGroups.perCol.length ? ` · ${perColAndGroups.perCol.filter((p) => !p.key).length} subject${perColAndGroups.perCol.filter((p) => !p.key).length === 1 ? "" : "s"} straight from the file` : "")
                 : `${preview.length} data rows · ${matchedStudents} matched · ${totalCells} scores` +
-                  (newColCount ? ` · ${newColCount} new column${newColCount === 1 ? "" : "s"}` : "")
+                  (perColAndGroups.perCol.filter((p) => !p.key).length ? ` · ${perColAndGroups.perCol.filter((p) => !p.key).length} new column${perColAndGroups.perCol.filter((p) => !p.key).length === 1 ? "" : "s"}` : "")
               : "No file loaded yet"}
           </span>
           <button onClick={onClose} className="btn btn-outline h-10 px-4 text-sm">
@@ -378,8 +414,8 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
             title={
               totalCells
                 ? noneMode
-                  ? `Create a cheatsheet with ${totalCells} scores — subjects straight from the file`
-                  : `Write ${totalCells} scores into the ${subjects.length}-subject score sheet`
+                  ? `Create a cheatsheet with ${totalCells} scores — subjects and group headers straight from the file`
+                  : `Write ${totalCells} scores into the ${columns.length}-column score sheet`
                 : "Load a file with scores first"
             }
           >
@@ -400,8 +436,16 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
           <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>ល.រ</code>,{" "}
           <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>លេខកូដ</code> and{" "}
           <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>គោត្តនាម-នាម</code> are
-          recognized automatically. Each mark needs a single{" "}
-          row per student.{" "}
+          recognized automatically.{" "}
+          {groupRowIdx >= 0 ? (
+            <>
+              A <b style={{ color: "var(--text)" }}>group header row</b> was detected above the subjects:{" "}
+              <span className="font-semibold" style={{ color: "var(--primary-strong)" }}>{groupBadge.join(" · ") || "—"}</span> — it will be kept
+              as merged headers on the score sheet so you can tell semesters apart.
+            </>
+          ) : (
+            <>If your file has a group row above the subjects (like <code className="px-1 py-0.5 rounded" style={{ background: "var(--surface)", color: "var(--primary-strong)" }}>S1Y1</code> spanning several subjects), it is detected and kept.</>
+          )}
           {noneMode ? (
             <>With <b style={{ color: "var(--text)" }}>None</b> selected, every column becomes a score subject from the file — nothing is guessed.</>
           ) : (
@@ -481,42 +525,67 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
                   ))}
                 </select>
               </label>
+              {groupRowIdx >= 0 && (
+                <span className="rounded-lg border px-2.5 py-1.5 font-semibold" style={{ borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
+                  Group row: Row {groupRowIdx + 1} — {groupBadge.join(" · ") || "—"}
+                </span>
+              )}
               <button onClick={() => { setRawRows([]); setFile(null); setWb(null); }} className="ml-auto btn btn-ghost h-8 px-2 text-xs" style={{ color: "var(--text-3)" }}>
                 Choose another file
               </button>
             </div>
 
-            {/* preview table */}
+            {/* preview table: group row (merged) + subject row with role controls */}
             <div className="overflow-x-auto thin-scroll rounded-xl border" style={{ borderColor: "var(--border)" }}>
-              <table className="w-full text-sm" style={{ minWidth: 500 }}>
+              <table className="grid-table w-full text-sm" style={{ minWidth: 500 }}>
                 <thead>
                   <tr className="text-left text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-                    <th className="sticky left-0 z-10 min-w-[190px] px-4 py-2.5" style={{ background: "var(--surface)" }}>
+                    <th rowSpan={2} className="sticky left-0 z-10 min-w-[190px] px-4 py-2.5" style={{ background: "var(--surface)" }}>
                       Student (match)
                     </th>
+                    {groupRowIdx >= 0 &&
+                      previewGroupCells.map((cell, si) => (
+                        <th
+                          key={si}
+                          colSpan={cell.span}
+                          className={`px-2 py-1.5 ${cell.type === "group" ? "text-center font-bold" : ""}`}
+                          title={cell.name}
+                          style={{ background: "var(--surface)", color: "var(--text-2)" }}
+                        >
+                          {cell.type === "group" ? (cell.name || "—") : ""}
+                        </th>
+                      ))}
+                  </tr>
+                  <tr className="text-left text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
                     {effectiveCols.map((c, i) => (
-                      <th key={i} className="px-2 py-2 align-top" style={{ minWidth: 120 }}>
+                      <th key={i} className="px-2 py-2 align-top" style={{ minWidth: 120, background: "var(--surface)" }}>
                         <span className="block text-[10px] mb-1" style={{ color: "var(--text-3)" }}>
                           {c.kind === "sid" ? "→ Student ID" : c.kind === "name" ? "→ Name" : c.kind === "meta" ? "→ Info (skipped)" : "Column"}
                         </span>
                         {c.kind === "subject" ? (
                           <>
-                            <select
-                              className="input h-7 w-full min-w-[110px] text-[11px] py-0.5 font-semibold"
-                              value={c.subject || "_skip"}
-                              onChange={(e) => setColRole(i, e.target.value)}
-                              title={rawHeader[i]}
-                            >
-                              <option value="_skip">— Skip column —</option>
-                              {c.subject === "__new__" && (
-                                <option value="__new__">＋ New subject: {newSubjectName(c)}</option>
-                              )}
-                              {subjects.map((s) => (
-                                <option key={s} value={s}>
-                                  {s}
-                                </option>
-                              ))}
-                            </select>
+                            {!noneMode ? (
+                              <select
+                                className="input h-7 w-full min-w-[110px] text-[11px] py-0.5 font-semibold"
+                                value={c.subject || "_skip"}
+                                onChange={(e) => setColRole(i, e.target.value)}
+                                title={rawHeader[i]}
+                              >
+                                <option value="_skip">— Skip column —</option>
+                                {c.subject === "__new__" && (
+                                  <option value="__new__">＋ New subject: {newSubjectName(c)}</option>
+                                )}
+                                {columns.map((col) => (
+                                  <option key={col.key} value={col.label}>
+                                    {col.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="block max-w-[140px] truncate font-medium" style={{ color: "var(--primary-strong)" }} title={rawHeader[i]}>
+                                ＋ {newSubjectName(c)}
+                              </span>
+                            )}
                             {c.subject === "__new__" && (
                               <span className="block text-[10px] font-bold uppercase tracking-wide mt-1" style={{ color: "var(--primary-strong)" }}>
                                 ＋ new column
@@ -542,7 +611,7 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
                   )}
                   {shown.map((p, ri) => (
                     <tr key={ri}>
-                      <td className="sticky left-0 z-10 px-4 py-1.5" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+                      <td className="sticky left-0 z-10 px-4 py-1.5" style={{ background: "var(--surface)" }}>
                         {p.student ? (
                           <span className="flex items-center gap-2 min-w-0">
                             <StudentAvatar student={p.student} size="sm" />
@@ -574,7 +643,7 @@ export default function ScoreImportModal({ open, onClose, cls, subjects, roster,
                         )}
                       </td>
                       {p.cells.map((v, i) => (
-                        <td key={i} className="px-2 py-1.5 text-center" style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td key={i} className="px-2 py-1.5 text-center">
                           {v !== "" && (
                             <span className="inline-block rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums" style={{ background: "var(--success-soft)", color: "var(--success)" }}>
                               {v}

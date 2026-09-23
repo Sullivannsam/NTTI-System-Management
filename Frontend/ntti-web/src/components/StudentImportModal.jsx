@@ -22,7 +22,7 @@ import {
  * English Name, ថ្ងៃខែឆ្នាំកំណើត / Date of Birth, …) and every column can be
  * re-mapped or skipped before importing.
  */
-export default function StudentImportModal({ open, onClose, onImport, classes = [], existing = [], defaultYear = new Date().getFullYear() }) {
+export default function StudentImportModal({ open, onClose, onImport, classes = [], existing = [], defaultYear = new Date().getFullYear(), lockedClass = null }) {
   const [file, setFile] = useState(null);
   const [wb, setWb] = useState(null);
   const [sheetIdx, setSheetIdx] = useState(0);
@@ -124,6 +124,26 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawRows, headerRow, effectiveRoles, classes, existing, defaultYear]);
 
+  /* class the whole file is being imported into (class import mode) */
+  const locked = useMemo(() => {
+    if (!lockedClass) return null;
+    return typeof lockedClass === "object" && lockedClass
+      ? lockedClass
+      : classes.find((c) => c.id === lockedClass) || null;
+  }, [lockedClass, classes]);
+
+  /* students already in the locked class — a duplicate there means "already in class" */
+  const memberIds = useMemo(
+    () => new Set(existing.filter((s) => s.className === locked?.id).map((s) => s.id)),
+    [existing, locked]
+  );
+
+  /* preview status per row: new to create · existing to link into the class · duplicate */
+  const rowStatus = (p) => {
+    if (p.existingId && locked) return memberIds.has(p.existingId) ? "dup" : "link";
+    return p.dup ? "dup" : "new";
+  };
+
   /* rows that will actually be added (dup / no-name rows filtered out) */
   const toImport = useMemo(() => {
     const usedSids = new Set(existing.map((s) => norm(s.studentId)).filter(Boolean));
@@ -139,6 +159,7 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
     const seq = { v: maxSeq + 1 };
 
     const rows = [];
+    const linkIds = [];
     let skippedDup = 0;
     let skippedNoName = 0;
     for (const p of preview) {
@@ -146,23 +167,37 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
         skippedNoName++;
         continue;
       }
+      /* Class import: rows matching a student already in THIS class are true
+         duplicates; rows matching a student in the registry but not in the class
+         are linked into the class instead of being re-created. */
+      if (p.existingId && locked) {
+        if (memberIds.has(p.existingId)) {
+          skippedDup++;
+          continue;
+        }
+        if (!linkIds.includes(p.existingId)) linkIds.push(p.existingId);
+        continue;
+      }
       if (p.dup && skipDup) {
         skippedDup++;
         continue;
       }
-      rows.push(buildStudent(p, classes, defaultClass, defaultYear, usedSids, seq));
+      rows.push(buildStudent(p, classes, defaultClass, defaultYear, usedSids, seq, locked));
     }
-    return { rows, skippedDup, skippedNoName };
+    return { rows, linkIds, skippedDup, skippedNoName };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview, skipDup, defaultClass, classes, existing, defaultYear]);
+  }, [preview, skipDup, defaultClass, classes, existing, defaultYear, locked, memberIds]);
+
+  const totalAdding = toImport.rows.length + toImport.linkIds.length;
 
   const doImport = () => {
-    if (!toImport.rows.length) {
+    if (!toImport.rows.length && !toImport.linkIds.length) {
       setError("Nothing to import — every row was skipped. Check the column mapping or uncheck “Skip duplicates”.");
       return;
     }
     onImport(toImport.rows, {
       imported: toImport.rows.length,
+      linkIds: toImport.linkIds,
       skippedDup: toImport.skippedDup,
       skippedNoName: toImport.skippedNoName,
     });
@@ -175,15 +210,24 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
       open={open}
       onClose={onClose}
       size="2xl"
-      title="Import students from Excel"
-      subtitle="Upload .xlsx / .xls / .csv — columns are auto-matched from Khmer or English headers (ឈ្មោះខ្មែរ · ឈ្មោះអង់គ្លេស · ថ្ងៃខែឆ្នាំកំណើត · អ៊ីមែល · ថ្នាក់ …)."
+      title={locked ? `Import students from Excel into ${locked.name}` : "Import students from Excel"}
+      subtitle={
+        locked
+          ? `Upload .xlsx / .xls / .csv — every student in the file is added straight to ${locked.name} (${locked.shift} shift). Students already in the registry are linked, not duplicated.`
+          : "Upload .xlsx / .xls / .csv — columns are auto-matched from Khmer or English headers (ឈ្មោះខ្មែរ · ឈ្មោះអង់គ្លេស · ថ្ងៃខែឆ្នាំកំណើត · អ៊ីមែល · ថ្នាក់ …)."
+      }
       footer={
         <div className="flex w-full flex-wrap items-center gap-2">
           <span className="text-xs mr-auto" style={{ color: "var(--text-3)" }}>
             {rawRows.length
-              ? `${preview.length} rows found · ${toImport.rows.length} to import` +
-                (toImport.skippedDup ? ` · ${toImport.skippedDup} duplicate${toImport.skippedDup === 1 ? "" : "s"} skipped` : "") +
-                (toImport.skippedNoName ? ` · ${toImport.skippedNoName} without a name` : "")
+              ? locked
+                ? `${preview.length} rows found · ${totalAdding} to add to ${locked.name}` +
+                  (toImport.linkIds.length ? ` · ${toImport.linkIds.length} already in the system` : "") +
+                  (toImport.skippedDup ? ` · ${toImport.skippedDup} already in ${locked.name}` : "") +
+                  (toImport.skippedNoName ? ` · ${toImport.skippedNoName} without a name` : "")
+                : `${preview.length} rows found · ${toImport.rows.length} to import` +
+                  (toImport.skippedDup ? ` · ${toImport.skippedDup} duplicate${toImport.skippedDup === 1 ? "" : "s"} skipped` : "") +
+                  (toImport.skippedNoName ? ` · ${toImport.skippedNoName} without a name` : "")
               : "No file loaded yet"}
           </span>
           <button onClick={onClose} className="btn btn-outline h-10 px-4 text-sm">
@@ -191,11 +235,14 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
           </button>
           <button
             onClick={doImport}
-            disabled={!rawRows.length || toImport.rows.length === 0}
+            disabled={!rawRows.length || totalAdding === 0}
             className="btn btn-primary h-10 px-5 text-sm gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={`Add ${toImport.rows.length} new student${toImport.rows.length === 1 ? "" : "s"}`}
+            title={locked ? `Add ${totalAdding} student${totalAdding === 1 ? "" : "s"} to ${locked.name}` : `Add ${toImport.rows.length} new student${toImport.rows.length === 1 ? "" : "s"}`}
           >
-            <CheckCircle2 size={15} /> Import {toImport.rows.length} student{toImport.rows.length === 1 ? "" : "s"}
+            <CheckCircle2 size={15} />{" "}
+            {locked
+              ? `Add ${totalAdding} to ${locked.name}`
+              : `Import ${toImport.rows.length} student${toImport.rows.length === 1 ? "" : "s"}`}
           </button>
         </div>
       }
@@ -295,8 +342,21 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
               </button>
             </div>
 
-            {/* default class for rows whose file has no class / unknown class */}
-            {classes.length > 0 && (
+            {/* class import mode — every row goes into the locked class */}
+            {locked ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5 text-xs" style={{ borderColor: "var(--primary-soft)", background: "var(--primary-soft)" }}>
+                <span className="flex items-center gap-1.5 font-semibold" style={{ color: "var(--primary-strong)" }}>
+                  <Users size={13} /> Everyone in this file is added to:
+                </span>
+                <b style={{ color: "var(--text)" }}>
+                  {locked.name} · {locked.shift} shift
+                </b>
+                <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                  — students that already exist in the system (not in this class yet) are linked in; rows already in this class are skipped.
+                </span>
+              </div>
+            ) : classes.length > 0 ? (
+              /* default class for rows whose file has no class / unknown class */
               <div className="flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5 text-xs" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
                 <span className="flex items-center gap-1.5 font-semibold" style={{ color: "var(--text-2)" }}>
                   <Users size={13} style={{ color: "var(--primary-strong)" }} /> Apply to rows without a class:
@@ -317,7 +377,7 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
                   Skip duplicates
                 </label>
               </div>
-            )}
+            ) : null}
 
             {/* column mapping */}
             <div className="rounded-xl border p-3.5" style={{ borderColor: "var(--border)" }}>
@@ -418,9 +478,13 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
                           {p.gender ? <span className="block text-[10px]">{p.gender}</span> : null}
                         </td>
                         <td className="px-3 py-1.5">
-                          {p.dup ? (
+                          {rowStatus(p) === "dup" ? (
                             <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold" style={{ background: "var(--warning-soft)", color: "var(--warning)" }}>
-                              <AlertTriangle size={11} /> Duplicate
+                              <AlertTriangle size={11} /> {locked ? "In class" : "Duplicate"}
+                            </span>
+                          ) : rowStatus(p) === "link" ? (
+                            <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold" style={{ background: "var(--info-soft)", color: "var(--info)" }}>
+                              <CheckCircle2 size={11} /> In registry
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-bold" style={{ background: "var(--success-soft)", color: "var(--success)" }}>

@@ -21,6 +21,8 @@ import PageHeader, { EmptyState } from "../components/Page";
 import Modal from "../components/Modal";
 import ClassFormModal from "../components/ClassFormModal";
 import StudentFormModal from "../components/StudentFormModal";
+import StudentImportModal from "../components/StudentImportModal";
+import ImportStudentChooser from "../components/ImportStudentChooser";
 import TermRecordModal from "../components/TermRecordModal";
 import NextSemesterModal from "../components/NextSemesterModal";
 import { useApp } from "../context/AppContext";
@@ -34,7 +36,7 @@ const ACCENT = {
 };
 
 export default function Classes() {
-  const { classes, students, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, showToast } = useApp();
+  const { classes, students, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, addStudentsBatch, showToast } = useApp();
 
   const [view, setView] = useState("list"); // "list" | "detail"
   const [selId, setSelId] = useState(null);
@@ -53,6 +55,8 @@ export default function Classes() {
   const [importQuery, setImportQuery] = useState("");
   const [importSel, setImportSel] = useState([]);
   const [importScope, setImportScope] = useState("prev");
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [excelOpen, setExcelOpen] = useState(false);
 
   const sel = classes.find((c) => c.id === selId) || null;
 
@@ -93,7 +97,20 @@ export default function Classes() {
           .toLowerCase()
           .includes(sq)
       )
-      .sort((a, b) => String(a.studentId || "").localeCompare(String(b.studentId || "")));
+      .sort((a, b) => {
+        const ka = `${a.khmerName || ""}`.trim();
+        const kb = `${b.khmerName || ""}`.trim();
+        if (ka || kb) {
+          const c = ka.localeCompare(kb, "km", { sensitivity: "base" });
+          if (c !== 0) return c;
+        }
+        const ea = `${a.firstName || ""} ${a.lastName || ""}`.trim().toLowerCase();
+        const eb = `${b.firstName || ""} ${b.lastName || ""}`.trim().toLowerCase();
+        return (
+          ea.localeCompare(eb, undefined, { numeric: true, sensitivity: "base" }) ||
+          String(a.studentId || "").localeCompare(String(b.studentId || ""), undefined, { numeric: true })
+        );
+      });
   }, [students, sel, studentQuery]);
 
   /* students available to import into the selected class — by default only
@@ -133,7 +150,22 @@ export default function Classes() {
           if (sameField(st)) v -= 1;
           return v;
         };
-        return score(a) - score(b) || String(a.studentId || "").localeCompare(String(b.studentId || ""), undefined, { numeric: true });
+        const ka = `${a.khmerName || ""}`.trim();
+        const kb = `${b.khmerName || ""}`.trim();
+        const nameCmp = ka || kb
+          ? ka.localeCompare(kb, "km", { sensitivity: "base" })
+          : `${a.firstName || ""} ${a.lastName || ""}`
+              .trim()
+              .toLowerCase()
+              .localeCompare(`${b.firstName || ""} ${b.lastName || ""}`.trim().toLowerCase(), undefined, {
+                numeric: true,
+                sensitivity: "base",
+              });
+        return (
+          score(a) - score(b) ||
+          nameCmp ||
+          String(a.studentId || "").localeCompare(String(b.studentId || ""), undefined, { numeric: true })
+        );
       });
   }, [students, selId, importQuery, importScope, classes]);
 
@@ -160,6 +192,32 @@ export default function Classes() {
     String(b.endedOn || "").localeCompare(String(a.endedOn || ""))
   );
   const finishedLevels = new Set(termRecords.map((t) => t.level));
+
+  /* "Import students" chooser → Excel file directly into this class */
+  const onExcelImport = (rows, stats = {}) => {
+    if (rows?.length) addStudentsBatch(rows);
+    if (stats.linkIds?.length) importStudents(sel?.id, stats.linkIds);
+    setExcelOpen(false);
+    const total = (rows?.length || 0) + (stats.linkIds?.length || 0);
+    showToast(
+      total
+        ? `${total} student${total === 1 ? "" : "s"} added to ${sel?.name} from Excel`
+        : "No new students to import"
+    );
+  };
+
+  const openSelectImport = () => {
+    setImportMenuOpen(false);
+    setImportSel([]);
+    setImportQuery("");
+    setImportScope("all");
+    setImportOpen(true);
+  };
+
+  const openExcelImport = () => {
+    setImportMenuOpen(false);
+    setExcelOpen(true);
+  };
 
   /* ══════════════════════ LIST VIEW ══════════════════════ */
   const listView = (
@@ -414,6 +472,9 @@ export default function Classes() {
             >
               <Flag size={13} />
               {sel.completed ? "Programme complete" : nextLevelCode ? `Next semester · ${nextLevelCode}` : "No next semester"}
+            </button>
+            <button onClick={() => setImportMenuOpen(true)} className="btn h-9 px-3 text-xs font-medium transition-colors border bg-[var(--surface-2)] hover:bg-[var(--primary-soft)]" style={{ borderColor: "var(--border)", color: "var(--text-2)" }}>
+              <UserPlus size={14} /> Import students
             </button>
             <button onClick={() => setAddStudentOpen(true)} className="btn btn-primary h-9 px-3 text-xs">
               <UserRoundPlus size={14} /> Add student
@@ -694,7 +755,13 @@ export default function Classes() {
         onClose={() => setImportOpen(false)}
         size="lg"
         title="Import students"
-        subtitle={sel ? `Import ${prevLevelCode || "previous"} students into ${sel.name} (now ${currentLevel} · ${sel.year} ${sel.semester})` : ""}
+        subtitle={
+          sel
+            ? importScope === "all" || !prevLevelCode
+              ? `Pick students to add to ${sel.name} (${currentLevel} · ${sel.year} ${sel.semester})`
+              : `Import ${prevLevelCode} students into ${sel.name} (now ${currentLevel})`
+            : ""
+        }
         footer={
           <>
             <button onClick={() => setImportOpen(false)} className="btn btn-outline h-10 px-4 text-sm">Cancel</button>
@@ -808,6 +875,23 @@ export default function Classes() {
           )}
         </div>
       </Modal>
+
+      {/* "Import students" chooser — Excel file or pick from the registry */}
+      <ImportStudentChooser
+        open={importMenuOpen}
+        onClose={() => setImportMenuOpen(false)}
+        onExcel={openExcelImport}
+        onSelect={openSelectImport}
+        className={sel?.name}
+      />
+      <StudentImportModal
+        open={excelOpen}
+        onClose={() => setExcelOpen(false)}
+        classes={classes}
+        existing={students}
+        lockedClass={sel}
+        onImport={onExcelImport}
+      />
 
       <TermRecordModal term={recordTerm} onClose={() => setRecordTerm(null)} attendance={attendance} />
     </div>

@@ -38,9 +38,12 @@ const clampScore = (n) => Math.max(0, Math.min(100, Math.round(n * 100) / 100));
 const classifyHeader = (h) => {
   const s = String(h ?? "").trim();
   if (!s) return null;
-  if (/លេខកូដ|student\s*id|student\s*code|លេខរៀង|ล\.រ|^\s*(no\.?|no|#|code|id|roll|number)\s*$/i.test(s)) return "sid";
+  // real ID/code columns — these are allowed to become a student ID
+  if (/លេខកូដ|លេខសំគាល់|student\s*id|student\s*code|^\s*(code|id)\s*$/i.test(s)) return "sid";
+  // position / roll number — never a student ID
+  if (/^\s*(no\.?|no|#|roll|number|លេខរៀង|លេខ|ล\.\s*រ)\s*$/i.test(s)) return "roll";
   if (/គោត្តនាម|ខ្មែរ|khmer/i.test(s)) return "khmer";
-  if (/អក្សរឡាតាំង|latin|ឡាតាំង/i.test(s)) return "latin";
+  if (/អក្សរឡាតាំង|latin|ឡាតាំង|អង់គ្លេស|english/i.test(s)) return "latin";
   if (/ថ្ងៃខែ|birth|dob|កំនើត|កំណើត/i.test(s)) return "dob";
   if (/ភេទ|gender|sex/i.test(s)) return "gender";
   if (/ទីកន្លែង|place/i.test(s)) return "place";
@@ -199,7 +202,8 @@ export default function TranscriptImportModal({ open, onClose, students, onImpor
     return out;
   }, [subjectCols, overrides]);
 
-  /* special columns — prefer the *last* ID-ish column (Code over No.) */
+  /* special columns — prefer the *last* real ID/Code column. Roll-number columns
+     are classified as "roll" and never used as identity. */
   const sidIdx = colRoles.lastIndexOf("sid");
   const khmerIdx = colRoles.indexOf("khmer");
   const latinIdx = colRoles.indexOf("latin");
@@ -245,32 +249,27 @@ export default function TranscriptImportModal({ open, onClose, students, onImpor
     const kh = collapse(row[khmerIdx]);
     const lat = collapse(row[latinIdx]);
     const code = collapse(row[sidIdx]);
+    const dob = row[dobIdx] != null ? dobToISO(row[dobIdx]) : "";
     const candidates = [];
     students.forEach((st) => {
       let score = 0;
+      // name match — full-name compare only (never loose substrings: "MENGHONG" must not
+      // match "KHIENG MENGHONG" or a different student whose name merely contains it)
       if (kh && kh.toLowerCase() === khmerOf(st).toLowerCase()) score = 100;
       else if (lat) {
         const lf = latinFull(st);
         if (lf === norm(lat)) score = 95;
-        else if (lf === norm(`${row[latinIdx]?.toString().trim().split(/\s+/).reverse().join(" ")}`)) score = 90;
-        else if (
-          (lat.length >= 4 && lf.includes(norm(lat))) ||
-          (lf.length >= 4 && norm(lat).includes(lf))
-        )
-          score = 60;
+        else if (lf === norm(`${row[latinIdx]?.toString().trim().split(/\s+/).reverse().join(" ")}`)) score = 90; // surname-first sheets
       }
-      if (score >= 60) candidates.push({ st, score });
+      // same name + same date of birth = definitely the same person (breaks Khmer name ties)
+      if (score >= 90 && dob && st.dob && dob === st.dob) score = 200;
+      if (score >= 90) candidates.push({ st, score });
     });
+    // ID fallback only when the name never matched, and only on an exact ID / "-CODE" suffix
     if (!candidates.length && code) {
       students.forEach((st) => {
         const id = collapse(st.studentId);
-        if (
-          id &&
-          (id === code ||
-            id.endsWith(`-${code}`) ||
-            (code.length >= 3 && id.includes(code)))
-        )
-          candidates.push({ st, score: 50 });
+        if (id && (id === code || id.endsWith(`-${code}`))) candidates.push({ st, score: 60 });
       });
     }
     candidates.sort((a, b) => b.score - a.score);

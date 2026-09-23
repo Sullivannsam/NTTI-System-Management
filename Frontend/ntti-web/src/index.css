@@ -207,6 +207,30 @@
     background: var(--surface-2);
   }
 
+  /* Excel-style score sheet: visible grid lines in both directions */
+  .grid-table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .grid-table th,
+  .grid-table td {
+    border-left: 1px solid var(--border);
+  }
+  .grid-table thead th:first-child,
+  .grid-table tbody td:first-child {
+    border-left: none;
+  }
+  .grid-table thead th,
+  .grid-table thead td {
+    border-bottom: 1px solid var(--border);
+  }
+  .grid-table tbody td {
+    border-top: 1px solid var(--border);
+  }
+  .grid-table tbody tr:first-child td {
+    border-top: none;
+  }
+
   .nav-link {
     @apply relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-200;
     color: var(--text-2);

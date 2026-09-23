@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { SEED_STUDENTS, SEED_ATTENDANCE, SEED_WEEKLY, SEED_SCORES, SEED_SCHEDULE, CLASSES, ACADEMIC_LEVELS, levelMeta, todayISO, latinToKhmer, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
+import { cleanName } from "../components/studentImportHelpers";
 
 const AppContext = createContext(null);
 
@@ -133,8 +134,6 @@ function load(key, fallback) {
 /** Migrate stored students: lifecycle statuses, enrollment year, academic level + history. */
 function loadStudents() {
   const stored = localStorage.getItem(LS_STUDENTS);
-  // NTTI Excel exports often store unmapped English names as "Student <Khmer name>".
-  const clean = (name) => String(name ?? "").trim().replace(/^student\s+/i, "");
   if (!stored) return SEED_STUDENTS;
   try {
     return JSON.parse(stored).map((s) => {
@@ -142,14 +141,17 @@ function loadStudents() {
         s.enrollmentYear ||
         (s.enrollmentDate ? Number(String(s.enrollmentDate).slice(0, 4)) : 0) ||
         Number(String(s.studentId || "").match(/NTTI-(\d{4})-/)?.[1] || 0);
-      const firstName = /^student$/i.test(String(s.firstName ?? "").trim()) ? "" : clean(s.firstName);
+      const firstName = /^student$/i.test(String(s.firstName ?? "").trim()) ? "" : cleanName(s.firstName);
       return {
         ...s,
         firstName,
-        lastName: clean(s.lastName),
+        lastName: cleanName(s.lastName),
+        /* cleanName drops the "Student" placeholder (Latin or Khmer script) that
+           NTTI sheets put in the Khmer-name column, so imported students show
+           their real name instead of "សតុដេនត" everywhere. */
         khmerName:
-          clean(s.khmerName) ||
-          (firstName && s.lastName ? latinToKhmer(`${clean(s.lastName)} ${firstName}`) : ""),
+          cleanName(s.khmerName) ||
+          (firstName && s.lastName ? latinToKhmer(`${cleanName(s.lastName)} ${firstName}`) : ""),
         level: s.level || (year ? `S1Y${Math.min(4, Math.max(1, new Date().getFullYear() - year))}` : "S1Y1"),
         history: s.history || [],
         status:

@@ -10,10 +10,15 @@ export const collapse = (s) =>
     .replace(/\s+/g, " ");
 export const norm = (s) => collapse(s).toLowerCase();
 
-/* NTTI Excel sheets often list an unregistered English name as "Student <Khmer name>". */
+/* NTTI Excel sheets often list an unregistered English name as "Student <Khmer name>",
+   and they put the same "Student" placeholder — sometimes written in Khmer script
+   (សិស្ស / សតុដេនត) — in the Khmer-name column. A placeholder is not a name:
+   strip it so the real name (from the English / first / last columns) is used. */
 export const cleanName = (s) => {
   const t = collapse(s);
-  return t.replace(/^student\s+/i, "");
+  return t
+    .replace(/^(?:student|សិស្ស|សតុដេនត)\s+/i, "")
+    .replace(/^(?:student|សិស្ស|សតុដេនត)$/i, "");
 };
 
 /* name → { firstName, lastName } treating the last token as the family name */
@@ -233,18 +238,41 @@ export function rowToStudent(row, roles, { classes = [], existing = [], defaultC
     firstName = sp.firstName;
     lastName = sp.lastName;
   }
+  /* Junk safeguard: rows whose "name" is only digits / punctuation (e.g. a
+     stray row number, leftover count cell or merged label in the sheet) are
+     not real students — drop them just like rows with no name at all. A real
+     name always contains at least one Latin or Khmer letter. */
+  const hasLetter = (s) => /[A-Za-z\u1780-\u17FF]/.test(collapse(s));
   if (!kh && !firstName && !lastName && !latin) return null; // probably a label row
+  if (![kh, firstName, lastName, latin].some(hasLetter)) return null; // numbers only
 
   const email = get("email");
   const fullLatin = norm(`${firstName || ""} ${lastName || ""}`).trim();
-  const dup = (() => {
-    if (!existing.length) return false;
-    if (sid && existing.some((s) => collapse(s.studentId).toLowerCase() === norm(sid))) return true;
-    if (email && existing.some((s) => collapse(s.email).toLowerCase() === norm(email))) return true;
-    if (kh && existing.some((s) => collapse(s.khmerName).toLowerCase() === norm(kh))) return true;
-    if (fullLatin && existing.some((s) => norm(`${s.firstName} ${s.lastName}`) === fullLatin)) return true;
-    return false;
+  /* First existing student that matches this row (by ID / email / Khmer name /
+     full latin name). The modal uses this to decide whether a row is a real
+     duplicate, or an existing registry student that should be linked into a
+     class instead of re-created. */
+  const existingMatch = (() => {
+    if (!existing.length) return null;
+    if (sid) {
+      const m = existing.find((s) => norm(collapse(s.studentId)) === norm(sid));
+      if (m) return m;
+    }
+    if (email) {
+      const m = existing.find((s) => norm(collapse(s.email)) === norm(email));
+      if (m) return m;
+    }
+    if (kh) {
+      const m = existing.find((s) => norm(collapse(s.khmerName)) === norm(kh));
+      if (m) return m;
+    }
+    if (fullLatin) {
+      const m = existing.find((s) => norm(`${s.firstName} ${s.lastName}`) === fullLatin);
+      if (m) return m;
+    }
+    return null;
   })();
+  const dup = !!existingMatch;
 
   return {
     sid,
@@ -266,12 +294,20 @@ export function rowToStudent(row, roles, { classes = [], existing = [], defaultC
     status: statusOf(get("status")),
     year: yearOf(get("year")) || Number(String(sid).match(/NTTI-(\d{4})-/)?.[1] || 0) || defaultYear,
     dup,
+    existingId: existingMatch?.id || "",
   };
 }
 
 /** Build the final student payload (add to store) from a parsed row. */
-export function buildStudent(p, classes, defaultClassId, defaultYear, usedSids, seq) {
+export function buildStudent(p, classes, defaultClassId, defaultYear, usedSids, seq, lockedClass) {
+  /* Class import: lockedClass forces every row into that class, ignoring any
+     "Class" column in the file. Accepts a class object or its id. */
+  const locked =
+    (lockedClass &&
+      (typeof lockedClass === "object" ? lockedClass : classes.find((c) => c.id === lockedClass))) ||
+    null;
   const cls =
+    locked ||
     (p.classNameRaw && classes.find((c) => norm(c.name) === norm(p.classNameRaw))) ||
     (p.classNameRaw && classes.find((c) => norm(c.name).replace(/\s+/g, "") === norm(p.classNameRaw))) ||
     (defaultClassId ? classes.find((c) => c.id === defaultClassId) || null : null) ||

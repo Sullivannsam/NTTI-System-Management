@@ -61,11 +61,20 @@ export default function Students() {
             .includes(q)
         );
       })
-      .sort((a, b) =>
-        `${a.khmerName || ""}${a.firstName} ${a.lastName}`.localeCompare(
-          `${b.khmerName || ""}${b.firstName} ${b.lastName}`
-        )
-      );
+      .sort((a, b) => {
+        const ka = `${a.khmerName || ""}`.trim();
+        const kb = `${b.khmerName || ""}`.trim();
+        if (ka || kb) {
+          const c = ka.localeCompare(kb, "km", { sensitivity: "base" });
+          if (c !== 0) return c;
+        }
+        const ea = `${a.firstName || ""} ${a.lastName || ""}`.trim().toLowerCase();
+        const eb = `${b.firstName || ""} ${b.lastName || ""}`.trim().toLowerCase();
+        return (
+          ea.localeCompare(eb, undefined, { numeric: true, sensitivity: "base" }) ||
+          String(a.studentId || "").localeCompare(String(b.studentId || ""), undefined, { numeric: true })
+        );
+      });
   }, [students, query, classFilter, statusFilter]);
 
   const learning = students.filter((s) => s.status === "Learning").length;

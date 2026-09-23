@@ -42,12 +42,12 @@ const INSTITUTION_LINES = {
 
 /* official grading scale printed on the transcript */
 const NTTI_SCALE = [
-  { min: 85, max: 100, grade: "A", meaning: "Excellent", point: "4" },
-  { min: 80, max: 84, grade: "B+", meaning: "Very good", point: "3.5" },
-  { min: 70, max: 79, grade: "B", meaning: "Good", point: "3" },
-  { min: 65, max: 69, grade: "C+", meaning: "Fairly Good", point: "2.5" },
-  { min: 50, max: 64, grade: "C", meaning: "Fair", point: "2" },
-  { min: 0, max: 49, grade: "F", meaning: "Fail", point: "1.5" },
+  { min: 85, max: 100, grade: "A", meaning: "Excellent", point: "4.00" },
+  { min: 80, max: 84, grade: "B+", meaning: "Verygood", point: "3.50" },
+  { min: 70, max: 79, grade: "B", meaning: "Good", point: "3.00" },
+  { min: 65, max: 69, grade: "C+", meaning: "Fairly Good", point: "2.50" },
+  { min: 50, max: 64, grade: "C", meaning: "Fair", point: "2.00" },
+  { min: 0, max: 49, grade: "F", meaning: "Fail", point: "1.50" },
 ];
 const GRADE_POINTS = { A: 4, "B+": 3.5, B: 3, "C+": 2.5, C: 2, F: 1.5 };
 
@@ -265,7 +265,7 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
   const subjectHTML = (r) =>
     `<td style="${cell};text-align:left">${esc(r?.subject || "")}</td>` +
     `<td style="${cell};text-align:center">${r?.hour == null ? "" : r.hour}</td>` +
-    `<td style="${cell};text-align:center">${r?.score == null ? "" : r.score}</td>` +
+    `<td style="${cell};text-align:center">${r?.score == null ? "" : Number(r.score).toFixed(2)}</td>` +
     `<td style="${cell};text-align:center;font-weight:700">${r?.grade || ""}</td>`;
   const yearsHTML = blocks
     .map((b) => {
@@ -275,6 +275,14 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
       const st1 = b.s1 ? statsOf(b.s1) : null;
       const st2 = b.s2 ? statsOf(b.s2) : null;
       const yearLabel = ordinal(Number(b.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
+      const uncompleted = !(st1?.count) && !(st2?.count); // a year with subjects but no grades yet
+      if (uncompleted) {
+        return (
+          `<tr><td style="${cell};text-align:center;font-weight:800;background:#f1f5f9">${yearLabel}</td>` +
+          `<td colspan="4" style="${cell};text-align:center;color:#64748b">Uncompleted</td>` +
+          `<td colspan="4" style="${cell};text-align:center;color:#64748b">Uncompleted</td></tr>`
+        );
+      }
       const rows = Array.from({ length: max })
         .map(
           (_, i) =>
@@ -287,7 +295,7 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
       const avg = (st) =>
         `<td style="${cell};text-align:left">Term average</td>` +
         `<td style="${cell};text-align:center">—</td>` +
-        `<td style="${cell};text-align:center;font-weight:700">${st?.avg == null ? "—" : st.avg.toFixed(1)}</td>` +
+        `<td style="${cell};text-align:center;font-weight:700">${st?.avg == null ? "—" : st.avg.toFixed(2)}</td>` +
         `<td style="${cell};text-align:center;font-weight:800">${st?.grade || "—"}</td>`;
       return `${rows}<tr style="background:#f1f5f9">${avg(st1)}${avg(st2)}</tr>`;
     })
@@ -295,11 +303,11 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
 
   const stateExam =
     student.exitExam != null && student.exitExam !== ""
-      ? `Exit / State Examination · Score: ${student.exitExam} · Grade: ${letterOf(Number(student.exitExam))}`
+      ? `Exit / State Examination · Score: ${Number(student.exitExam).toFixed(2)} · Grade: ${letterOf(Number(student.exitExam))}`
       : "—";
   const practicalExam =
     student.thesisScore != null && student.thesisScore !== ""
-      ? `${student.thesisTitle || "Thesis / Practical project"} · Score: ${student.thesisScore} · Grade: ${letterOf(Number(student.thesisScore))}`
+      ? `${student.thesisTitle || "Thesis / Practical project"} · Score: ${Number(student.thesisScore).toFixed(2)} · Grade: ${letterOf(Number(student.thesisScore))}`
       : "—";
 
   const legendRows = NTTI_SCALE.map(
@@ -366,6 +374,266 @@ function downloadFile(html, filename, type) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ── real .xlsx export mirroring the official “ex” cheatsheet grid ── */
+function buildTranscriptWorkbook({ student, cls, terms, overall, att, refNo, issued }) {
+  /* column grid mirrors the official sheet exactly (0-indexed):
+     0 YEAR · 1-7 SEM I Subjects · 8 HOUR · 9 Score (100/100) · 10 Grade
+     · 11-16 SEM II Subjects · 17 HOUR · 18 Score (100/100) · 19 Grade  */
+  const W = 20; // column count A..T
+  const aoa = [];
+  const merges = [];
+  const set = (r, c, v) => {
+    (aoa[r] = aoa[r] || []);
+    aoa[r][c] = v === undefined || v === null ? "" : v;
+  };
+  const thin = { style: "thin", color: { rgb: "9CA3AF" } };
+  const border = { top: thin, bottom: thin, left: thin, right: thin };
+  const st = (o) => ({ ...o, border });
+  const H = (r, c, v, span = 1) => {
+    const o = st({ font: { bold: true }, fill: { fgColor: { rgb: "E2E8F0" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true } });
+    set(r, c, { t: "s", v: v ?? "", s: o });
+    if (span > 1) merges.push({ s: { r, c }, e: { r, c: c + span - 1 } });
+  };
+
+  /* letterhead — mirrors official rows 0-4 (centred across A..T) */
+  const L = (r, v, bold = false) => {
+    set(r, 0, { t: "s", v, s: st({ font: bold ? { bold: true, sz: 13 } : { sz: 11 }, alignment: { horizontal: "center", vertical: "center" } }) });
+    merges.push({ s: { r, c: 0 }, e: { r, c: W - 1 } });
+  };
+  L(0, INSTITUTION_LINES.country, true);
+  L(1, INSTITUTION_LINES.motto, false);
+  L(2, INSTITUTION_LINES.ministry, false);
+  L(3, INSTITUTION_LINES.institute, true);
+  L(4, INSTITUTION_LINES.noLine, false);
+  set(5, 0, "");
+  L(6, "OFFICIAL TRANSCRIPT", true);
+
+  /* student block — official rows 7-10 */
+  const pair = (r, c0, k, v) => {
+    set(r, c0, { t: "s", v: k + " :", s: st({ font: { bold: true }, alignment: { horizontal: "right" } }) });
+    set(r, c0 + 1, { t: "s", v: v || "—", s: st({ alignment: { horizontal: "left" } }) });
+  };
+  pair(7, 0, "Student", student.khmerName ? `${student.khmerName} (${student.firstName} ${student.lastName})` : `${student.firstName} ${student.lastName}`);
+  set(7, 10, { t: "s", v: "Sex :", s: st({ font: { bold: true }, alignment: { horizontal: "right" } }) });
+  set(7, 11, { t: "s", v: student.gender || "—", s: st({}) });
+  set(7, 16, { t: "s", v: "Nationality :", s: st({ font: { bold: true }, alignment: { horizontal: "right" } }) });
+  set(7, 17, { t: "s", v: "Khmer", s: st({}) });
+  pair(8, 0, "Date of Birth", student.dob ? prettyDate(student.dob) : null);
+  set(8, 10, { t: "s", v: "Date of Graduation :", s: st({ font: { bold: true }, alignment: { horizontal: "left" } }) });
+  set(8, 11, {
+    t: "s",
+    v: student.enrollmentYear ? String(Number(student.enrollmentYear) + (programYears(student.major) - 1)) : "—",
+    s: st({}),
+  });
+  pair(9, 0, "Place of Birth", "—");
+
+  /* statement + StudentNo — official row 10 */
+  set(10, 0, {
+    t: "s",
+    v: `Has successfully completed Diploma of Technology in the field of ${cls?.field || majorName(student.major)} in academic year ${student.enrollmentYear || "—"} - ${student.enrollmentYear ? Number(student.enrollmentYear) + (programYears(student.major) - 1) : "—"}`,
+    s: st({ font: { bold: true }, alignment: { horizontal: "left" } }),
+  });
+  merges.push({ s: { r: 10, c: 0 }, e: { r: 10, c: 12 } });
+  set(10, 13, { t: "s", v: "StudentNo:", s: st({ font: { bold: true }, alignment: { horizontal: "right" } }) });
+  set(10, 14, { t: "s", v: String(student.studentId || "—"), s: st({}) });
+  merges.push({ s: { r: 10, c: 14 }, e: { r: 10, c: 19 } });
+
+  /* ----- main table header (official rows 12-13) ----- */
+  const hdrR = 12;
+  H(hdrR, 0, "YEAR");
+  H(hdrR, 1, "SEMESTER I", 10);
+  H(hdrR, 11, "SEMESTER II", 9);
+  merges.push({ s: { r: hdrR, c: 0 }, e: { r: hdrR + 1, c: 0 } });
+  const sub = hdrR + 1;
+  H(sub, 1, "Subjects", 7);
+  H(sub, 8, "HOUR", 1);
+  H(sub, 9, "Score (100/100)", 1);
+  H(sub, 10, "Grade", 1);
+  H(sub, 11, "Subjects", 6);
+  H(sub, 17, "HOUR", 1);
+  H(sub, 18, "Score (100/100)", 1);
+  H(sub, 19, "Grade", 1);
+
+  /* ----- year blocks (official rows 14+) ----- */
+  const byYear = {};
+  terms.forEach((t) => {
+    const y = String(t.level || "")[3];
+    if (!y) return;
+    (byYear[y] ||= {})[String(t.level).slice(0, 2)] = t; // matches yearBlocks logic
+  });
+  const blocks = Object.entries(byYear)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([y, m]) => ({ y, s1: m.S1 || null, s2: m.S2 || null }));
+
+  const ordinalEx = (n) => {
+    const j = Number(n) % 100;
+    if (j >= 11 && j <= 13) return `${n} th`;
+    const r = j % 10;
+    return `${n}${r === 1 ? "st" : r === 2 ? "nd" : r === 3 ? "rd" : "th"}`;
+  };
+
+  let row = sub + 1;
+  const yearCellStyle = st({ font: { bold: true }, alignment: { horizontal: "center", vertical: "center" } });
+  const ordinalLabel = (n) => ordinalEx(n).replace(/(\d)(st|nd|rd|th)$/, "$1 $2"); // official "1 st"
+  const numCell = (v) =>
+    v == null
+      ? { t: "s", v: "", s: st({ alignment: { horizontal: "center" } }) }
+      : { t: "s", v: Number(v).toFixed(2), s: st({ alignment: { horizontal: "center" } }) };
+  const hourCell = (v) =>
+    v == null
+      ? { t: "s", v: "", s: st({ alignment: { horizontal: "center" } }) }
+      : { t: "n", v, s: st({ alignment: { horizontal: "center" } }) };
+  const gradeCell = (g) => ({ t: "s", v: g || "", s: st({ font: { bold: true }, alignment: { horizontal: "center" } }) });
+  blocks.forEach((b) => {
+    const r1 = rowsOf(b.s1 || {});
+    const r2 = rowsOf(b.s2 || {});
+    const max = Math.max(r1.length, r2.length, 1);
+    const st1 = b.s1 ? statsOf(b.s1) : null;
+    const st2 = b.s2 ? statsOf(b.s2) : null;
+    const y0 = row;
+    // a year with subjects but no grades yet — official renders one merged "Uncompleted" block
+    if (!(st1?.count) && !(st2?.count)) {
+      merges.push({ s: { r: y0, c: 0 }, e: { r: y0 + max, c: 0 } });
+      set(y0, 0, { t: "s", v: ordinalLabel(b.y), s: yearCellStyle });
+      set(y0, 1, { t: "s", v: "Uncompleted", s: st({ alignment: { horizontal: "center", vertical: "center" } }) });
+      merges.push({ s: { r: y0, c: 1 }, e: { r: y0 + max, c: 10 } });
+      set(y0, 11, { t: "s", v: "Uncompleted", s: st({ alignment: { horizontal: "center", vertical: "center" } }) });
+      merges.push({ s: { r: y0, c: 11 }, e: { r: y0 + max, c: 19 } });
+      row += max + 1;
+      return;
+    }
+    merges.push({ s: { r: y0, c: 0 }, e: { r: y0 + max, c: 0 } });
+    set(y0, 0, { t: "s", v: ordinalLabel(b.y), s: yearCellStyle });
+    for (let i = 0; i < max; i++) {
+      const a = r1[i];
+      const b = r2[i];
+      set(row, 1, { t: "s", v: a?.subject || "", s: st({}) });
+      merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 7 } });
+      set(row, 8, hourCell(a?.hour));
+      set(row, 9, numCell(a ? a.score : null));
+      set(row, 10, gradeCell(a?.grade));
+      set(row, 11, { t: "s", v: b?.subject || "", s: st({}) });
+      merges.push({ s: { r: row, c: 11 }, e: { r: row, c: 16 } });
+      set(row, 17, hourCell(b?.hour));
+      set(row, 18, numCell(b ? b.score : null));
+      set(row, 19, gradeCell(b?.grade));
+      row++;
+    }
+    // per-year average row
+    const avgStyle = st({ font: { bold: true }, fill: { fgColor: { rgb: "E2E8F0" } }, alignment: { horizontal: "left" } });
+    const avgNum = st({ font: { bold: true }, fill: { fgColor: { rgb: "E2E8F0" } }, alignment: { horizontal: "center" } });
+    if (b.s1) {
+      set(row, 1, { t: "s", v: "Term average", s: avgStyle });
+      set(row, 9, st1?.avg != null ? { t: "s", v: st1.avg.toFixed(2), s: avgNum } : { t: "s", v: "—", s: avgNum });
+      set(row, 10, { t: "s", v: st1?.grade || "—", s: avgNum });
+    }
+    merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 7 } });
+    if (b.s2) {
+      set(row, 11, { t: "s", v: "Term average", s: avgStyle });
+      set(row, 18, st2?.avg != null ? { t: "s", v: st2.avg.toFixed(2), s: avgNum } : { t: "s", v: "—", s: avgNum });
+      set(row, 19, { t: "s", v: st2?.grade || "—", s: avgNum });
+    }
+    merges.push({ s: { r: row, c: 11 }, e: { r: row, c: 16 } });
+    row++;
+  });
+
+  /* State Exam / Practical Exam rows (official 40-44 style) */
+  const examLabel = () => st({ font: { bold: true }, fill: { fgColor: { rgb: "E2E8F0" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true } });
+  merges.push({ s: { r: row, c: 0 }, e: { r: row + 1, c: 0 } });
+  set(row, 0, { t: "s", v: "State\nExam", s: examLabel() });
+  set(row, 1, { t: "s", v: "Exit / State Examination", s: st({}) });
+  merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 8 } });
+  set(row, 9, { t: "s", v: student.exitExam != null && student.exitExam !== "" ? Number(student.exitExam).toFixed(2) : "—", s: st({ alignment: { horizontal: "center" } }) });
+  set(row, 10, { t: "s", v: student.exitExam != null && student.exitExam !== "" ? letterOf(Number(student.exitExam)) : "—", s: st({ font: { bold: true }, alignment: { horizontal: "center" } }) });
+  set(row, 11, { t: "s", v: "Practical Exam", s: examLabel() });
+  merges.push({ s: { r: row, c: 11 }, e: { r: row, c: 12 } });
+  set(row, 13, { t: "s", v: student.thesisTitle || "Thesis / Practical project", s: st({}) });
+  merges.push({ s: { r: row, c: 13 }, e: { r: row, c: 17 } });
+  set(row, 18, { t: "s", v: student.thesisScore != null && student.thesisScore !== "" ? Number(student.thesisScore).toFixed(2) : "—", s: st({ alignment: { horizontal: "center" } }) });
+  set(row, 19, { t: "s", v: student.thesisScore != null && student.thesisScore !== "" ? letterOf(Number(student.thesisScore)) : "—", s: st({ font: { bold: true }, alignment: { horizontal: "center" } }) });
+  row++;
+  set(row, 1, { t: "s", v: overall.avg != null ? `Overall average: ${overall.avg.toFixed(1)}` : "Overall average: —", s: st({}) });
+  merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 10 } });
+  row++;
+
+  /* grade legend (official 48-55) */
+  row++;
+  set(row, 1, { t: "s", v: "REMARKS:", s: st({ font: { bold: true } }) });
+  set(row, 2, {
+    t: "s",
+    v: `${overall.grade && overall.grade !== "F" ? "Overall result: PASSED" : overall.grade === "F" ? "Overall result: NOT PASSED" : "Overall result: IN PROGRESS"} · GPA ${overall.gpa != null ? overall.gpa.toFixed(2) : "—"}`,
+    s: st({}),
+  });
+  merges.push({ s: { r: row, c: 2 }, e: { r: row, c: 10 } });
+  row += 2;
+  H(row, 1, "Mark Obtained", 2);
+  H(row, 4, "Grade", 2);
+  H(row, 6, "Meaning", 3);
+  H(row, 9, "Grade Point", 1);
+  set(row, 12, { t: "s", v: "Phnom Penh, Date ...............", s: st({ alignment: { horizontal: "center" } }) });
+  merges.push({ s: { r: row, c: 12 }, e: { r: row, c: 15 } });
+  set(row, 16, { t: "s", v: "Official Stamp", s: st({ alignment: { horizontal: "center" } }) });
+  merges.push({ s: { r: row, c: 16 }, e: { r: row, c: 19 } });
+  row++;
+  NTTI_SCALE.forEach((g, i) => {
+    set(row, 1, { t: "s", v: g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`, s: st({ alignment: { horizontal: "center" } }) });
+    merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 2 } });
+    set(row, 4, { t: "s", v: g.grade, s: st({ font: { bold: true }, alignment: { horizontal: "center" } }) });
+    merges.push({ s: { r: row, c: 4 }, e: { r: row, c: 5 } });
+    set(row, 6, { t: "s", v: g.meaning, s: st({ alignment: { horizontal: "center" } }) });
+    merges.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+    set(row, 9, { t: "s", v: g.point, s: st({ alignment: { horizontal: "center" } }) });
+    if (i === 0) {
+      set(row, 12, { t: "s", v: "Deputy Director", s: st({ alignment: { horizontal: "center" } }) });
+      merges.push({ s: { r: row, c: 12 }, e: { r: row, c: 15 } });
+    }
+    if (i === 1) {
+      set(row, 16, { t: "s", v: "Director", s: st({ alignment: { horizontal: "center" } }) });
+      merges.push({ s: { r: row, c: 16 }, e: { r: row, c: 19 } });
+    }
+    row++;
+  });
+
+  /* ISO footer (official 70-72) */
+  row++;
+  const foot = (v) => {
+    set(row, 0, { t: "s", v, s: st({ alignment: { horizontal: "center", vertical: "center" } }) });
+    merges.push({ s: { r: row, c: 0 }, e: { r: row, c: W - 1 } });
+    row++;
+  };
+  foot(INSTITUTION_LINES.certNo);
+  foot(INSTITUTION_LINES.address1);
+  foot(INSTITUTION_LINES.address2);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!merges"] = merges;
+  ws["!cols"] = [
+    { wch: 7 }, // YEAR
+    { wch: 24 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, // SEM I Subjects (1-7)
+    { wch: 7 }, // HOUR
+    { wch: 17 }, // Score
+    { wch: 6 }, // Grade
+    { wch: 24 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, // SEM II Subjects (11-16)
+    { wch: 7 }, // HOUR
+    { wch: 17 }, // Score
+    { wch: 6 }, // Grade
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "ex");
+  return wb;
 }
 
 /* ── main page ───────────────────────────────────────────── */
@@ -564,9 +832,17 @@ export default function Transcript() {
 
   const handleDownload = (type) => {
     if (!student) return;
-    const html = docHTML(exportData());
     const base = student.studentId || `${student.firstName}-${student.lastName}`;
-    downloadFile(html, `${base}-transcript.${type === "word" ? "doc" : "xls"}`, type);
+    if (type === "excel") {
+      const wb = buildTranscriptWorkbook(exportData());
+      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      downloadBlob(
+        new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `${base}-transcript.xlsx`
+      );
+    } else {
+      downloadFile(docHTML(exportData()), `${base}-transcript.doc`, "word");
+    }
     logAudit("export_transcript", `Exported ${type === "word" ? "Word" : "Excel"} transcript for "${student.firstName} ${student.lastName}" (${scopeLabel})`);
     showToast(`Transcript exported as ${type === "word" ? "Word" : "Excel"}`);
   };
@@ -955,6 +1231,18 @@ export default function Transcript() {
                 const st1 = block.s1 ? statsOf(block.s1) : null;
                 const st2 = block.s2 ? statsOf(block.s2) : null;
                 const yearLabel = ordinal(Number(block.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
+                const uncompleted = !(st1?.count) && !(st2?.count); // a year with subjects but no grades yet
+                if (uncompleted) {
+                  return (
+                    <tbody key={`y-${block.y}`} className="transcript-term">
+                      <tr>
+                        <td className="year">{yearLabel}</td>
+                        <td colSpan={4} style={{ textAlign: "center", color: MUTED }}>Uncompleted</td>
+                        <td colSpan={4} style={{ textAlign: "center", color: MUTED }}>Uncompleted</td>
+                      </tr>
+                    </tbody>
+                  );
+                }
                 return (
                   <tbody key={`y-${block.y}`} className="transcript-term">
                     {Array.from({ length: max }).map((_, i) => (
@@ -966,22 +1254,22 @@ export default function Transcript() {
                         )}
                         <td style={{ textAlign: "left" }}>{r1[i]?.subject ?? ""}</td>
                         <td className="num">{r1[i]?.hour ?? ""}</td>
-                        <td className="num">{r1[i]?.score ?? ""}</td>
+                        <td className="num">{r1[i]?.score != null ? Number(r1[i].score).toFixed(2) : ""}</td>
                         <td className="grade">{r1[i]?.grade ?? ""}</td>
                         <td style={{ textAlign: "left" }}>{r2[i]?.subject ?? ""}</td>
                         <td className="num">{r2[i]?.hour ?? ""}</td>
-                        <td className="num">{r2[i]?.score ?? ""}</td>
+                        <td className="num">{r2[i]?.score != null ? Number(r2[i].score).toFixed(2) : ""}</td>
                         <td className="grade">{r2[i]?.grade ?? ""}</td>
                       </tr>
                     ))}
                     <tr className="avg-row">
                       <td style={{ textAlign: "left" }}>Term average</td>
                       <td className="num">—</td>
-                      <td className="num">{st1?.avg != null ? st1.avg.toFixed(1) : "—"}</td>
+                      <td className="num">{st1?.avg != null ? st1.avg.toFixed(2) : "—"}</td>
                       <td className="grade">{st1?.grade ?? "—"}</td>
                       <td style={{ textAlign: "left" }}>Term average</td>
                       <td className="num">—</td>
-                      <td className="num">{st2?.avg != null ? st2.avg.toFixed(1) : "—"}</td>
+                      <td className="num">{st2?.avg != null ? st2.avg.toFixed(2) : "—"}</td>
                       <td className="grade">{st2?.grade ?? "—"}</td>
                     </tr>
                   </tbody>
@@ -993,7 +1281,7 @@ export default function Transcript() {
                   <td className="year">State Exam</td>
                   <td colSpan={8} style={{ textAlign: "left" }}>
                     {student.exitExam != null && student.exitExam !== ""
-                      ? `Exit / State Examination · Score: ${student.exitExam} · Grade: ${letterOf(Number(student.exitExam))}`
+                      ? `Exit / State Examination · Score: ${Number(student.exitExam).toFixed(2)} · Grade: ${letterOf(Number(student.exitExam))}`
                       : "—"}
                   </td>
                 </tr>
@@ -1001,7 +1289,7 @@ export default function Transcript() {
                   <td className="year">Practical Exam</td>
                   <td colSpan={8} style={{ textAlign: "left" }}>
                     {student.thesisScore != null && student.thesisScore !== ""
-                      ? `${student.thesisTitle || "Thesis / Practical project"} · Score: ${student.thesisScore} · Grade: ${letterOf(Number(student.thesisScore))}`
+                      ? `${student.thesisTitle || "Thesis / Practical project"} · Score: ${Number(student.thesisScore).toFixed(2)} · Grade: ${letterOf(Number(student.thesisScore))}`
                       : "—"}
                   </td>
                 </tr>

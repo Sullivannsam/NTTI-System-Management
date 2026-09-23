@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Percent,
   Search,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ChevronsDown,
@@ -500,6 +501,9 @@ function ClassGrid({
 }) {
   const week = weeks.find((w) => w.key === focusKey) || weeks[weeks.length - 1] || null;
   const weekNo = week ? weeks.findIndex((w) => w.key === week.key) + 1 : 0;
+  const weekIdx = week ? weeks.findIndex((w) => w.key === week.key) : -1;
+  const prevWeekKey = weekIdx > 0 ? weeks[weekIdx - 1].key : null;
+  const nextWeekKey = weekIdx >= 0 && weekIdx < weeks.length - 1 ? weeks[weekIdx + 1].key : null;
   const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
   const activeSubj = subjects.find((x) => x.key === subject) || subjects[0];
   const hasRealSubjects = subjects.length > 1 || (subjects.length === 1 && subjects[0].key !== "general");
@@ -748,60 +752,83 @@ function ClassGrid({
             </div>
           )}
 
-          {/* Step 2 — which week */}
+          {/* Sticky control bar — the week picker and the marking tools stay
+              on screen (pinned under the app header) while the attendance
+              grid scrolls beneath them. */}
           <div
-            className="flex items-center gap-1.5 overflow-x-auto thin-scroll border-b px-5 py-2"
-            style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+            className="sticky top-[68px] z-30 border-b px-5 py-2.5"
+            style={{
+              borderColor: "var(--border)",
+              background: "var(--surface-1)",
+              boxShadow: "0 10px 24px -18px rgba(0,0,0,.55)",
+            }}
           >
-            {stepLabel(hasRealSubjects ? 2 : 1, "Week")}
-            {weeks.map((w, i) => {
-              const active = w.key === week.key;
-              return (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+              {/* Week — a clean picker: arrows + dropdown instead of a wall of chips */}
+              <div className="flex items-center gap-1.5 min-w-0">
+                {stepLabel(hasRealSubjects ? 2 : 1, "Week")}
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => prevWeekKey && onSelectWeek(prevWeekKey)}
+                    disabled={!prevWeekKey}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-35"
+                    style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
+                    title="Previous week"
+                    aria-label="Previous week"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <select
+                    value={week ? week.key : ""}
+                    onChange={(e) => onSelectWeek(e.target.value)}
+                    className="input h-8 w-auto max-w-[200px] py-1 pl-2.5 pr-7 text-xs font-bold tabular-nums"
+                    title={`Week ${weekNo} · ${week ? week.range : "—"} — pick the week to mark`}
+                  >
+                    {weeks.map((w, i) => (
+                      <option key={w.key} value={w.key}>
+                        W{i + 1} · {w.range}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => nextWeekKey && onSelectWeek(nextWeekKey)}
+                    disabled={!nextWeekKey}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-35"
+                    style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
+                    title="Next week"
+                    aria-label="Next week"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
                 <button
-                  key={w.key}
                   type="button"
-                  onClick={() => onSelectWeek(w.key)}
-                  className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold tabular-nums transition-colors"
-                  style={
-                    active
-                      ? { background: "var(--primary)", color: "#fff" }
-                      : { background: "var(--surface-2)", color: "var(--text-2)" }
-                  }
-                  title={`Week ${i + 1} · ${w.range}`}
+                  onClick={onAddWeek}
+                  className="flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
+                  style={{ borderColor: "var(--border)", color: "var(--primary-strong)" }}
+                  title={`Add a new week (W${weeks.length + 1}) to this class only`}
                 >
-                  W{i + 1}
+                  <PlusCircle size={12} /> Add W{weeks.length + 1}
                 </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={onAddWeek}
-              className="flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
-              style={{ borderColor: "var(--border)", color: "var(--primary-strong)" }}
-              title="Add a new week to this class only"
-            >
-              <PlusCircle size={13} /> Add W{weeks.length + 1}
-            </button>
-            <button
-              type="button"
-              onClick={() => onRemoveWeek(week.key)}
-              disabled={weeks.length <= 1}
-              className="flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ borderColor: "var(--border)", color: "var(--danger)" }}
-              title={`Delete week ${weekNo}${weeks.length <= 1 ? " — a sheet needs at least one week" : ""}`}
-            >
-              <Trash2 size={13} /> Remove week
-            </button>
-          </div>
+                <button
+                  type="button"
+                  onClick={() => week && onRemoveWeek(week.key)}
+                  disabled={weeks.length <= 1}
+                  className="flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ borderColor: "var(--border)", color: "var(--danger)" }}
+                  title={`Delete week ${weekNo}${weeks.length <= 1 ? " — a sheet needs at least one week" : ""}`}
+                >
+                  <Trash2 size={12} /> Remove
+                </button>
+              </div>
 
-          {/* Step 3 — the marking toolbar. Pick once, then click cells. */}
-          <div
-            className="border-b px-5 py-3"
-            style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              {stepLabel(hasRealSubjects ? 3 : 2, "Mark with")}
+              <span className="hidden sm:block h-7 w-px shrink-0" style={{ background: "var(--border)" }} />
+
+              {/* Mark with — big, obvious buttons */}
               <div className="flex flex-wrap items-center gap-1.5">
+                {stepLabel(hasRealSubjects ? 3 : 2, "Mark with")}
                 {MARK_TOOLS.map((t) => {
                   const active = t.value === tool;
                   return (
@@ -838,9 +865,6 @@ function ClassGrid({
                     </button>
                   );
                 })}
-              </div>
-
-              <div className="ml-auto flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={fillBlanks}
@@ -859,9 +883,9 @@ function ClassGrid({
               <b style={{ color: activeTool.value ? activeTool.color : "var(--text-2)" }}>
                 {activeTool.value ? activeTool.label : "empty"}
               </b>
-              . Hold and drag to mark a whole row or column at once. Click the same cell again to undo it. Keys{" "}
-              <b style={{ color: "var(--text-2)" }}>1–4</b> and <b style={{ color: "var(--text-2)" }}>0</b> switch tools.
-              Nothing is stored until you press <b style={{ color: "var(--text-2)" }}>Save sheet</b>.
+              . Drag to mark a whole row or column · click the same cell again to undo · keys{" "}
+              <b style={{ color: "var(--text-2)" }}>1–4</b> / <b style={{ color: "var(--text-2)" }}>0</b> switch tools ·
+              nothing is stored until <b style={{ color: "var(--text-2)" }}>Save sheet</b>.
             </p>
           </div>
 
