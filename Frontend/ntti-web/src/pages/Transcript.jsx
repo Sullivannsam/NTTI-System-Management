@@ -239,56 +239,117 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
   ].filter(([, v]) => v != null);
 
   const infoCells = info
-    .map(([k, v]) => `<td style="padding:4px 10px;border:1px solid #cbd5e1;color:#475569"><b>${esc(k)}</b></td><td style="padding:4px 10px;border:1px solid #cbd5e1;color:#0f172a">${esc(v)}</td>`)
+    .map(
+      ([k, v]) =>
+        `<td style="padding:4px 10px;border:1px solid #cbd5e1;color:#475569"><b>${esc(k)}</b></td><td style="padding:4px 10px;border:1px solid #cbd5e1;color:#0f172a">${esc(v)}</td>`
+    )
     .join("");
 
-  const termsHTML = terms
-    .map((t) => {
-      const st = statsOf(t);
-      const rows = rowsOf(t)
+  /* group terms into YEAR | SEMESTER I | SEMESTER II blocks (mirrors the on-screen yearBlocks) */
+  const byYear = {};
+  terms.forEach((t) => {
+    const y = String(t.level || "")[3];
+    if (!y) return;
+    (byYear[y] ||= {})[String(t.level).slice(0, 2)] = t; // "S1" / "S2"
+  });
+  const blocks = Object.entries(byYear)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([y, m]) => ({ y, s1: m.S1 || null, s2: m.S2 || null }));
+  const ordinal = (n) => {
+    const j = Number(n) % 100;
+    if (j >= 11 && j <= 13) return `${n} th`;
+    const r = j % 10;
+    return `${n}${r === 1 ? "st" : r === 2 ? "nd" : r === 3 ? "rd" : "th"}`;
+  };
+  const cell = "border:1px solid #cbd5e1;padding:4px 6px";
+  const subjectHTML = (r) =>
+    `<td style="${cell};text-align:left">${esc(r?.subject || "")}</td>` +
+    `<td style="${cell};text-align:center">${r?.hour == null ? "" : r.hour}</td>` +
+    `<td style="${cell};text-align:center">${r?.score == null ? "" : r.score}</td>` +
+    `<td style="${cell};text-align:center;font-weight:700">${r?.grade || ""}</td>`;
+  const yearsHTML = blocks
+    .map((b) => {
+      const r1 = rowsOf(b.s1 || {});
+      const r2 = rowsOf(b.s2 || {});
+      const max = Math.max(r1.length, r2.length, 1);
+      const st1 = b.s1 ? statsOf(b.s1) : null;
+      const st2 = b.s2 ? statsOf(b.s2) : null;
+      const yearLabel = ordinal(Number(b.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
+      const rows = Array.from({ length: max })
         .map(
-          (r, i) =>
-            `<tr><td style="padding:4px 10px;border:1px solid #cbd5e1;text-align:center">${i + 1}</td><td style="padding:4px 10px;border:1px solid #cbd5e1">${esc(r.subject)}</td><td style="padding:4px 10px;border:1px solid #cbd5e1;text-align:center">${r.score == null ? "—" : r.score.toFixed(2)}</td><td style="padding:4px 10px;border:1px solid #cbd5e1;text-align:center"><b>${r.grade || "—"}</b></td></tr>`
+          (_, i) =>
+            `<tr>${i === 0 ? `<td rowspan="${max + 1}" style="${cell};text-align:center;font-weight:800;background:#f1f5f9">${yearLabel}</td>` : ""}` +
+            subjectHTML(r1[i]) +
+            subjectHTML(r2[i]) +
+            `</tr>`
         )
         .join("");
-      return `<h3 style="margin:16px 0 4px;color:#0f172a">${esc(t.level)} — ${esc(t.semester)} · ${esc(t.year)}${
-        t.archived ? "" : " (in progress)"
-      }</h3><table style="border-collapse:collapse;width:100%;font-size:12px"><tr style="background:#f1f5f9;color:#334155"><th style="padding:5px 10px;border:1px solid #cbd5e1">No</th><th style="padding:5px 10px;border:1px solid #cbd5e1;text-align:left">Subject</th><th style="padding:5px 10px;border:1px solid #cbd5e1">Score</th><th style="padding:5px 10px;border:1px solid #cbd5e1">Grade</th></tr>${rows}<tr style="background:#f1f5f9"><td colspan="2" style="padding:5px 10px;border:1px solid #cbd5e1;text-align:right"><b>Term average</b></td><td style="padding:5px 10px;border:1px solid #cbd5e1;text-align:center"><b>${
-        st.avg == null ? "—" : st.avg.toFixed(2)
-      }</b></td><td style="padding:5px 10px;border:1px solid #cbd5e1;text-align:center"><b>${st.grade || "—"}</b></td></tr></table>`;
+      const avg = (st) =>
+        `<td style="${cell};text-align:left">Term average</td>` +
+        `<td style="${cell};text-align:center">—</td>` +
+        `<td style="${cell};text-align:center;font-weight:700">${st?.avg == null ? "—" : st.avg.toFixed(1)}</td>` +
+        `<td style="${cell};text-align:center;font-weight:800">${st?.grade || "—"}</td>`;
+      return `${rows}<tr style="background:#f1f5f9">${avg(st1)}${avg(st2)}</tr>`;
     })
     .join("");
+
+  const stateExam =
+    student.exitExam != null && student.exitExam !== ""
+      ? `Exit / State Examination · Score: ${student.exitExam} · Grade: ${letterOf(Number(student.exitExam))}`
+      : "—";
+  const practicalExam =
+    student.thesisScore != null && student.thesisScore !== ""
+      ? `${student.thesisTitle || "Thesis / Practical project"} · Score: ${student.thesisScore} · Grade: ${letterOf(Number(student.thesisScore))}`
+      : "—";
+
+  const legendRows = NTTI_SCALE.map(
+    (g) =>
+      `<tr><td style="${cell};text-align:center">${g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`}</td>` +
+      `<td style="${cell};text-align:center;font-weight:700">${g.grade}</td>` +
+      `<td style="${cell};text-align:left">${g.meaning}</td>` +
+      `<td style="${cell};text-align:center">${g.point}</td></tr>`
+  ).join("");
 
   const logoUrl = `${typeof window !== "undefined" ? window.location.origin : ""}${LOGO_SRC}`;
   return `<html><head><meta charset="utf-8"><title>Academic transcript</title></head><body style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;max-width:820px">
   <table style="width:100%;border-collapse:collapse;border-bottom:3px double #0f172a">
     <tr>
       <td style="width:74px;vertical-align:middle;padding-bottom:10px"><img src="${logoUrl}" alt="NTTI" width="64" height="64" /></td>
-      <td style="vertical-align:middle;padding-bottom:10px">
-        <h1 style="margin:0;font-size:20px">${esc(INSTITUTION_KM)}</h1>
-        <p style="margin:2px 0 0;font-size:14px;font-weight:600">${esc(INSTITUTION_EN)}</p>
-        <p style="margin:2px 0 0;color:#475569">Office of the Registrar · Official Academic Transcript</p>
+      <td style="vertical-align:middle;padding-bottom:10px;text-align:center">
+        <h1 style="margin:0;font-size:16px;color:#0f172a">${esc(INSTITUTION_LINES.country)}</h1>
+        <p style="margin:2px 0 0;font-size:12px;color:#0f172a">${esc(INSTITUTION_LINES.motto)}</p>
+        <p style="margin:2px 0 0;font-size:12px;color:#0f172a">${esc(INSTITUTION_LINES.ministry)}</p>
+        <p style="margin:4px 0 0;font-size:15px;font-weight:800;color:#0f172a">${esc(INSTITUTION_LINES.institute)}</p>
+        <p style="margin:2px 0 0;font-size:11px;color:#475569">${esc(INSTITUTION_LINES.noLine)}</p>
       </td>
     </tr>
   </table>
+  <h2 style="text-align:center;margin:14px 0 4px;letter-spacing:.25em;font-size:16px;color:#0f172a">OFFICIAL TRANSCRIPT</h2>
   <p style="display:flex;justify-content:space-between;font-size:12px;color:#475569"><span>Transcript No: <b>${esc(refNo)}</b></span><span>Issued: <b>${esc(issued)}</b></span></p>
   <table style="border-collapse:collapse;width:100%;font-size:12px"><tr>${infoCells}</tr></table>
-  ${termsHTML}
-  <h3 style="margin:18px 0 4px;color:#0f172a">Cumulative summary</h3>
+  <p style="font-size:12px;margin:8px 0;color:#0f172a">Has successfully completed Diploma of Technology in the field of <b>${esc(cls?.field || majorName(student.major))}</b> in academic year <b>${student.enrollmentYear || "—"} - ${student.enrollmentYear ? Number(student.enrollmentYear) + (programYears(student.major) - 1) : "—"}</b></p>
   <table style="border-collapse:collapse;width:100%;font-size:12px">
-    <tr><td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Terms included</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${terms.length}</b></td>
-    <td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Subjects recorded</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${overall.count}</b></td></tr>
-    <tr><td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Overall average</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${overall.avg == null ? "—" : overall.avg.toFixed(2)}</b></td>
-    <td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">GPA (4.00)</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${overall.gpa == null ? "—" : overall.gpa.toFixed(2)}</b></td></tr>
-    <tr><td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Overall grade</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${overall.grade || "—"}</b></td>
-    <td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Attendance</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${att.rate}%</b> (${att.present} present · ${att.late} late · ${att.absent} absent · ${att.leave} leave)</td></tr>
+    <tr><th rowspan="2" style="${cell};background:#f1f5f9;width:56px">YEAR</th><th colspan="4" style="${cell};background:#f1f5f9">SEMESTER I</th><th colspan="4" style="${cell};background:#f1f5f9">SEMESTER II</th></tr>
+    <tr>${[0, 1].map(() => `<th style="${cell};background:#f1f5f9;text-align:left">Subjects</th><th style="${cell};background:#f1f5f9">HOUR</th><th style="${cell};background:#f1f5f9">Score (100/100)</th><th style="${cell};background:#f1f5f9">Grade</th>`).join("")}</tr>
+    ${yearsHTML}
+    <tr><td style="${cell};background:#f1f5f9;font-weight:800;text-align:center">State Exam</td><td colspan="8" style="${cell}">${esc(stateExam)}</td></tr>
+    <tr><td style="${cell};background:#f1f5f9;font-weight:800;text-align:center">Practical Exam</td><td colspan="8" style="${cell}">${esc(practicalExam)}</td></tr>
   </table>
-  <p style="margin-top:14px;font-size:11px;color:#475569">Result: <b>${overall.grade && overall.grade !== "F" ? "PASSED" : overall.grade === "F" ? "NOT PASSED" : "IN PROGRESS"}</b>. Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F &lt; 60.</p>
-  <table style="width:100%;margin-top:34px;font-size:12px;color:#475569"><tr>
-    <td style="text-align:center;padding-top:30px">_____________________________<br/>Registrar · Date</td>
-    <td style="text-align:center;padding-top:30px">_____________________________<br/>Director · Date</td>
-    <td style="text-align:center;padding-top:30px">( Official stamp )</td>
+  <table style="border-collapse:collapse;margin-top:12px;font-size:11px">
+    <tr><th style="${cell};background:#f1f5f9">Mark Obtained</th><th style="${cell};background:#f1f5f9">Grade</th><th style="${cell};background:#f1f5f9">Meaning</th><th style="${cell};background:#f1f5f9">Grade Point</th></tr>
+    ${legendRows}
+  </table>
+  <p style="font-size:12px;margin-top:10px;color:#0f172a"><b>REMARKS:</b> <span style="color:#475569;font-size:11px">${overall.grade && overall.grade !== "F" ? "Overall result: PASSED" : overall.grade === "F" ? "Overall result: NOT PASSED" : "Overall result: IN PROGRESS"} · Average ${overall.avg == null ? "—" : overall.avg.toFixed(1)} · GPA ${overall.gpa == null ? "—" : overall.gpa.toFixed(2)}</span></p>
+  <table style="width:100%;margin-top:28px;font-size:12px;color:#475569"><tr>
+    <td style="text-align:center;padding-top:30px">_____________________________<br/>Deputy Director</td>
+    <td style="text-align:center;padding-top:30px"><span style="font-size:10px">Phnom Penh, Date ..................<br/>${esc(issued)}</span></td>
+    <td style="text-align:center;padding-top:30px">_____________________________<br/>Director</td>
   </tr></table>
+  <div style="margin-top:18px;border-top:1px solid #cbd5e1;text-align:center;font-size:10px;color:#475569">
+    <p style="margin:6px 0 2px">${esc(INSTITUTION_LINES.certNo)}</p>
+    <p style="margin:2px 0">${esc(INSTITUTION_LINES.address1)}</p>
+    <p style="margin:2px 0">${esc(INSTITUTION_LINES.address2)}</p>
+  </div>
   <p style="margin-top:10px;font-size:10px;color:#94a3b8">Computer-generated transcript · verify against the Office of the Registrar.</p>
   </body></html>`;
 }
@@ -776,211 +837,231 @@ export default function Transcript() {
             {/* faint blurred logo behind the whole document */}
             <img src={LOGO_SRC} alt="" aria-hidden="true" className="transcript-watermark" />
 
-            {/* letterhead — logo top-left, Khmer name, English name under it */}
+{/* letterhead — official KINGDOM OF CAMBODIA / NTTI “ex” cheatsheet */}
             <div className="flex items-start gap-4 pb-4 mb-4" style={{ borderBottom: `3px double ${INK}` }}>
               <img src={LOGO_SRC} alt="NTTI" className="h-16 w-16 shrink-0 object-contain" />
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight" style={{ color: INK }}>
-                  {INSTITUTION_KM}
-                </h1>
-                <p className="text-sm font-semibold mt-0.5" style={{ color: INK }}>
-                  {INSTITUTION_EN}
+              <div className="min-w-0 flex-1 text-center">
+                <p className="text-[13px] font-extrabold tracking-tight" style={{ color: INK }}>
+                  {INSTITUTION_LINES.country}
                 </p>
-                <p className="text-xs mt-1" style={{ color: MUTED }}>
-                  Office of the Registrar · Official Academic Transcript
+                <p className="text-[11px] font-semibold mt-0.5" style={{ color: INK }}>
+                  {INSTITUTION_LINES.motto}
+                </p>
+                <p className="text-[11px] mt-0.5" style={{ color: INK }}>
+                  {INSTITUTION_LINES.ministry}
+                </p>
+                <p className="text-[13px] font-extrabold mt-0.5" style={{ color: INK }}>
+                  {INSTITUTION_LINES.institute}
+                </p>
+                <p className="text-[10px] mt-1 tabular-nums" style={{ color: MUTED }}>
+                  {INSTITUTION_LINES.noLine}
                 </p>
               </div>
             </div>
 
-            {/* meta */}
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[11px]" style={{ color: MUTED }}>
-              <span>
-                Transcript No: <b style={{ color: INK }}>{refNo}</b>
-              </span>
-              <span>
-                Issued: <b style={{ color: INK }}>{issued}</b>
-              </span>
-              <span style={{ ...gradeTone(overall.grade), borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
-                {terms.length > 1 ? "Cumulative" : "Single semester"} · {overall.grade && overall.grade !== "F" ? "PASSED" : overall.grade === "F" ? "NOT PASSED" : "IN PROGRESS"}
-              </span>
+            {/* title + meta */}
+            <div className="text-center mb-3">
+              <h2 className="text-base font-extrabold tracking-[0.25em]" style={{ color: INK }}>
+                OFFICIAL TRANSCRIPT
+              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-2 text-[10px]" style={{ color: MUTED }}>
+                <span>
+                  Transcript No: <b style={{ color: INK }}>{refNo}</b>
+                </span>
+                <span>
+                  Issued: <b style={{ color: INK }}>{issued}</b>
+                </span>
+              </div>
             </div>
 
-            {/* student info */}
-            <table className="w-full text-[12px] mb-2" style={{ borderCollapse: "collapse" }}>
+            {/* student header block — mirrors official R7–R10 */}
+            <table className="w-full text-[12px] mb-3" style={{ borderCollapse: "collapse" }}>
               <tbody>
-                {[
-                  ["Student ID", student.studentId],
-                  ["Khmer name", student.khmerName || "—"],
-                  ["English name", `${student.firstName} ${student.lastName}`],
-                  ["Gender", student.gender || "—"],
-                  ["Date of birth", student.dob ? prettyDate(student.dob) : "—"],
-                  ["Enrolled", student.enrollmentYear ? `Cohort ${student.enrollmentYear}` : "—"],
-                  ["Class", cls?.name || "—"],
-                  ["Field of study", cls?.field || majorName(student.major)],
-                  ["Shift", cls?.shift || "—"],
-                  ["Degree", cls?.degree || "—"],
-                  ["Programme", `${majorName(student.major)} · ${yearsInProgram} years`],
-                  ["Thesis", student.thesisTitle ? `${student.thesisTitle}${student.thesisScore != null ? ` · ${student.thesisScore}%` : ""}` : student.thesisScore != null ? `${student.thesisScore}%` : null],
-                  ["Exit exam", student.exitExam != null ? `${student.exitExam}%` : null],
-                ]
-                  .filter(([, v]) => v != null)
-                  .reduce((pairs, row, i) => {
-                    if (i % 2 === 0) pairs.push([row]);
-                    else pairs[pairs.length - 1].push(row);
-                    return pairs;
-                  }, [])
-                  .map((pair, i) => (
-                    <tr key={i}>
-                      {pair.map(([k, v], j) => (
-                        <React.Fragment key={j}>
-                          <td className="px-2.5 py-1.5 w-[16%]" style={{ border: `1px solid ${LINE}`, color: MUTED, background: SOFT }}>
-                            {k}
-                          </td>
-                          <td className="px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, color: INK, fontWeight: 600 }}>
-                            {v}
-                          </td>
-                        </React.Fragment>
-                      ))}
-                    </tr>
-                  ))}
+                <tr>
+                  <td style={{ padding: "2px 0", color: MUTED, width: 92 }}>Student</td>
+                  <td style={{ padding: "2px 8px 2px 0", color: INK, fontWeight: 700 }}>
+                    {student.khmerName ? `${student.khmerName} · ` : ""}
+                    {student.firstName} {student.lastName}
+                  </td>
+                  <td style={{ padding: "2px 0", color: MUTED, width: 36 }}>Sex</td>
+                  <td style={{ padding: "2px 8px 2px 0", color: INK }}>{student.gender || "—"}</td>
+                  <td style={{ padding: "2px 0", color: MUTED, width: 78 }}>Nationality</td>
+                  <td style={{ padding: "2px 0", color: INK }}>Khmer</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "2px 0", color: MUTED }}>Date of Birth</td>
+                  <td style={{ padding: "2px 8px 2px 0", color: INK }}>{student.dob ? prettyDate(student.dob) : "—"}</td>
+                  <td style={{ padding: "2px 0", color: MUTED }}>Graduation</td>
+                  <td style={{ padding: "2px 8px 2px 0", color: INK }}>
+                    {student.enrollmentYear ? `${Number(student.enrollmentYear) + (yearsInProgram - 1)}` : "—"}
+                  </td>
+                  <td style={{ padding: "2px 0", color: MUTED }}>Place of Birth</td>
+                  <td style={{ padding: "2px 0", color: INK }}>—</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "2px 0", color: MUTED }}>Student No</td>
+                  <td colSpan={5} style={{ padding: "2px 0", color: INK }}>{student.studentId || "—"}</td>
+                </tr>
               </tbody>
             </table>
 
-            {/* terms */}
-            {terms.length === 0 && (
-              <p className="text-sm py-6 text-center" style={{ color: MUTED }}>
-                No semesters recorded yet.
-              </p>
-            )}
+            {/* completion statement — official R10 */}
+            <p className="text-[12px] mb-3" style={{ color: INK }}>
+              Has successfully completed Diploma of Technology in the field of{" "}
+              <b>{cls?.field || majorName(student.major)}</b> in academic year{" "}
+              <b>
+                {student.enrollmentYear || "—"} - {student.enrollmentYear ? Number(student.enrollmentYear) + (yearsInProgram - 1) : "—"}
+              </b>
+            </p>
 
-            {terms.map((t) => {
-              const st = statsOf(t);
-              const rows = rowsOf(t);
-              return (
-                <div key={t.level} className="transcript-term mt-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-                    <p className="text-sm font-extrabold" style={{ color: INK }}>
-                      {t.level} — {t.semester} · {t.year}
-                      {!t.archived && <span className="ml-2 text-[10px] font-semibold" style={{ color: MUTED }}>(in progress)</span>}
-                    </p>
-                    <p className="text-[11px]" style={{ color: MUTED }}>
-                      Term average{" "}
-                      <b style={{ color: INK }}>{st.avg == null ? "—" : st.avg.toFixed(2)}</b>{" "}
-                      {st.grade && (
-                        <span className="ml-1 rounded px-1.5 py-0.5 font-bold" style={{ ...gradeTone(st.grade) }}>
-                          {st.grade}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ background: SOFT, color: "#334155" }}>
-                        <th className="px-2.5 py-1.5 w-10" style={{ border: `1px solid ${LINE}` }}>No</th>
-                        <th className="px-2.5 py-1.5 text-left" style={{ border: `1px solid ${LINE}` }}>Subject</th>
-                        <th className="px-2.5 py-1.5 w-24" style={{ border: `1px solid ${LINE}` }}>Score</th>
-                        <th className="px-2.5 py-1.5 w-20" style={{ border: `1px solid ${LINE}` }}>Grade</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="px-2.5 py-2 text-center" style={{ border: `1px solid ${LINE}`, color: MUTED }}>
-                            No subjects recorded for this semester.
+            {/* ── YEAR | SEMESTER I | SEMESTER II cheatsheet table ── */}
+            <style>{`
+              #transcript-doc .ex-table { width: 100%; border-collapse: collapse; font-size: 11px; color: ${INK}; }
+              #transcript-doc .ex-table th,
+              #transcript-doc .ex-table td { border: 1px solid ${LINE}; padding: 3px 5px; vertical-align: middle; }
+              #transcript-doc .ex-table th { background: ${SOFT}; font-weight: 800; text-align: center; }
+              #transcript-doc .ex-table td.num { text-align: center; }
+              #transcript-doc .ex-table td.grade { text-align: center; font-weight: 700; }
+              #transcript-doc .ex-table td.year { text-align: center; font-weight: 800; vertical-align: middle; background: ${SOFT}; }
+              #transcript-doc .ex-table tbody.transcript-term { page-break-inside: avoid; }
+              #transcript-doc .ex-table tr.avg-row td { background: ${SOFT}; font-weight: 700; }
+              #transcript-doc .ex-legend { border-collapse: collapse; font-size: 11px; color: ${INK}; }
+              #transcript-doc .ex-legend th,
+              #transcript-doc .ex-legend td { border: 1px solid ${LINE}; padding: 2px 8px; text-align: center; }
+            `}</style>
+
+            <table className="ex-table" style={{ marginBottom: 14 }}>
+              <thead>
+                <tr>
+                  <th rowSpan={2} style={{ width: 56 }}>YEAR</th>
+                  <th colSpan={4} style={{ color: INK }}>SEMESTER I</th>
+                  <th colSpan={4} style={{ color: INK }}>SEMESTER II</th>
+                </tr>
+                <tr>
+                  {[0, 1].map((side) => (
+                    <React.Fragment key={side}>
+                      <th style={{ textAlign: "left" }}>Subjects</th>
+                      <th>HOUR</th>
+                      <th>Score (100/100)</th>
+                      <th>Grade</th>
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </thead>
+              {yearBlocks.map((block) => {
+                const r1 = rowsOf(block.s1 || {});
+                const r2 = rowsOf(block.s2 || {});
+                const max = Math.max(r1.length, r2.length, 1);
+                const st1 = block.s1 ? statsOf(block.s1) : null;
+                const st2 = block.s2 ? statsOf(block.s2) : null;
+                const yearLabel = ordinal(Number(block.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
+                return (
+                  <tbody key={`y-${block.y}`} className="transcript-term">
+                    {Array.from({ length: max }).map((_, i) => (
+                      <tr key={`${block.y}-${i}`}>
+                        {i === 0 && (
+                          <td className="year" rowSpan={max + 1}>
+                            {yearLabel}
                           </td>
-                        </tr>
-                      ) : (
-                        rows.map((r, i) => (
-                          <tr key={i}>
-                            <td className="px-2.5 py-1.5 text-center" style={{ border: `1px solid ${LINE}`, color: MUTED }}>{i + 1}</td>
-                            <td className="px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, color: INK }}>{r.subject}</td>
-                            <td className="px-2.5 py-1.5 text-center tabular-nums" style={{ border: `1px solid ${LINE}`, color: r.score == null ? MUTED : INK, fontWeight: 700 }}>
-                              {r.score == null ? "—" : r.score.toFixed(2)}
-                            </td>
-                            <td className="px-2.5 py-1.5 text-center" style={{ border: `1px solid ${LINE}`, color: r.grade ? INK : MUTED, fontWeight: 700 }}>
-                              {r.grade || "—"}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                      <tr style={{ background: SOFT }}>
-                        <td colSpan={2} className="px-2.5 py-1.5 text-right font-bold" style={{ border: `1px solid ${LINE}`, color: INK }}>Term average</td>
-                        <td className="px-2.5 py-1.5 text-center font-extrabold tabular-nums" style={{ border: `1px solid ${LINE}`, color: INK }}>
-                          {st.avg == null ? "—" : st.avg.toFixed(2)}
-                        </td>
-                        <td className="px-2.5 py-1.5 text-center font-extrabold" style={{ border: `1px solid ${LINE}`, color: INK }}>{st.grade || "—"}</td>
+                        )}
+                        <td style={{ textAlign: "left" }}>{r1[i]?.subject ?? ""}</td>
+                        <td className="num">{r1[i]?.hour ?? ""}</td>
+                        <td className="num">{r1[i]?.score ?? ""}</td>
+                        <td className="grade">{r1[i]?.grade ?? ""}</td>
+                        <td style={{ textAlign: "left" }}>{r2[i]?.subject ?? ""}</td>
+                        <td className="num">{r2[i]?.hour ?? ""}</td>
+                        <td className="num">{r2[i]?.score ?? ""}</td>
+                        <td className="grade">{r2[i]?.grade ?? ""}</td>
                       </tr>
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })}
+                    ))}
+                    <tr className="avg-row">
+                      <td style={{ textAlign: "left" }}>Term average</td>
+                      <td className="num">—</td>
+                      <td className="num">{st1?.avg != null ? st1.avg.toFixed(1) : "—"}</td>
+                      <td className="grade">{st1?.grade ?? "—"}</td>
+                      <td style={{ textAlign: "left" }}>Term average</td>
+                      <td className="num">—</td>
+                      <td className="num">{st2?.avg != null ? st2.avg.toFixed(1) : "—"}</td>
+                      <td className="grade">{st2?.grade ?? "—"}</td>
+                    </tr>
+                  </tbody>
+                );
+              })}
+              {/* State Exam / Practical Exam — official R40–44 */}
+              <tbody className="transcript-term">
+                <tr>
+                  <td className="year">State Exam</td>
+                  <td colSpan={8} style={{ textAlign: "left" }}>
+                    {student.exitExam != null && student.exitExam !== ""
+                      ? `Exit / State Examination · Score: ${student.exitExam} · Grade: ${letterOf(Number(student.exitExam))}`
+                      : "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="year">Practical Exam</td>
+                  <td colSpan={8} style={{ textAlign: "left" }}>
+                    {student.thesisScore != null && student.thesisScore !== ""
+                      ? `${student.thesisTitle || "Thesis / Practical project"} · Score: ${student.thesisScore} · Grade: ${letterOf(Number(student.thesisScore))}`
+                      : "—"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-            {/* cumulative summary + attendance */}
-            <div className="grid gap-4 sm:grid-cols-2 mt-6">
-              <div className="rounded-xl p-4" style={{ border: `1px solid ${LINE}`, background: "#fbfdff" }}>
-                <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: MUTED }}>
-                  Cumulative summary
-                </p>
-                <div className="space-y-1.5 text-[12px]">
-                  {[
-                    ["Terms included", terms.length],
-                    ["Subjects recorded", overall.count],
-                    ["Overall average", overall.avg == null ? "—" : overall.avg.toFixed(2)],
-                    ["GPA (4.00)", overall.gpa == null ? "—" : overall.gpa.toFixed(2)],
-                  ].map(([k, v]) => (
-                    <div key={k} className="flex items-center justify-between">
-                      <span style={{ color: MUTED }}>{k}</span>
-                      <b style={{ color: INK }} className="tabular-nums">{v}</b>
-                    </div>
+            {/* grade-scale legend — official R49–55 */}
+            <div className="flex flex-wrap items-start gap-6 mb-3">
+              <table className="ex-legend">
+                <thead>
+                  <tr>
+                    <th style={{ color: INK }}>Mark Obtained</th>
+                    <th style={{ color: INK }}>Grade</th>
+                    <th style={{ color: INK }}>Meaning</th>
+                    <th style={{ color: INK }}>Grade Point</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {NTTI_SCALE.map((g) => (
+                    <tr key={g.grade}>
+                      <td>{g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`}</td>
+                      <td style={{ fontWeight: 700 }}>{g.grade}</td>
+                      <td style={{ textAlign: "left" }}>{g.meaning}</td>
+                      <td>{g.point}</td>
+                    </tr>
                   ))}
-                  <div className="flex items-center justify-between pt-1.5" style={{ borderTop: `1px dashed ${LINE}` }}>
-                    <span style={{ color: MUTED }}>Overall grade</span>
-                    {overall.grade ? (
-                      <span className="rounded px-2 py-0.5 text-[12px] font-extrabold" style={gradeTone(overall.grade)}>
-                        {overall.grade}
-                      </span>
-                    ) : (
-                      <b style={{ color: MUTED }}>—</b>
-                    )}
-                  </div>
-                </div>
+                </tbody>
+              </table>
+              <p className="text-[12px] mt-1" style={{ color: INK }}>
+                <b>REMARKS:</b>
+                <span className="ml-1 text-[11px]" style={{ color: MUTED }}>
+                  {overall.grade && overall.grade !== "F" ? "Overall result: PASSED" : overall.grade === "F" ? "Overall result: NOT PASSED" : "Overall result: IN PROGRESS"}
+                  {" · "}Average {overall.avg != null ? overall.avg.toFixed(1) : "—"}
+                  {" · "}GPA {overall.gpa != null ? overall.gpa.toFixed(2) : "—"}
+                </span>
+              </p>
+            </div>
+
+            {/* place + date + signatures — official R49–55 signatures */}
+            <div className="flex items-end justify-between gap-4 text-center text-[11px]" style={{ color: INK }}>
+              <div className="min-w-0 flex-1">
+                <div className="mx-auto w-full mb-1" style={{ borderBottom: `1px solid ${INK}`, height: 30 }} />
+                <p className="font-semibold">Deputy Director</p>
               </div>
-
-              <div className="rounded-xl p-4" style={{ border: `1px solid ${LINE}`, background: "#fbfdff" }}>
-                <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: MUTED }}>
-                  Attendance summary
-                </p>
-                <div className="flex items-end justify-between mb-2">
-                  <span className="text-3xl font-extrabold tabular-nums" style={{ color: INK }}>
-                    {att.rate}%
-                  </span>
-                  <span className="text-[11px]" style={{ color: MUTED }}>{att.total} school days</span>
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center text-[11px]">
-                  {[
-                    ["Present", att.present, "#047857"],
-                    ["Late", att.late, "#b45309"],
-                    ["Absent", att.absent, "#b91c1c"],
-                    ["Leave", att.leave, "#1d4ed8"],
-                  ].map(([k, v, c]) => (
-                    <div key={k} className="rounded-lg py-1.5" style={{ background: SOFT }}>
-                      <p className="font-extrabold tabular-nums" style={{ color: c }}>{v}</p>
-                      <p style={{ color: MUTED }}>{k}</p>
-                    </div>
-                  ))}
-                </div>
+              <div className="shrink-0 px-6 text-[10px]" style={{ color: MUTED }}>
+                Phnom Penh, Date ..................
+                <br />
+                {issued}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="mx-auto w-full mb-1" style={{ borderBottom: `1px solid ${INK}`, height: 30 }} />
+                <p className="font-semibold">Director</p>
               </div>
             </div>
 
-            {/* signatures */}
-            <div className="grid grid-cols-3 gap-4 mt-12 text-center text-[11px]" style={{ color: MUTED }}>
-              {["Registrar", "Director", "Official stamp"].map((role) => (
-                <div key={role}>
-                  <div className="mx-auto mb-1.5 w-full" style={{ borderBottom: `1px solid ${INK}`, height: 34 }} />
-                  <p>{role === "Official stamp" ? "( Official stamp )" : `${role} · Date`}</p>
-                </div>
-              ))}
+            {/* ISO footer — official R70–72 */}
+            <div className="mt-5 pt-3 text-center text-[10px]" style={{ borderTop: `1px solid ${LINE}`, color: MUTED }}>
+              <p>{INSTITUTION_LINES.certNo}</p>
+              <p className="mt-0.5">{INSTITUTION_LINES.address1}</p>
+              <p>{INSTITUTION_LINES.address2}</p>
             </div>
 
             <p className="mt-6 text-[10px] text-center" style={{ color: "#94a3b8" }}>

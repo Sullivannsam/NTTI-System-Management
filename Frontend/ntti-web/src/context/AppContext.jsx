@@ -133,6 +133,8 @@ function load(key, fallback) {
 /** Migrate stored students: lifecycle statuses, enrollment year, academic level + history. */
 function loadStudents() {
   const stored = localStorage.getItem(LS_STUDENTS);
+  // NTTI Excel exports often store unmapped English names as "Student <Khmer name>".
+  const clean = (name) => String(name ?? "").trim().replace(/^student\s+/i, "");
   if (!stored) return SEED_STUDENTS;
   try {
     return JSON.parse(stored).map((s) => {
@@ -140,11 +142,14 @@ function loadStudents() {
         s.enrollmentYear ||
         (s.enrollmentDate ? Number(String(s.enrollmentDate).slice(0, 4)) : 0) ||
         Number(String(s.studentId || "").match(/NTTI-(\d{4})-/)?.[1] || 0);
+      const firstName = /^student$/i.test(String(s.firstName ?? "").trim()) ? "" : clean(s.firstName);
       return {
         ...s,
+        firstName,
+        lastName: clean(s.lastName),
         khmerName:
-          s.khmerName ||
-          (s.firstName && s.lastName ? latinToKhmer(`${s.lastName} ${s.firstName}`) : ""),
+          clean(s.khmerName) ||
+          (firstName && s.lastName ? latinToKhmer(`${clean(s.lastName)} ${firstName}`) : ""),
         level: s.level || (year ? `S1Y${Math.min(4, Math.max(1, new Date().getFullYear() - year))}` : "S1Y1"),
         history: s.history || [],
         status:
@@ -496,6 +501,24 @@ export function AppProvider({ children }) {
         ...prev,
       ]);
       logAudit("create_student", `Added student "${data.firstName} ${data.lastName}"${data.className ? ` to ${data.className}` : ""}`);
+    },
+    [logAudit]
+  );
+
+  /** Bulk-create students from the Excel import — one audit entry for the whole batch. */
+  const addStudentsBatch = useCallback(
+    (dataList) => {
+      if (!dataList || !dataList.length) return 0;
+      setStudents((prev) => {
+        let maxId = Math.max(0, ...prev.map((s) => s.id));
+        const next = dataList.map((d) => ({ id: ++maxId, ...d }));
+        return [...next, ...prev];
+      });
+      logAudit(
+        "import_students_excel",
+        `Imported ${dataList.length} student${dataList.length === 1 ? "" : "s"} from Excel`
+      );
+      return dataList.length;
     },
     [logAudit]
   );
@@ -899,6 +922,7 @@ export function AppProvider({ children }) {
       updateClass,
       saveWeekly,
       addStudent,
+      addStudentsBatch,
       updateStudent,
       deleteStudent,
       importStudents,
@@ -916,7 +940,7 @@ export function AppProvider({ children }) {
       theme,
       toggleTheme,
     }),
-    [students, attendance, classes, weekly, admins, audit, currentAdmin, addClass, updateClass, saveWeekly, addStudent, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
+    [students, attendance, classes, weekly, admins, audit, currentAdmin, addClass, updateClass, saveWeekly, addStudent, addStudentsBatch, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
