@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import clsx from "clsx";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
@@ -438,25 +438,24 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
   L(5, "", false, 10);
   L(6, "OFFICIAL TRANSCRIPT", true, 16);
 
-  /* student block — same 3 rows / same labels as the on-screen table */
+  /* student block — mirrors on-screen 2-column layout: left = Student/DOB/Place,
+     right = Sex/Nationality/Date of Graduation */
   let row = 7;
-  const pair = (r, label, value) => {
-    set(r, 0, cell(`${label} :`, { font: { bold: true }, alignment: { horizontal: "left" } }));
+  const pair = (r, lLabel, lValue, sLabel, sValue) => {
+    set(r, 0, cell(`${lLabel} :`, { font: { bold: true }, alignment: { horizontal: "left" } }));
     merge(r, 0, 1);
-    set(r, 2, cell(value ?? "—", { alignment: { horizontal: "left" } }));
-    merge(r, 2, W - 1);
+    set(r, 2, cell(lValue ?? "—", { alignment: { horizontal: "left" } }));
+    merge(r, 2, 4);
+    set(r, 5, cell(`${sLabel} :`, { font: { bold: true }, alignment: { horizontal: "left" } }));
+    merge(r, 5, 6);
+    set(r, 7, cell(sValue ?? "—", { alignment: { horizontal: "left" } }));
+    merge(r, 7, 8);
   };
-  pair(row, "Student", student.khmerName ? `${student.khmerName} · ${student.firstName} ${student.lastName}` : `${student.firstName} ${student.lastName}`);
+  pair(row, "Student", student.khmerName ? `${student.khmerName} · ${student.firstName} ${student.lastName}` : `${student.firstName} ${student.lastName}`, "Sex", student.gender || "—");
   row++;
-  pair(row, "Date of Birth", student.dob ? prettyDate(student.dob) : "—");
+  pair(row, "Date of Birth", student.dob ? prettyDate(student.dob) : "—", "Nationality", "Khmer");
   row++;
-  pair(row, "Place of Birth", "—");
-  row++;
-  pair(row, "Sex", student.gender || "—");
-  row++;
-  pair(row, "Nationality", "Khmer");
-  row++;
-  pair(row, "Date of Graduation", graduationDate(student));
+  pair(row, "Place of Birth", "—", "Date of Graduation", graduationDate(student));
   row++;
 
   /* completion statement — centred, same wording as on-screen */
@@ -542,7 +541,8 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
   merge(row, 5, 8);
   row++;
 
-  /* REMARKS + grade legend — same rows/columns as the on-screen legend table */
+  /* REMARKS + grade legend — like the web, “Phnom Penh, Date + Deputy Director”
+     sits on the RIGHT of the legend (legend = cols A–I, signature = cols J–M) */
   row++;
   set(row, 0, cell("REMARKS:", { font: { bold: true } }));
   row++;
@@ -550,8 +550,11 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
   H(row, 2, "Grade", 2);
   H(row, 4, "Meaning", 3);
   H(row, 7, "Grade Point", 2);
+  const sig = 10; // column J
+  set(row, sig, cell("Phnom Penh, Date ..................", { alignment: { horizontal: "center" } }));
+  merge(row, sig, sig + 3);
   row++;
-  NTTI_SCALE.forEach((g) => {
+  NTTI_SCALE.forEach((g, i) => {
     set(row, 0, cell(g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`, { alignment: { horizontal: "center" } }));
     merge(row, 0, 1);
     set(row, 2, cell(g.grade, { font: { bold: true }, alignment: { horizontal: "center" } }));
@@ -560,17 +563,13 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
     merge(row, 4, 6);
     set(row, 7, cell(g.point, { alignment: { horizontal: "center" } }));
     merge(row, 7, 8);
+    if (i === 0) {
+      set(row, sig, cell("Deputy Director", { font: { bold: true }, alignment: { horizontal: "right" } }));
+      merge(row, sig, sig + 3);
+    }
     row++;
   });
-
-  /* signature block — same layout as the on-screen "Phnom Penh, Date… / Deputy Director" */
-  row++;
-  set(row, 0, cell("Phnom Penh, Date ..................", { alignment: { horizontal: "center" } }));
-  merge(row, 0, W - 1);
-  row++;
-  set(row, 0, cell("Deputy Director", { font: { bold: true }, alignment: { horizontal: "center" } }));
-  merge(row, 0, W - 1);
-  row += 2;
+  row += 2; // blank spacer before the footer
 
   /* ISO footer — same as on-screen */
   const foot = (v) => {
@@ -594,6 +593,10 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
     { wch: 8 },  // HOUR
     { wch: 16 }, // Score
     { wch: 8 },  // Grade
+    { wch: 10 }, // J–M — signature block beside the legend
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Transcript");
