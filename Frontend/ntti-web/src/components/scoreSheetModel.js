@@ -24,9 +24,11 @@ export const bootstrapColumns = (labels) =>
     .filter((l) => String(l ?? "").trim() !== "")
     .map((label) => ({ key: String(label).trim(), label: String(label).trim(), group: null }));
 
-/** Give every column its own group named after the column (used when a layout is first created). */
+/** Give every column its own group with an EMPTY header (used when a layout is
+   first created). Blank on purpose: the group row must not repeat the subject
+   name below it — the user merges columns and types the real group name. */
 export const freshGroupsFor = (columns) =>
-  columns.map((c, i) => ({ id: `g${i}`, name: c.label }));
+  columns.map((c, i) => ({ id: `g${i}`, name: "" }));
 
 /** Ensure a full layout (columns carry group ids, groups array present). */
 export const layoutFromColumns = (columns, groups) => {
@@ -96,7 +98,7 @@ export const mergeColumns = (layout, keys, name) => {
   const gid = nextGroupId(layout.groups);
   return pruneGroups({
     columns: cols.map((c, i) => (i >= lo && i <= hi ? { ...c, group: gid } : c)),
-    groups: [...layout.groups, { id: gid, name: (name && name.trim()) || cols[lo].label }],
+    groups: [...layout.groups, { id: gid, name: (name && name.trim()) || "" }],
   });
 };
 
@@ -109,7 +111,7 @@ export const splitGroups = (layout, keys) => {
   const next = cols.map((c) => {
     if (!targetIds.has(c.group)) return c;
     const gid = nextGroupId(groups);
-    groups = [...groups, { id: gid, name: c.label }];
+    groups = [...groups, { id: gid, name: "" }];
     return { ...c, group: gid };
   });
   return pruneGroups({ columns: next, groups });

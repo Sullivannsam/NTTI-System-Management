@@ -8,6 +8,8 @@
     --surface: #ffffff;
     --surface-2: #f0f2f9;
     --surface-3: #e7e9f3;
+    --sheet-bg: #eaedf5;
+    --grid-line: #c9d0e2;
     --border: #e6e8f1;
     --text: #0f172a;
     --text-2: #52566e;
@@ -31,6 +33,8 @@
     --surface: #131a2c;
     --surface-2: #1a2238;
     --surface-3: #222c46;
+    --sheet-bg: #1e2841;
+    --grid-line: #39466b;
     --border: #25304a;
     --text: #e7eaf4;
     --text-2: #a6aecb;
@@ -212,9 +216,12 @@
     border-collapse: separate;
     border-spacing: 0;
   }
+  .sheet-grid {
+    border: 1px solid var(--grid-line);
+  }
   .grid-table th,
   .grid-table td {
-    border-left: 1px solid var(--border);
+    border-left: 1px solid var(--grid-line);
   }
   .grid-table thead th:first-child,
   .grid-table tbody td:first-child {
@@ -222,10 +229,11 @@
   }
   .grid-table thead th,
   .grid-table thead td {
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--grid-line);
   }
   .grid-table tbody td {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--grid-line);
+    background: var(--sheet-bg);
   }
   .grid-table tbody tr:first-child td {
     border-top: none;

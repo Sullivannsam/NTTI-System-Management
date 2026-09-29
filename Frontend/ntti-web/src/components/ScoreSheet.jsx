@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Columns3, Merge, Pin, PinOff, Split, Undo2 } from "lucide-react";
 import { orderedGroups, groupSpan } from "./scoreSheetModel";
 
-/* Click-to-rename header label (group or subject column). */
+/* Click-to-rename header label (group or subject column). Blank values show a
+   dashed "+ name" chip so you can always see where to type a group name. */
 function EditableLabel({ value, onSave }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -36,6 +37,7 @@ function EditableLabel({ value, onSave }) {
       />
     );
   }
+  const empty = !String(value ?? "").trim();
   return (
     <button
       onClick={(e) => {
@@ -43,11 +45,13 @@ function EditableLabel({ value, onSave }) {
         setDraft(value);
         setEditing(true);
       }}
-      className="mx-auto inline-block max-w-[150px] truncate rounded-md px-1.5 py-0.5 text-center text-[11px] font-bold uppercase tracking-wide underline-offset-2 hover:underline"
-      style={{ color: "var(--text-2)", cursor: "text" }}
-      title="Click to rename"
+      className={`mx-auto inline-block max-w-[150px] truncate rounded-md px-1.5 py-0.5 text-center text-[11px] font-bold uppercase tracking-wide underline-offset-2 hover:underline ${
+        empty ? "border border-dashed" : ""
+      }`}
+      style={{ color: empty ? "var(--text-3)" : "var(--text-2)", cursor: "text" }}
+      title="Click to type a name"
     >
-      {value}
+      {empty ? "+ name" : value}
     </button>
   );
 }
@@ -251,7 +255,7 @@ export default function ScoreSheet({
 
       {/* sheet */}
       <div className={frozen ? "max-h-[58vh] overflow-auto thin-scroll" : "overflow-x-auto thin-scroll"}>
-        <table className="grid-table w-full min-w-[860px] text-sm">
+        <table className="grid-table sheet-grid w-full min-w-[860px] text-sm">
           <thead className="sticky top-0 z-20">
             {hasGroups && (
               <tr>

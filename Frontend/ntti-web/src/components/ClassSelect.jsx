@@ -16,11 +16,15 @@ export default function ClassSelect({
   onChange,
   placeholder = "Select a class",
   minWidth = 230,
+  allowNone = false,
 }) {
   const ref = useRef(null);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const current = options.find((o) => o.value === value);
+  /* "None" = the class-less bucket (students without a class, e.g. imported transcripts) */
+  const NONE = { value: "", label: "None", sub: "no class" };
+  const list = allowNone ? [NONE, ...options] : options;
+  const current = list.find((o) => o.value === value);
 
   const close = () => {
     setOpen(false);
@@ -29,8 +33,8 @@ export default function ClassSelect({
 
   const qq = q.trim().toLowerCase();
   const filtered = qq
-    ? options.filter((o) => `${o.label} ${o.sub || ""}`.toLowerCase().includes(qq))
-    : options;
+    ? list.filter((o) => `${o.label} ${o.sub || ""}`.toLowerCase().includes(qq))
+    : list;
 
   const { pos, menuRef } = useDropPos(ref, open, {
     rows: Math.min(filtered.length + 1, 7),

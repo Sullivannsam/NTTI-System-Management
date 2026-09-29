@@ -35,6 +35,7 @@ const makeForm = (classes, overrides = {}) => {
     address: "Phnom Penh",
     status: "Learning",
     enrollmentYear: new Date().getFullYear(),
+    graduationDate: "",
     level: "S1Y1",
     ...overrides,
     // a known class always wins for major / field / shift
@@ -71,6 +72,7 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
           address: editing.address,
           status: editing.status,
           enrollmentYear: editing.enrollmentYear || new Date().getFullYear(),
+          graduationDate: editing.graduationDate || "",
           level: editing.level || "S1Y1",
         })
       );
@@ -171,6 +173,7 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
       status: form.status,
       level: form.level,
       enrollmentYear: Number(form.enrollmentYear) || new Date().getFullYear(),
+      graduationDate: form.graduationDate || "",
     };
     if (editing) {
       updateStudent(editing.id, payload);
@@ -262,6 +265,10 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
           <div>
             <label className="label">Date of birth</label>
             <input type="date" className="input" value={form.dob} onChange={set("dob")} />
+          </div>
+          <div>
+            <label className="label">Date of graduation</label>
+            <input type="date" className="input" value={form.graduationDate} onChange={set("graduationDate")} />
           </div>
 
           <div>

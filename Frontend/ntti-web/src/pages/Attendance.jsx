@@ -8,7 +8,6 @@ import {
   RotateCcw,
   Percent,
   Search,
-  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ChevronsDown,
@@ -23,7 +22,7 @@ import {
 } from "lucide-react";
 import PageHeader, { ProgressBar, EmptyState } from "../components/Page";
 import { useApp } from "../context/AppContext";
-import { majorName, shiftRange, weekKeyOf, lastNWeeks, todayISO } from "../data/seed";
+import { majorName, shiftRange, lastNWeeks } from "../data/seed";
 import { StudentAvatar } from "../components/Badge";
 import StudentFormModal from "../components/StudentFormModal";
 import StudentAttendanceModal from "../components/StudentAttendanceModal";
@@ -498,12 +497,10 @@ function ClassGrid({
   onStudentClick,
   tool,
   onToolChange,
+  onDeleteClass,
 }) {
   const week = weeks.find((w) => w.key === focusKey) || weeks[weeks.length - 1] || null;
   const weekNo = week ? weeks.findIndex((w) => w.key === week.key) + 1 : 0;
-  const weekIdx = week ? weeks.findIndex((w) => w.key === week.key) : -1;
-  const prevWeekKey = weekIdx > 0 ? weeks[weekIdx - 1].key : null;
-  const nextWeekKey = weekIdx >= 0 && weekIdx < weeks.length - 1 ? weeks[weekIdx + 1].key : null;
   const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
   const activeSubj = subjects.find((x) => x.key === subject) || subjects[0];
   const hasRealSubjects = subjects.length > 1 || (subjects.length === 1 && subjects[0].key !== "general");
@@ -517,10 +514,6 @@ function ClassGrid({
     const pres = days.filter((d) => map[d.date] === "present" || map[d.date] === "late").length;
     return Math.round((pres / days.length) * 100);
   };
-
-  const avgRate = students.length
-    ? Math.round(students.reduce((acc, s) => acc + rateFor(s), 0) / students.length)
-    : 0;
 
   /* how the week currently stands, for the summary chips */
   const tally = useMemo(() => {
@@ -628,18 +621,6 @@ function ClassGrid({
                 </h2>
               </ClassLabel>
             </div>
-            <p className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
-              {students.length} students · {week ? `Week ${weekNo} · ${week.range}` : "no week selected"} · {avgRate}%
-              average
-              {hasRealSubjects ? (
-                <>
-                  {" "}
-                  · <b style={{ color: "var(--text-2)" }}>{subjectLabelOf(activeSubj)}</b>
-                </>
-              ) : null}
-              {" · "}
-              <span style={{ color: "var(--text-3)" }}>click the class name for full details</span>
-            </p>
 
             {/* at-a-glance tally for the week on screen */}
             {week && students.length > 0 && (
@@ -667,6 +648,16 @@ function ClassGrid({
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
+            {onDeleteClass && (
+              <button
+                onClick={() => onDeleteClass(cls)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border bg-[var(--surface-2)] transition-colors hover:bg-[var(--danger-soft)]"
+                title={`Delete the class "${cls.name}" — its students are kept but unassigned`}
+                style={{ borderColor: "var(--border)", color: "var(--danger)" }}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
             {dirtySubjects.length > 0 && (
               <span
                 className="flex h-9 items-center rounded-lg px-2.5 text-[11px] font-bold"
@@ -752,141 +743,132 @@ function ClassGrid({
             </div>
           )}
 
-          {/* Sticky control bar — the week picker and the marking tools stay
-              on screen (pinned under the app header) while the attendance
-              grid scrolls beneath them. */}
+          {/* Sticky control bar — jump to a week, add/remove weeks, pick the
+              marking tool. Pinned under the app header so it's always in reach. */}
           <div
-            className="sticky top-[68px] z-30 border-b px-5 py-2.5"
+            className="sticky top-[68px] z-30 border-b px-5 pt-3 pb-6"
             style={{
               borderColor: "var(--border)",
               background: "var(--surface-1)",
-              boxShadow: "0 10px 24px -18px rgba(0,0,0,.55)",
             }}
           >
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-              {/* Week — a clean picker: arrows + dropdown instead of a wall of chips */}
-              <div className="flex items-center gap-1.5 min-w-0">
-                {stepLabel(hasRealSubjects ? 2 : 1, "Week")}
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    onClick={() => prevWeekKey && onSelectWeek(prevWeekKey)}
-                    disabled={!prevWeekKey}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-35"
-                    style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
-                    title="Previous week"
-                    aria-label="Previous week"
-                  >
-                    <ChevronLeft size={14} />
-                  </button>
-                  <select
-                    value={week ? week.key : ""}
-                    onChange={(e) => onSelectWeek(e.target.value)}
-                    className="input h-8 w-auto max-w-[200px] py-1 pl-2.5 pr-7 text-xs font-bold tabular-nums"
-                    title={`Week ${weekNo} · ${week ? week.range : "—"} — pick the week to mark`}
-                  >
-                    {weeks.map((w, i) => (
-                      <option key={w.key} value={w.key}>
-                        W{i + 1} · {w.range}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => nextWeekKey && onSelectWeek(nextWeekKey)}
-                    disabled={!nextWeekKey}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-35"
-                    style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
-                    title="Next week"
-                    aria-label="Next week"
-                  >
-                    <ChevronRight size={14} />
-                  </button>
+            <div className="flex flex-col">
+              {/* ── Week: click a chip to jump, add or remove ── */}
+              <div
+                className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b pb-3"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                  Week
+                </span>
+                <div className="flex flex-wrap items-center gap-1">
+                  {weeks.map((w, i) => {
+                    const active = w.key === week.key;
+                    return (
+                      <button
+                        key={w.key}
+                        type="button"
+                        onClick={() => onSelectWeek(w.key)}
+                        className="flex h-8 shrink-0 items-center rounded-lg px-2.5 text-[11px] font-bold tabular-nums transition-colors"
+                        style={
+                          active
+                            ? { background: "var(--primary)", color: "#fff" }
+                            : { background: "var(--surface-2)", color: "var(--text-2)" }
+                        }
+                        title={`Week ${i + 1} · ${w.range} — click to mark this week`}
+                        aria-pressed={active}
+                      >
+                        W{i + 1}
+                      </button>
+                    );
+                  })}
                 </div>
                 <button
                   type="button"
                   onClick={onAddWeek}
-                  className="flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
-                  style={{ borderColor: "var(--border)", color: "var(--primary-strong)" }}
+                  className="flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
+                  style={{ borderColor: "var(--border)", color: "var(--primary-strong)", background: "var(--surface)" }}
                   title={`Add a new week (W${weeks.length + 1}) to this class only`}
                 >
-                  <PlusCircle size={12} /> Add W{weeks.length + 1}
+                  <PlusCircle size={13} /> Add W{weeks.length + 1}
                 </button>
                 <button
                   type="button"
                   onClick={() => week && onRemoveWeek(week.key)}
                   disabled={weeks.length <= 1}
-                  className="flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ borderColor: "var(--border)", color: "var(--danger)" }}
+                  className="flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-medium transition-colors hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ borderColor: "var(--border)", color: "var(--danger)", background: "var(--surface)" }}
                   title={`Delete week ${weekNo}${weeks.length <= 1 ? " — a sheet needs at least one week" : ""}`}
                 >
-                  <Trash2 size={12} /> Remove
+                  <Trash2 size={13} /> Remove
                 </button>
               </div>
 
-              <span className="hidden sm:block h-7 w-px shrink-0" style={{ background: "var(--border)" }} />
+              {/* ── Mark with: one-tap tools ── */}
+              <div
+                className="flex flex-wrap items-center gap-x-2.5 gap-y-2 py-3"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                  Mark with
+                </span>
 
-              {/* Mark with — big, obvious buttons */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                {stepLabel(hasRealSubjects ? 3 : 2, "Mark with")}
-                {MARK_TOOLS.map((t) => {
-                  const active = t.value === tool;
-                  return (
-                    <button
-                      key={t.value || "erase"}
-                      type="button"
-                      onClick={() => onToolChange(t.value)}
-                      className="flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-bold transition-all"
-                      style={
-                        active
-                          ? {
-                              background: t.value ? t.color : "var(--surface-3)",
-                              borderColor: t.value ? t.color : "var(--text-3)",
-                              color: t.value ? "#fff" : "var(--text)",
-                              boxShadow: "0 6px 14px -8px var(--text-2)",
-                            }
-                          : { background: "var(--surface)", borderColor: "var(--border)", color: "var(--text-2)" }
-                      }
-                      title={`${t.label} — press ${t.hint}`}
-                      aria-pressed={active}
-                    >
-                      <span
-                        className="flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-extrabold"
+                <div
+                  className="flex flex-wrap items-center gap-1 rounded-xl p-1"
+                  style={{ background: "var(--surface-2)" }}
+                  role="group"
+                  aria-label="Marking tool"
+                >
+                  {MARK_TOOLS.map((t) => {
+                    const active = t.value === tool;
+                    return (
+                      <button
+                        key={t.value || "erase"}
+                        type="button"
+                        onClick={() => onToolChange(t.value)}
+                        className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition-all"
                         style={
                           active
-                            ? { background: "rgba(255,255,255,.22)", color: "inherit" }
-                            : { background: t.soft, color: t.color }
+                            ? {
+                                background: t.value ? t.color : "var(--surface-3)",
+                                color: t.value ? "#fff" : "var(--text)",
+                              }
+                            : { background: "transparent", color: "var(--text-2)" }
                         }
+                        title={`${t.label} — press ${t.hint}`}
+                        aria-pressed={active}
                       >
-                        {t.short}
-                      </span>
-                      {t.label}
-                      <span className="text-[9px] font-semibold opacity-60">{t.hint}</span>
-                    </button>
-                  );
-                })}
+                        <span
+                          className="flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-extrabold"
+                          style={
+                            active
+                              ? { background: "rgba(255,255,255,.22)", color: "inherit" }
+                              : { background: t.soft, color: t.color }
+                          }
+                        >
+                          {t.short}
+                        </span>
+                        <span className="hidden sm:inline">{t.label}</span>
+                        <span className={active ? "text-[9px] font-semibold opacity-70" : "text-[9px] font-semibold opacity-50"}>
+                          {t.hint}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <button
                   type="button"
                   onClick={fillBlanks}
                   disabled={!tool}
-                  className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
+                  className="flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ borderColor: "var(--border)", color: "var(--text-2)", background: "var(--surface)" }}
                   title={`Give every still-unmarked cell this week the "${activeTool.label}" status`}
                 >
                   <Wand2 size={13} /> Fill empty cells
                 </button>
               </div>
             </div>
-
-            <p className="mt-2 text-[11px]" style={{ color: "var(--text-3)" }}>
-              Click a cell to mark it{" "}
-              <b style={{ color: activeTool.value ? activeTool.color : "var(--text-2)" }}>
-                {activeTool.value ? activeTool.label : "empty"}
-              </b>
-              . Drag to mark a whole row or column · click the same cell again to undo · keys{" "}
-              <b style={{ color: "var(--text-2)" }}>1–4</b> / <b style={{ color: "var(--text-2)" }}>0</b> switch tools ·
-              nothing is stored until <b style={{ color: "var(--text-2)" }}>Save sheet</b>.
-            </p>
           </div>
 
           <div className="overflow-x-auto thin-scroll">
@@ -969,7 +951,7 @@ function ClassGrid({
                   return (
                     <tr key={s.id} className="group">
                       <td
-                        className="sticky left-0 z-10 px-4 py-1.5"
+                        className="sticky left-0 z-10 px-4 py-2.5"
                         style={{ background: zebra, borderBottom: "1px solid var(--border)" }}
                       >
                         <div className="flex min-w-0 items-center gap-2">
@@ -982,13 +964,13 @@ function ClassGrid({
                             <StudentAvatar student={s} size="sm" />
                             <div className="min-w-0">
                               <p
-                                className="truncate text-[13px] font-semibold leading-tight"
+                                className="truncate text-[13px] font-semibold leading-normal"
                                 style={{ color: "var(--text)" }}
                               >
                                 {s.khmerName || `${s.firstName} ${s.lastName}`}
                               </p>
                               {s.khmerName ? (
-                                <p className="truncate text-[11px] leading-tight" style={{ color: "var(--text-3)" }}>
+                                <p className="truncate text-[11px] leading-normal" style={{ color: "var(--text-3)" }}>
                                   {s.firstName} {s.lastName}
                                 </p>
                               ) : null}
@@ -1125,7 +1107,7 @@ function ClassGrid({
 }
 
 /* ── read-only view: every student × every subject, who missed what ── */
-function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay }) {
+function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay, onDeleteClass }) {
   const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
   const dayObj = scopeDay ? days.find((d) => d.date === scopeDay) || null : null;
   const allWeek = !dayObj;
@@ -1194,6 +1176,17 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
         <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
           {students.length} students · {allWeek ? weekLabel : `${dayObj.name} · ${dayObj.short}`} · {subjects.length} subject{subjects.length === 1 ? "" : "s"}
         </span>
+        {onDeleteClass && (
+          <button
+            type="button"
+            onClick={() => onDeleteClass(cls)}
+            className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[var(--danger-soft)]"
+            title={`Delete the class "${cls.name}"`}
+            style={{ color: "var(--text-3)" }}
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
       </div>
 
       <div className="overflow-x-auto thin-scroll">
@@ -1228,12 +1221,12 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
               const ov = overall(s);
               return (
                 <tr key={s.id}>
-                  <td className="sticky left-0 z-10 px-4 py-1.5" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+                  <td className="sticky left-0 z-10 px-4 py-2.5" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
                     <button type="button" className="flex items-center gap-2.5 min-w-0 text-left" title={`${s.firstName} ${s.lastName}`}>
                       <StudentAvatar student={s} size="sm" />
                       <div className="min-w-0">
-                        <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text)" }}>{s.khmerName || `${s.firstName} ${s.lastName}`}</p>
-                        <p className="text-[10px] leading-tight truncate" style={{ color: "var(--text-3)" }}>{s.studentId || ""}</p>
+                        <p className="text-[13px] font-semibold leading-normal truncate" style={{ color: "var(--text)" }}>{s.khmerName || `${s.firstName} ${s.lastName}`}</p>
+                        <p className="text-[10px] leading-normal truncate" style={{ color: "var(--text-3)" }}>{s.studentId || ""}</p>
                       </div>
                     </button>
                   </td>
@@ -1303,7 +1296,7 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
 
 /* ── page ──────────────────────────────────────────────── */
 export default function Attendance() {
-  const { students, classes, attendance, saveAttendance, showToast, logAudit } = useApp();
+  const { students, classes, attendance, saveAttendance, showToast, logAudit, deleteClass } = useApp();
   const [searchParams] = useSearchParams();
   const classParam = searchParams.get("class");
 
@@ -1318,8 +1311,15 @@ export default function Attendance() {
   const [dlSel, setDlSel] = useState(false);
   const [dlAll, setDlAll] = useState(false);
   const [dlChecked, setDlChecked] = useState({});
+
+  const deleteClassNow = (cls) => {
+    if (!cls) return;
+    deleteClass(cls.id);
+    setSel((prev) => prev.filter((id) => id !== cls.id));
+    showToast(`Deleted "${cls.name}"`);
+  };
   const [dayStudent, setDayStudent] = useState(null); // student whose day log is open
-  const [focusKey, setFocusKey] = useState(() => weekKeyOf(todayISO())); // selected week (shared by all sheets)
+  const [focusKey, setFocusKey] = useState(() => lastNWeeks(15)[0].key); // selected week (shared by all sheets) — start on the first week, not the latest
   const [draft, setDraft] = useState({}); // staged cells: { studentId: { subjectKey: { dateISO: status } } } — saved only on Save
   const [subjectOf, setSubjectOf] = useState({}); // { classId: subjectKey } — which subject's session is being marked right now
   const [mode, setMode] = useState("mark"); // "mark" | "view"
@@ -1894,6 +1894,7 @@ export default function Attendance() {
                       onSave={() => saveSheet(g.cls.id)}
                       dirtySubjects={dirtySubjectsOf(g.cls?.id)}
                       onStudentClick={setDayStudent}
+                      onDeleteClass={deleteClassNow}
                     />
                   ))}
                 </div>
@@ -2008,6 +2009,7 @@ export default function Attendance() {
                     subjects={subjectsOf[g.cls?.id] || []}
                     dailyOf={dailyOf}
                     scopeDay={viewDay}
+                    onDeleteClass={deleteClassNow}
                   />
                 ))}
               </div>

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, X, Search } from "lucide-react";
+import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Plus, X } from "lucide-react";
 import Modal from "./Modal";
 import { StudentAvatar } from "./Badge";
 import * as XLSX from "xlsx";
@@ -295,7 +295,8 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
 
   const matchedStudents = preview.filter((p) => p.student).length;
   const totalCells = preview.reduce((a, p) => a + p.cells.filter((c) => c !== "").length, 0);
-  const unmatched = preview.length - matchedStudents;
+  /* file rows that can be added to the class on import (they have a name or ID) */
+  const pendingAdd = preview.filter((p) => !p.student && (p.sidRaw || p.nameRaw)).length;
   const shown = showAll ? preview : preview.slice(0, 60);
 
   /* map each subject column of the file to a sheet column key (or null = new), keeping duplicate subjects distinct */
@@ -339,7 +340,7 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
         setError("Nothing to import — no scores found in the file.");
         return;
       }
-      onImport({ rows, matched: preview.length, cells: totalCells, perCol: perColAndGroups.perCol, groups: created.length ? perColAndGroups.groups : [], fileRows });
+      onImport({ rows, matched: preview.length, cells: totalCells, perCol: perColAndGroups.perCol, groups: created.length ? perColAndGroups.groups : [], fileRows, source: file?.name || "" });
       return;
     }
 
@@ -353,11 +354,30 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
       });
       if (Object.keys(st).length) rows[p.student.id] = st;
     });
-    if (!Object.keys(rows).length) {
-      setError("Nothing to import — no rows matched a student in this class.");
+    /* rows that didn't match a class student — they get added to the class on import */
+    const addRows = preview
+      .filter((p) => !p.student && (p.sidRaw || p.nameRaw))
+      .map((p) => {
+        const st = {};
+        perColAndGroups.perCol.forEach((pc, pi) => {
+          const v = p.cells[pc.idx];
+          if (v !== "") st[pi] = v;
+        });
+        return { sidRaw: p.sidRaw, nameRaw: p.nameRaw, st };
+      });
+    if (!Object.keys(rows).length && !addRows.length) {
+      setError("Nothing to import — no rows matched a student in this class and nothing new to add.");
       return;
     }
-    onImport({ rows, matched: matchedStudents, cells: totalCells, perCol: perColAndGroups.perCol, groups: perColAndGroups.groups });
+    onImport({
+      rows,
+      addRows,
+      matched: matchedStudents,
+      cells: totalCells,
+      perCol: perColAndGroups.perCol,
+      groups: perColAndGroups.groups,
+      source: file?.name || "",
+    });
   };
 
   /* header cells for the preview's group row, mirroring every column (spacers for non-subject columns) */
@@ -391,7 +411,7 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
       subtitle={
         noneMode
           ? "No class selected — every data row is kept and every column becomes a score subject exactly as written in the file."
-          : "Upload an Excel/CSV first (one subject per column), check the preview, then import — existing scores for the same student + column are replaced."
+          : "Upload an Excel/CSV first (one subject per column), check the preview, then import — existing scores are replaced, and students in the file that aren't in this class yet are added to it with their scores."
       }
       footer={
         <div className="flex w-full items-center gap-2">
@@ -401,6 +421,7 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
                 ? `${preview.length} rows · ${totalCells} scores` +
                   (perColAndGroups.perCol.length ? ` · ${perColAndGroups.perCol.filter((p) => !p.key).length} subject${perColAndGroups.perCol.filter((p) => !p.key).length === 1 ? "" : "s"} straight from the file` : "")
                 : `${preview.length} data rows · ${matchedStudents} matched · ${totalCells} scores` +
+                  (pendingAdd > 0 ? ` · ${pendingAdd} to add to class` : "") +
                   (perColAndGroups.perCol.filter((p) => !p.key).length ? ` · ${perColAndGroups.perCol.filter((p) => !p.key).length} new column${perColAndGroups.perCol.filter((p) => !p.key).length === 1 ? "" : "s"}` : "")
               : "No file loaded yet"}
           </span>
@@ -409,17 +430,24 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
           </button>
           <button
             onClick={doImport}
-            disabled={!rawRows.length || totalCells === 0}
+            disabled={!rawRows.length || (noneMode ? totalCells === 0 : preview.length === 0)}
             className="btn btn-primary h-10 px-5 text-sm gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             title={
-              totalCells
-                ? noneMode
-                  ? `Create a cheatsheet with ${totalCells} scores — subjects and group headers straight from the file`
-                  : `Write ${totalCells} scores into the ${columns.length}-column score sheet`
-                : "Load a file with scores first"
+              !totalCells && pendingAdd === 0
+                ? "Load a file with data first"
+                : noneMode
+                ? `Create a cheatsheet with ${totalCells} scores — subjects and group headers straight from the file`
+                : pendingAdd > 0
+                ? `Write ${totalCells} scores into the ${columns.length}-column score sheet and add ${pendingAdd} student${pendingAdd === 1 ? "" : "s"} to ${cls?.name}`
+                : `Write ${totalCells} scores into the ${columns.length}-column score sheet`
             }
           >
-            <CheckCircle2 size={15} /> Import {totalCells} scores
+            <CheckCircle2 size={15} />{" "}
+            {noneMode
+              ? `Import ${totalCells} scores`
+              : pendingAdd > 0
+              ? `Import ${totalCells} scores + add ${pendingAdd} student${pendingAdd === 1 ? "" : "s"}`
+              : `Import ${totalCells} scores`}
           </button>
         </div>
       }
@@ -451,7 +479,8 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
           ) : (
             <>Students are matched by ID first, then by name. Columns whose subject isn't in this class yet are{" "}
             <b style={{ color: "var(--primary-strong)" }}>created as new score columns automatically</b> — change a column to "Skip" if you
-            don't want it. Unmatched rows are skipped (shown in red).</>
+            don't want it. Rows that don't match a student in this class yet are{" "}
+            <b style={{ color: "var(--primary-strong)" }}>added to the class</b> with their scores.</>
           )}
         </div>
 
@@ -636,9 +665,9 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
                             )}
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--danger)" }}>
-                            <Search size={12} /> {[p.sidRaw, p.nameRaw].filter(Boolean).join(" · ") || "row"}
-                            <span className="text-[10px] font-bold uppercase" style={{ color: "var(--danger)" }}>not matched</span>
+                          <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--warning)" }}>
+                            <Plus size={12} /> {[p.sidRaw, p.nameRaw].filter(Boolean).join(" · ") || "row"}
+                            <span className="text-[10px] font-bold uppercase">will be added</span>
                           </span>
                         )}
                       </td>
@@ -663,9 +692,9 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
               </button>
             )}
 
-            {!noneMode && unmatched > 0 && (
+            {!noneMode && pendingAdd > 0 && (
               <p className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--warning)" }}>
-                <AlertTriangle size={13} /> {unmatched} row{unmatched === 1 ? "" : "s"} didn't match a student in {cls?.name} and will be skipped.
+                <AlertTriangle size={13} /> {pendingAdd} row{pendingAdd === 1 ? "" : "s"} didn't match a student in {cls?.name} yet — they will be <b>added to the class</b> with their scores.
               </p>
             )}
           </>

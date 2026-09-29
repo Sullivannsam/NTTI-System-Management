@@ -21,6 +21,17 @@ export const cleanName = (s) => {
     .replace(/^(?:student|សិស្ស|សតុដេនត)$/i, "");
 };
 
+/* Roll-number column headers — "ល.រ", a lone "\" or quote, "No", "លេខរៀង"…
+   Sometimes these leaked into a transcript history as fake subjects (with the
+   student's roll number as their score). They are never real subjects, so we
+   refuse to import them and strip them out of stored history. */
+export const isRollLabel = (s) => {
+  const t = collapse(s);
+  if (!t) return true;
+  if (/^[\s"'\\“”«»\-]+$/.test(t)) return true;
+  return /^\s*(no\.?|no|#|roll|number|លេខរៀង|លេខ|ล\.\s*រ|ល\.\s*រ)\s*$/i.test(t);
+};
+
 /* name → { firstName, lastName } treating the last token as the family name */
 export const splitLatin = (full) => {
   const parts = collapse(full).split(/\s+/).filter(Boolean);
