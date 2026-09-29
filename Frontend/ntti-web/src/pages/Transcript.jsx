@@ -397,209 +397,185 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/* ── real .xlsx export mirroring the official “ex” cheatsheet grid ── */
-function buildTranscriptWorkbook({ student, cls, terms, overall, att, refNo, issued }) {
-  /* column grid mirrors the official sheet exactly (0-indexed):
-     0 YEAR · 1-7 SEM I Subjects · 8 HOUR · 9 Score (100/100) · 10 Grade
-     · 11-16 SEM II Subjects · 17 HOUR · 18 Score (100/100) · 19 Grade  */
-  const W = 20; // column count A..T
+/* ── real .xlsx export — a literal mirror of the on-screen #transcript-doc
+   table: same 9 columns (YEAR · Subjects/HOUR/Score/Grade × 2), same rows,
+   same grade legend, one font everywhere (Times New Roman, matching the
+   on-screen letterhead/title) so opening the file in Excel shows exactly
+   what the website shows — no different layout, no different font. ── */
+function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, att, refNo, issued }) {
+  const W = 9; // A..I — YEAR, Subjects/HOUR/Score/Grade ×2
   const aoa = [];
   const merges = [];
+  const FONT = "Times New Roman";
   const set = (r, c, v) => {
-    (aoa[r] = aoa[r] || []);
+    aoa[r] = aoa[r] || [];
     aoa[r][c] = v === undefined || v === null ? "" : v;
   };
   const thin = { style: "thin", color: { rgb: "9CA3AF" } };
   const border = { top: thin, bottom: thin, left: thin, right: thin };
-  const st = (o) => ({ ...o, border });
+  const st = (o = {}) => ({
+    border,
+    ...o,
+    font: { name: FONT, ...(o.font || {}) },
+  });
+  const cell = (v, o) => ({ t: "s", v: v ?? "", s: st(o) });
   const H = (r, c, v, span = 1) => {
-    const o = st({ font: { bold: true }, fill: { fgColor: { rgb: "E2E8F0" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true } });
-    set(r, c, { t: "s", v: v ?? "", s: o });
+    set(r, c, cell(v, { font: { bold: true }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
     if (span > 1) merges.push({ s: { r, c }, e: { r, c: c + span - 1 } });
   };
+  const merge = (r, c0, c1, r2 = r) => merges.push({ s: { r, c: c0 }, e: { r: r2, c: c1 } });
 
-  /* letterhead — mirrors official “ex” sheet: KINGDOM OF CAMBODIA /
-     Nation Religion King pair at the top-right (cols M..T), then
-     Ministry/NTTI/N0 underneath (cols A..L); each block's lines centred
-     on each other within its own columns */
-  const L = (r, v, bold = false, span = [0, 11], sz = bold ? 13 : 11, fname) => {
-    const [c0, c1] = span;
-    const font = { bold, sz, ...(fname ? { name: fname } : {}) };
-    set(r, c0, { t: "s", v, s: st({ font, alignment: { horizontal: "center", vertical: "center", wrapText: true } }) });
-    merges.push({ s: { r, c: c0 }, e: { r, c: c1 } });
+  /* letterhead — same lines as the on-screen title block, centred the same way */
+  const L = (r, v, bold, sz) => {
+    set(r, 0, cell(v, { font: { bold, sz }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
+    merge(r, 0, W - 1);
   };
-  L(0, INSTITUTION_LINES.country, true, [12, W - 1], 14, "Times New Roman");
-  L(1, INSTITUTION_LINES.motto, false, [12, W - 1], 14, "Times New Roman");
-  L(2, INSTITUTION_LINES.ministry, true, [0, 11], 13, "Times New Roman");
-  L(3, INSTITUTION_LINES.institute, true, [0, 11], 11, "Times New Roman");
-  L(4, INSTITUTION_LINES.noLine, false, [0, 11], 10, "Times New Roman");
-  set(5, 0, "");
-  L(6, "OFFICIAL TRANSCRIPT", true, [0, W - 1], 16, "Times New Roman");
+  L(0, INSTITUTION_LINES.country, true, 14);
+  L(1, INSTITUTION_LINES.motto, false, 14);
+  L(2, INSTITUTION_LINES.ministry, true, 13);
+  L(3, INSTITUTION_LINES.institute, true, 12);
+  L(4, INSTITUTION_LINES.noLine, false, 10);
+  L(5, "", false, 10);
+  L(6, "OFFICIAL TRANSCRIPT", true, 16);
 
-  /* student block — official rows 7-10 */
-  const pair = (r, c0, k, v) => {
-    set(r, c0, { t: "s", v: k + " :", s: st({ font: { bold: true }, alignment: { horizontal: "right" } }) });
-    set(r, c0 + 1, { t: "s", v: v || "—", s: st({ alignment: { horizontal: "left" } }) });
+  /* student block — same 3 rows / same labels as the on-screen table */
+  let row = 7;
+  const pair = (r, label, value) => {
+    set(r, 0, cell(`${label} :`, { font: { bold: true }, alignment: { horizontal: "left" } }));
+    merge(r, 0, 1);
+    set(r, 2, cell(value ?? "—", { alignment: { horizontal: "left" } }));
+    merge(r, 2, W - 1);
   };
-  pair(7, 0, "Student", student.khmerName ? `${student.khmerName} (${student.firstName} ${student.lastName})` : `${student.firstName} ${student.lastName}`);
-  set(7, 10, { t: "s", v: "Sex :", s: st({ font: { bold: true }, alignment: { horizontal: "right" } }) });
-  set(7, 11, { t: "s", v: student.gender || "—", s: st({}) });
-  set(7, 16, { t: "s", v: "Nationality :", s: st({ font: { bold: true }, alignment: { horizontal: "right" } }) });
-  set(7, 17, { t: "s", v: "Khmer", s: st({}) });
-  pair(8, 0, "Date of Birth", student.dob ? prettyDate(student.dob) : null);
-  set(8, 10, { t: "s", v: "Date of Graduation :", s: st({ font: { bold: true }, alignment: { horizontal: "left" } }) });
-  set(8, 11, {
-    t: "s",
-    v: graduationDate(student),
-    s: st({}),
-  });
-  pair(9, 0, "Place of Birth", "—");
+  pair(row, "Student", student.khmerName ? `${student.khmerName} · ${student.firstName} ${student.lastName}` : `${student.firstName} ${student.lastName}`);
+  row++;
+  pair(row, "Date of Birth", student.dob ? prettyDate(student.dob) : "—");
+  row++;
+  pair(row, "Place of Birth", "—");
+  row++;
+  pair(row, "Sex", student.gender || "—");
+  row++;
+  pair(row, "Nationality", "Khmer");
+  row++;
+  pair(row, "Date of Graduation", graduationDate(student));
+  row++;
 
-  /* statement + StudentNo — official row 10 */
-  set(10, 0, {
-    t: "s",
-    v: `Has successfully completed Diploma of Technology in the field of ${cls?.field || majorName(student.major)} in academic year ${student.enrollmentYear || "—"} - ${student.enrollmentYear ? Number(student.enrollmentYear) + (programYears(student.major) - 1) : "—"}`,
-    s: st({ font: { bold: true }, alignment: { horizontal: "center" } }),
-  });
-  merges.push({ s: { r: 10, c: 0 }, e: { r: 10, c: 12 } });
-  set(10, 13, { t: "s", v: "StudentNo:", s: st({ font: { bold: true }, alignment: { horizontal: "right" } }) });
-  set(10, 14, { t: "s", v: String(student.studentId || "—"), s: st({}) });
-  merges.push({ s: { r: 10, c: 14 }, e: { r: 10, c: 19 } });
+  /* completion statement — centred, same wording as on-screen */
+  const yearsInProgram = programYears(student.major);
+  set(row, 0, cell(
+    `Has successfully completed Diploma of Technology in the field of ${cls?.field || majorName(student.major)} in academic year ${student.enrollmentYear || "—"} - ${student.enrollmentYear ? Number(student.enrollmentYear) + (yearsInProgram - 1) : "—"}`,
+    { font: { bold: true }, alignment: { horizontal: "center", wrapText: true } }
+  ));
+  merge(row, 0, W - 1);
+  row += 2;
 
-  /* ----- main table header (official rows 12-13) ----- */
-  const hdrR = 12;
+  /* ----- main table header — same 9 columns as the on-screen .ex-table ----- */
+  const hdrR = row;
   H(hdrR, 0, "YEAR");
-  H(hdrR, 1, "SEMESTER I", 10);
-  H(hdrR, 11, "SEMESTER II", 9);
-  merges.push({ s: { r: hdrR, c: 0 }, e: { r: hdrR + 1, c: 0 } });
+  H(hdrR, 1, "SEMESTER I", 4);
+  H(hdrR, 5, "SEMESTER II", 4);
+  merge(hdrR, 0, 0, hdrR + 1);
   const sub = hdrR + 1;
-  H(sub, 1, "Subjects", 7);
-  H(sub, 8, "HOUR", 1);
-  H(sub, 9, "Score (100/100)", 1);
-  H(sub, 10, "Grade", 1);
-  H(sub, 11, "Subjects", 6);
-  H(sub, 17, "HOUR", 1);
-  H(sub, 18, "Score (100/100)", 1);
-  H(sub, 19, "Grade", 1);
+  H(sub, 1, "Subjects");
+  H(sub, 2, "HOUR");
+  H(sub, 3, "Score (100/100)");
+  H(sub, 4, "Grade");
+  H(sub, 5, "Subjects");
+  H(sub, 6, "HOUR");
+  H(sub, 7, "Score (100/100)");
+  H(sub, 8, "Grade");
+  row = sub + 1;
 
-  /* ----- year blocks (official rows 14+) ----- */
-  const byYear = {};
-  terms.forEach((t) => {
-    const y = String(t.level || "")[3];
-    if (!y) return;
-    (byYear[y] ||= {})[String(t.level).slice(0, 2)] = t; // matches yearBlocks logic
-  });
-  const blocks = Object.entries(byYear)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([y, m]) => ({ y, s1: m.S1 || null, s2: m.S2 || null }));
+  const yearCell = (v) => cell(v, { font: { bold: true }, alignment: { horizontal: "center", vertical: "center" } });
+  const subjCell = (v) => cell(v, { alignment: { horizontal: "left" } });
+  const numCell = (v) => cell(v == null ? "" : Number(v).toFixed(2), { alignment: { horizontal: "center" } });
+  const hourCell = (v) => (v == null ? cell("", { alignment: { horizontal: "center" } }) : { t: "n", v, s: st({ alignment: { horizontal: "center" } }) });
+  const gradeCell = (g) => cell(g || "", { font: { bold: true }, alignment: { horizontal: "center" } });
 
-  const ordinalEx = (n) => {
-    const j = Number(n) % 100;
-    if (j >= 11 && j <= 13) return `${n} th`;
-    const r = j % 10;
-    return `${n}${r === 1 ? "st" : r === 2 ? "nd" : r === 3 ? "rd" : "th"}`;
-  };
-
-  let row = sub + 1;
-  const yearCellStyle = st({ font: { bold: true }, alignment: { horizontal: "center", vertical: "center" } });
-  const ordinalLabel = (n) => ordinalEx(n).replace(/(\d)(st|nd|rd|th)$/, "$1 $2"); // official "1 st"
-  const numCell = (v) =>
-    v == null
-      ? { t: "s", v: "", s: st({ alignment: { horizontal: "center" } }) }
-      : { t: "s", v: Number(v).toFixed(2), s: st({ alignment: { horizontal: "center" } }) };
-  const hourCell = (v) =>
-    v == null
-      ? { t: "s", v: "", s: st({ alignment: { horizontal: "center" } }) }
-      : { t: "n", v, s: st({ alignment: { horizontal: "center" } }) };
-  const gradeCell = (g) => ({ t: "s", v: g || "", s: st({ font: { bold: true }, alignment: { horizontal: "center" } }) });
-  blocks.forEach((b) => {
-    const r1 = rowsOf(b.s1 || {});
-    const r2 = rowsOf(b.s2 || {});
+  yearBlocks.forEach((block) => {
+    const r1 = rowsOf(block.s1 || {});
+    const r2 = rowsOf(block.s2 || {});
     const max = Math.max(r1.length, r2.length, 1);
-    const st1 = b.s1 ? statsOf(b.s1) : null;
-    const st2 = b.s2 ? statsOf(b.s2) : null;
+    const st1 = block.s1 ? statsOf(block.s1) : null;
+    const st2 = block.s2 ? statsOf(block.s2) : null;
+    const yearLabel = ordinal(Number(block.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
     const y0 = row;
-    // a year with subjects but no grades yet — official renders one merged "Uncompleted" block
-    if (!(st1?.count) && !(st2?.count)) {
-      merges.push({ s: { r: y0, c: 0 }, e: { r: y0 + max, c: 0 } });
-      set(y0, 0, { t: "s", v: ordinalLabel(b.y), s: yearCellStyle });
-      set(y0, 1, { t: "s", v: "Uncompleted", s: st({ alignment: { horizontal: "center", vertical: "center" } }) });
-      merges.push({ s: { r: y0, c: 1 }, e: { r: y0 + max, c: 10 } });
-      set(y0, 11, { t: "s", v: "Uncompleted", s: st({ alignment: { horizontal: "center", vertical: "center" } }) });
-      merges.push({ s: { r: y0, c: 11 }, e: { r: y0 + max, c: 19 } });
-      row += max + 1;
+    const uncompleted = !(st1?.count) && !(st2?.count);
+
+    if (uncompleted) {
+      set(y0, 0, yearCell(yearLabel));
+      set(y0, 1, cell("Uncompleted", { alignment: { horizontal: "center", vertical: "center" } }));
+      merge(y0, 1, 4);
+      set(y0, 5, cell("Uncompleted", { alignment: { horizontal: "center", vertical: "center" } }));
+      merge(y0, 5, 8);
+      row += 1;
       return;
     }
-    merges.push({ s: { r: y0, c: 0 }, e: { r: y0 + max, c: 0 } });
-    set(y0, 0, { t: "s", v: ordinalLabel(b.y), s: yearCellStyle });
+
+    set(y0, 0, yearCell(yearLabel));
+    if (max > 1) merge(y0, 0, 0, y0 + max - 1);
     for (let i = 0; i < max; i++) {
       const a = r1[i];
       const b = r2[i];
-      set(row, 1, { t: "s", v: a?.subject || "", s: st({}) });
-      merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 7 } });
-      set(row, 8, hourCell(a?.hour));
-      set(row, 9, numCell(a ? a.score : null));
-      set(row, 10, gradeCell(a?.grade));
-      set(row, 11, { t: "s", v: b?.subject || "", s: st({}) });
-      merges.push({ s: { r: row, c: 11 }, e: { r: row, c: 16 } });
-      set(row, 17, hourCell(b?.hour));
-      set(row, 18, numCell(b ? b.score : null));
-      set(row, 19, gradeCell(b?.grade));
+      set(row, 1, subjCell(a?.subject || ""));
+      set(row, 2, hourCell(a?.hour));
+      set(row, 3, numCell(a ? a.score : null));
+      set(row, 4, gradeCell(a?.grade));
+      set(row, 5, subjCell(b?.subject || ""));
+      set(row, 6, hourCell(b?.hour));
+      set(row, 7, numCell(b ? b.score : null));
+      set(row, 8, gradeCell(b?.grade));
       row++;
     }
-    });
-
-  /* State Exam / Practical Exam row — labels merged with their right blocks */
-  const examLabel = () => st({ font: { bold: true }, fill: { fgColor: { rgb: "E2E8F0" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true } });
-  merges.push({ s: { r: row, c: 0 }, e: { r: row, c: 10 } });
-  set(row, 0, { t: "s", v: student.stateExam ? `State\nExam : ${student.stateExam}` : "State\nExam", s: examLabel() });
-  merges.push({ s: { r: row, c: 11 }, e: { r: row, c: 19 } });
-  set(row, 11, {
-    t: "s",
-    v:
-      student.thesisScore != null && student.thesisScore !== ""
-        ? `Practical Exam\n${student.thesisTitle || "Thesis / Practical project"}\nScore: ${Number(student.thesisScore).toFixed(2)}  Grade: ${letterOf(Number(student.thesisScore))}`
-        : "Practical Exam\n—",
-    s: st({ alignment: { horizontal: "center", vertical: "center", wrapText: true } }),
   });
-  row++;
-  set(row, 1, { t: "s", v: overall.avg != null ? `Overall average: ${overall.avg.toFixed(1)}` : "Overall average: —", s: st({}) });
-  merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 10 } });
+
+  /* State Exam / Practical Exam row — same as the on-screen table */
+  set(row, 0, cell(student.stateExam ? `State Exam : ${student.stateExam}` : "State Exam", {
+    font: { bold: true }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  }));
+  merge(row, 0, 4);
+  set(row, 5, cell(
+    student.thesisScore != null && student.thesisScore !== ""
+      ? `Practical Exam : ${student.thesisTitle || "Thesis / Practical project"} · Score: ${Number(student.thesisScore).toFixed(2)} · Grade: ${letterOf(Number(student.thesisScore))}`
+      : "Practical Exam : —",
+    { alignment: { horizontal: "left", vertical: "center", wrapText: true } }
+  ));
+  merge(row, 5, 8);
   row++;
 
-  /* grade legend (official 48-55) */
+  /* REMARKS + grade legend — same rows/columns as the on-screen legend table */
   row++;
-  set(row, 1, { t: "s", v: "REMARKS:", s: st({ font: { bold: true } }) });
-  row += 2;
-  H(row, 1, "Mark Obtained", 2);
-  H(row, 4, "Grade", 2);
-  H(row, 6, "Meaning", 3);
-  H(row, 9, "Grade Point", 1);
-  set(row, 12, { t: "s", v: "Phnom Penh, Date ...............", s: st({ alignment: { horizontal: "center" } }) });
-  merges.push({ s: { r: row, c: 12 }, e: { r: row, c: 15 } });
-  set(row, 16, { t: "s", v: "Official Stamp", s: st({ alignment: { horizontal: "center" } }) });
-  merges.push({ s: { r: row, c: 16 }, e: { r: row, c: 19 } });
+  set(row, 0, cell("REMARKS:", { font: { bold: true } }));
   row++;
-  NTTI_SCALE.forEach((g, i) => {
-    set(row, 1, { t: "s", v: g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`, s: st({ alignment: { horizontal: "center" } }) });
-    merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 2 } });
-    set(row, 4, { t: "s", v: g.grade, s: st({ font: { bold: true }, alignment: { horizontal: "center" } }) });
-    merges.push({ s: { r: row, c: 4 }, e: { r: row, c: 5 } });
-    set(row, 6, { t: "s", v: g.meaning, s: st({ alignment: { horizontal: "center" } }) });
-    merges.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
-    set(row, 9, { t: "s", v: g.point, s: st({ alignment: { horizontal: "center" } }) });
-    if (i === 0) {
-      set(row, 12, { t: "s", v: "Deputy Director", s: st({ alignment: { horizontal: "center" } }) });
-      merges.push({ s: { r: row, c: 12 }, e: { r: row, c: 15 } });
-    }
+  H(row, 0, "Mark Obtained", 2);
+  H(row, 2, "Grade", 2);
+  H(row, 4, "Meaning", 3);
+  H(row, 7, "Grade Point", 2);
+  row++;
+  NTTI_SCALE.forEach((g) => {
+    set(row, 0, cell(g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`, { alignment: { horizontal: "center" } }));
+    merge(row, 0, 1);
+    set(row, 2, cell(g.grade, { font: { bold: true }, alignment: { horizontal: "center" } }));
+    merge(row, 2, 3);
+    set(row, 4, cell(g.meaning, { alignment: { horizontal: "left" } }));
+    merge(row, 4, 6);
+    set(row, 7, cell(g.point, { alignment: { horizontal: "center" } }));
+    merge(row, 7, 8);
     row++;
   });
 
-  /* ISO footer (official 70-72) */
+  /* signature block — same layout as the on-screen "Phnom Penh, Date… / Deputy Director" */
   row++;
+  set(row, 0, cell("Phnom Penh, Date ..................", { alignment: { horizontal: "center" } }));
+  merge(row, 0, W - 1);
+  row++;
+  set(row, 0, cell("Deputy Director", { font: { bold: true }, alignment: { horizontal: "center" } }));
+  merge(row, 0, W - 1);
+  row += 2;
+
+  /* ISO footer — same as on-screen */
   const foot = (v) => {
-    set(row, 0, { t: "s", v, s: st({ alignment: { horizontal: "center", vertical: "center" } }) });
-    merges.push({ s: { r: row, c: 0 }, e: { r: row, c: W - 1 } });
+    set(row, 0, cell(v, { alignment: { horizontal: "center", vertical: "center" } }));
+    merge(row, 0, W - 1);
     row++;
   };
   foot(INSTITUTION_LINES.certNo);
@@ -609,18 +585,18 @@ function buildTranscriptWorkbook({ student, cls, terms, overall, att, refNo, iss
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!merges"] = merges;
   ws["!cols"] = [
-    { wch: 7 }, // YEAR
-    { wch: 24 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, // SEM I Subjects (1-7)
-    { wch: 7 }, // HOUR
-    { wch: 17 }, // Score
-    { wch: 6 }, // Grade
-    { wch: 24 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, { wch: 3 }, // SEM II Subjects (11-16)
-    { wch: 7 }, // HOUR
-    { wch: 17 }, // Score
-    { wch: 6 }, // Grade
+    { wch: 8 },  // YEAR
+    { wch: 30 }, // Subjects (SEM I)
+    { wch: 8 },  // HOUR
+    { wch: 16 }, // Score
+    { wch: 8 },  // Grade
+    { wch: 30 }, // Subjects (SEM II)
+    { wch: 8 },  // HOUR
+    { wch: 16 }, // Score
+    { wch: 8 },  // Grade
   ];
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "ex");
+  XLSX.utils.book_append_sheet(wb, ws, "Transcript");
   return wb;
 }
 
@@ -863,7 +839,7 @@ export default function Transcript() {
   );
   const issued = prettyDate(todayISO());
 
-  const exportData = () => ({ student, cls, terms, overall, att, refNo, issued });
+  const exportData = () => ({ student, cls, terms, yearBlocks, ordinal, overall, att, refNo, issued });
 
   const handlePrint = () => {
     if (!student) return;
@@ -1205,7 +1181,7 @@ export default function Transcript() {
 
             {/* student header block — mirrors official R7–R9: left = Student/DOB/Place,
               right = Sex/Nationality/Date of Graduation */}
-            <table className="w-full text-[12px] mb-3" style={{ borderCollapse: "collapse" }}>
+            <table className="w-full text-[12px] mb-3" style={{ borderCollapse: "collapse", ...SERIF }}>
               <tbody>
                 <tr>
                   <td style={{ padding: "2px 0", color: MUTED, width: 118, whiteSpace: "nowrap" }}>Student :</td>
@@ -1234,7 +1210,7 @@ export default function Transcript() {
             </table>
 
             {/* completion statement — official R10, centred above the table */}
-            <p className="text-[12px] mb-3 text-center" style={{ color: INK }}>
+            <p className="text-[12px] mb-3 text-center" style={{ color: INK, ...SERIF }}>
               Has successfully completed Diploma of Technology in the field of{" "}
               <b>{cls?.field || majorName(student.major)}</b> in academic year{" "}
               <b>
@@ -1244,7 +1220,7 @@ export default function Transcript() {
 
             {/* ── YEAR | SEMESTER I | SEMESTER II cheatsheet table ── */}
             <style>{`
-              #transcript-doc .ex-table { width: 100%; border-collapse: collapse; font-size: 11px; color: ${INK}; }
+              #transcript-doc .ex-table { width: 100%; border-collapse: collapse; font-size: 11px; color: ${INK}; font-family: 'Times New Roman', Times, serif; }
               #transcript-doc .ex-table th,
               #transcript-doc .ex-table td { border: 1px solid ${LINE}; padding: 3px 5px; vertical-align: middle; }
               #transcript-doc .ex-table th { background: ${SOFT}; font-weight: 800; text-align: center; }
@@ -1253,7 +1229,7 @@ export default function Transcript() {
               #transcript-doc .ex-table td.year { text-align: center; font-weight: 800; vertical-align: middle; background: ${SOFT}; }
               #transcript-doc .ex-table tbody.transcript-term { page-break-inside: avoid; }
               #transcript-doc .ex-table tr.avg-row td { background: ${SOFT}; font-weight: 700; }
-              #transcript-doc .ex-legend { border-collapse: collapse; font-size: 11px; color: ${INK}; }
+              #transcript-doc .ex-legend { border-collapse: collapse; font-size: 11px; color: ${INK}; font-family: 'Times New Roman', Times, serif; }
               #transcript-doc .ex-legend th,
               #transcript-doc .ex-legend td { border: 1px solid ${LINE}; padding: 2px 8px; text-align: center; }
             `}</style>
@@ -1374,7 +1350,7 @@ export default function Transcript() {
             </table>
 
             {/* REMARKS — official R49, sits ABOVE the grading table */}
-            <p className="text-[12px] mb-2" style={{ color: INK }}>
+            <p className="text-[12px] mb-2" style={{ color: INK, ...SERIF }}>
               <b>REMARKS:</b>
             </p>
 
@@ -1402,7 +1378,7 @@ export default function Transcript() {
                   </tbody>
                 </table>
               </div>
-              <div className="shrink-0 text-center text-[11px]" style={{ color: INK }}>
+              <div className="shrink-0 text-center text-[11px]" style={{ color: INK, ...SERIF }}>
                 <p className="whitespace-nowrap text-[10px]" style={{ color: MUTED }}>
                   Phnom Penh, Date ..................
                 </p>
@@ -1411,13 +1387,13 @@ export default function Transcript() {
             </div>
 
             {/* ISO footer — official R70–72 */}
-            <div className="mt-5 pt-3 text-center text-[10px]" style={{ borderTop: `1px solid ${LINE}`, color: MUTED }}>
+            <div className="mt-5 pt-3 text-center text-[10px]" style={{ borderTop: `1px solid ${LINE}`, color: MUTED, ...SERIF }}>
               <p>{INSTITUTION_LINES.certNo}</p>
               <p className="mt-0.5">{INSTITUTION_LINES.address1}</p>
               <p>{INSTITUTION_LINES.address2}</p>
             </div>
 
-            <p className="mt-6 text-[10px] text-center" style={{ color: "#94a3b8" }}>
+            <p className="mt-6 text-[10px] text-center" style={{ color: "#94a3b8", ...SERIF }}>
               Computer-generated transcript · verify against the Office of the Registrar.
             </p>
           </div>
