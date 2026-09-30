@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { SEED_STUDENTS, SEED_ATTENDANCE, SEED_WEEKLY, SEED_SCORES, SEED_SCHEDULE, CLASSES, ACADEMIC_LEVELS, levelMeta, todayISO, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
-import { cleanName, isRollLabel } from "../components/studentImportHelpers";
+import { cleanName, isRollLabel, norm, nextStudentId } from "../components/studentImportHelpers";
 
 const AppContext = createContext(null);
 
@@ -436,6 +436,39 @@ export function AppProvider({ children }) {
     localStorage.setItem(LS_WEEKLY, JSON.stringify(weekly));
   }, [weekly]);
 
+  /* One-time: rewrite legacy "NTTI-<year>-<serial>" ids for IT bachelor/diploma
+     students to the new "27-IT-…" / "27-ITD-…" scheme (academic-year batch +
+     program code). Only ids auto-generated in the old format are touched;
+     attendance, scores and schedules link by numeric id, so display ids can be
+     renumbered freely. Idempotent — rewritten ids stop matching the old format. */
+  const idsRepaired = useRef(false);
+  useEffect(() => {
+    if (idsRepaired.current) return;
+    idsRepaired.current = true;
+    const isLegacy = (id) => /^NTTI-\d{4}-\d+$/i.test(String(id || ""));
+    if (!students.some((s) => isLegacy(s.studentId) && String(s.major || "").toLowerCase() === "it")) return;
+    const used = new Set(students.map((s) => norm(s.studentId)));
+    const seq = { v: Math.max(0, ...students.map((s) => s.id)) + 1 };
+    setStudents((prev) => {
+      let changed = false;
+      const next = prev.map((s) => {
+        if (!isLegacy(s.studentId) || String(s.major || "").toLowerCase() !== "it") return s;
+        const degree = s.degree || classes.find((c) => c.id === s.className)?.degree || "";
+        const sid = nextStudentId({
+          major: s.major,
+          degree,
+          year: s.enrollmentYear || new Date().getFullYear(),
+          usedIds: used,
+          seq,
+        });
+        if (sid === s.studentId) return s;
+        changed = true;
+        return { ...s, studentId: sid };
+      });
+      return changed ? next : prev;
+    });
+  }, [classes, students]);
+
   useEffect(() => {
     localStorage.setItem(LS_ADMINS, JSON.stringify(admins));
   }, [admins]);
@@ -710,14 +743,16 @@ export function AppProvider({ children }) {
 
   const addClass = useCallback(
     (data) => {
+      const id = `cls-${Date.now().toString(36)}${Math.floor(Math.random() * 90 + 10)}`;
       setClasses((prev) => [
         {
-          id: `cls-${Date.now().toString(36)}${Math.floor(Math.random() * 90 + 10)}`,
+          id,
           ...data,
         },
         ...prev,
       ]);
       logAudit("create_class", `Created class "${data.name}"`);
+      return id;
     },
     [logAudit]
   );

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -11,8 +11,10 @@ import {
   Bell,
   Moon,
   Sun,
-  Menu,
   X,
+  ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   LogOut,
   Sparkles,
   Plus,
@@ -59,7 +61,7 @@ function Brand() {
   );
 }
 
-function Sidebar({ open, onClose }) {
+function Sidebar({ open, onClose, collapsed }) {
   const { students, theme, toggleTheme, showToast, logout, currentAdmin } = useApp();
   const navigate = useNavigate();
   const active = students.filter((s) => s.status !== "Graduate").length;
@@ -90,8 +92,9 @@ function Sidebar({ open, onClose }) {
       />
       <aside
         className={clsx(
-          "fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col border-r transition-transform duration-300 lg:translate-x-0 print:hidden",
-          open ? "translate-x-0" : "-translate-x-full"
+          "fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col border-r transition-transform duration-300 print:hidden",
+          open ? "translate-x-0" : "-translate-x-full",
+          collapsed ? "lg:-translate-x-full" : "lg:translate-x-0"
         )}
         style={{ background: "var(--surface)", borderColor: "var(--border)" }}
       >
@@ -180,7 +183,7 @@ function Sidebar({ open, onClose }) {
   );
 }
 
-function TopBar({ onMenu, onAddStudent, onAddClass }) {
+function TopBar({ onMenu, onToggleCollapse, collapsed, onAddStudent, onAddClass }) {
   const [query, setQuery] = useState("");
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const { students, theme, toggleTheme } = useApp();
@@ -202,8 +205,16 @@ function TopBar({ onMenu, onAddStudent, onAddClass }) {
       style={{ borderColor: "var(--border)" }}
     >
       <div className="flex h-[68px] items-center gap-3 px-4 sm:px-6">
-        <button onClick={onMenu} className="btn btn-ghost h-10 w-10 p-0 rounded-xl lg:hidden" aria-label="Menu">
-          <Menu size={20} />
+        <button
+          onClick={() => {
+            if (window.matchMedia("(min-width: 1024px)").matches) onToggleCollapse();
+            else onMenu();
+          }}
+          className="btn btn-ghost h-10 w-10 p-0 rounded-xl"
+          title={collapsed ? "Show the menu panel" : "Hide the menu panel"}
+          aria-label={collapsed ? "Show the menu panel" : "Hide the menu panel"}
+        >
+          {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
         </button>
 
         <div className="relative hidden sm:block w-full max-w-xs">
@@ -351,20 +362,54 @@ function ToastStack() {
   );
 }
 
+const SIDEBAR_LS = "ntti.sidebar.collapsed.v1";
+
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_LS) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [showAddClass, setShowAddClass] = useState(false);
 
+  useEffect(() => {
+    try {
+      if (collapsed) localStorage.setItem(SIDEBAR_LS, "1");
+      else localStorage.removeItem(SIDEBAR_LS);
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed]);
+
+  const toggleCollapsed = () => setCollapsed((c) => !c);
+
   return (
     <div className="min-h-screen">
-      <Sidebar open={mobileOpen} onClose={() => setMobileOpen(false)} />
-      <div className="lg:pl-[264px] print:pl-0">
+      <Sidebar open={mobileOpen} onClose={() => setMobileOpen(false)} collapsed={collapsed} />
+      <div className={clsx("print:pl-0 transition-[padding] duration-300", collapsed ? "" : "lg:pl-[264px]")}>
         <TopBar
           onMenu={() => setMobileOpen(true)}
+          onToggleCollapse={toggleCollapsed}
+          collapsed={collapsed}
           onAddStudent={() => setShowAddStudent(true)}
           onAddClass={() => setShowAddClass(true)}
         />
+        {collapsed && (
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            className="fixed left-0 top-1/2 z-40 hidden lg:flex h-16 w-6 -translate-y-1/2 flex-col items-center justify-center rounded-r-xl border border-l-0 shadow-md hover:bg-[var(--surface-2)]"
+            style={{ background: "var(--surface)", borderColor: "var(--border)", color: "var(--text-2)" }}
+            title="Reopen the menu panel"
+            aria-label="Reopen the menu panel"
+          >
+            <ChevronRight size={16} />
+          </button>
+        )}
         <main className="bg-mesh min-h-[calc(100vh-68px)] px-4 sm:px-6 lg:px-8 py-6 print:px-0 print:py-0 print:bg-white">
           <Outlet />
         </main>

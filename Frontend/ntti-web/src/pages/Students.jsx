@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Plus, Search, Pencil, Users, ExternalLink, Phone, Mail, MapPin, Trash2,
+  Plus, Search, Pencil, Users, ExternalLink, Phone, Mail, MapPin, Trash2, Check,
   Upload, Table2, LayoutGrid, CalendarDays, GraduationCap,
 } from "lucide-react";
 import PageHeader, { EmptyState } from "../components/Page";
@@ -33,6 +33,9 @@ export default function Students() {
   const [classFilter, setClassFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [view, setView] = useState("table"); // "table" | "cards"
+  const [selecting, setSelecting] = useState(false); // select-&-delete mode
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkDelete, setBulkDelete] = useState(false);
 
   const clsOf = (id) => classes.find((c) => c.id === id);
   const displayName = (s) => cleanName(s.khmerName) || cleanName(`${s.firstName} ${s.lastName}`);
@@ -76,6 +79,38 @@ export default function Students() {
         );
       });
   }, [students, query, classFilter, statusFilter]);
+
+  /* ── select & delete mode ─────────────────────────── */
+  const toggleSelect = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const shown = list.map((s) => s.id);
+      const allOn = shown.length > 0 && shown.every((id) => next.has(id));
+      shown.forEach((id) => (allOn ? next.delete(id) : next.add(id)));
+      return next;
+    });
+
+  const exitSelect = () => {
+    setSelecting(false);
+    setSelected(new Set());
+  };
+
+  const confirmDeleteMany = () => {
+    const ids = Array.from(selected);
+    ids.forEach((id) => deleteStudent(id));
+    showToast(`Deleted ${ids.length} student${ids.length === 1 ? "" : "s"}`);
+    setBulkDelete(false);
+    exitSelect();
+  };
 
   const learning = students.filter((s) => s.status === "Learning").length;
   const classesWithStudents = classes.filter((c) => students.some((s) => s.className === c.id));
@@ -163,6 +198,13 @@ export default function Students() {
         subtitle={`${students.length} students enrolled · ${learning} currently learning`}
         actions={
           <>
+            <button
+              onClick={() => (selecting ? exitSelect() : setSelecting(true))}
+              className={`btn h-10 px-4 text-sm ${selecting ? "btn-ghost" : "btn-soft"}`}
+              title="Mark students, then delete several at once"
+            >
+              <Trash2 size={16} /> {selecting ? "Cancel selection" : "Select & delete"}
+            </button>
             <button onClick={() => setImportOpen(true)} className="btn btn-soft h-10 px-4 text-sm">
               <Upload size={16} /> Import Excel
             </button>
@@ -175,14 +217,48 @@ export default function Students() {
 
       {toolbar}
 
-      {/* result count */}
-      <p className="mb-3 text-xs font-medium" style={{ color: "var(--text-3)" }}>
-        {list.length === students.length
-          ? `Showing all ${students.length} students`
-          : `Showing ${list.length} of ${students.length} students`}
-        {query && " · filtered by search"}
-        {(classFilter !== "all" || statusFilter !== "all") && " · filtered by " + [classFilter !== "all" ? "class" : null, statusFilter !== "all" ? "status" : null].filter(Boolean).join(" + ")}
-      </p>
+      {/* result count / selection bar */}
+      {selecting ? (
+        <div
+          className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 animate-fade-up"
+          style={{ borderColor: "var(--primary)", background: "var(--primary-soft)" }}
+        >
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+            style={{ background: "var(--primary)", color: "#fff" }}
+          >
+            <Check size={15} />
+          </span>
+          <span className="text-sm font-bold" style={{ color: "var(--text)" }}>
+            {selected.size} selected
+          </span>
+          <button onClick={toggleSelectAll} className="btn btn-ghost h-8 px-3 text-xs">
+            {list.length && list.every((s) => selected.has(s.id)) ? "Clear all shown" : "Select all shown"}
+          </button>
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            <button onClick={exitSelect} className="btn btn-ghost h-8 px-3 text-xs">
+              Cancel
+            </button>
+            <button
+              onClick={() => selected.size > 0 && setBulkDelete(true)}
+              disabled={selected.size === 0}
+              className="btn h-8 px-3 text-xs"
+              style={{ background: "var(--danger)", color: "#fff" }}
+              title="Permanently delete the selected students"
+            >
+              <Trash2 size={14} /> Delete {selected.size > 0 ? `${selected.size} ` : ""}student{selected.size === 1 ? "" : "s"}
+            </button>
+          </span>
+        </div>
+      ) : (
+        <p className="mb-3 text-xs font-medium" style={{ color: "var(--text-3)" }}>
+          {list.length === students.length
+            ? `Showing all ${students.length} students`
+            : `Showing ${list.length} of ${students.length} students`}
+          {query && " · filtered by search"}
+          {(classFilter !== "all" || statusFilter !== "all") && " · filtered by " + [classFilter !== "all" ? "class" : null, statusFilter !== "all" ? "status" : null].filter(Boolean).join(" + ")}
+        </p>
+      )}
 
       {list.length === 0 ? (
         <EmptyState
@@ -207,13 +283,25 @@ export default function Students() {
             <table className="table-w" style={{ minWidth: 860 }}>
               <thead>
                 <tr>
+                  {selecting && (
+                    <th className="w-10 px-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={list.length > 0 && list.every((s) => selected.has(s.id))}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4 cursor-pointer"
+                        style={{ accentColor: "var(--primary)" }}
+                        aria-label="Select all students shown"
+                      />
+                    </th>
+                  )}
                   <th className="min-w-[220px]">Student</th>
                   <th>Student ID</th>
                   <th>Class</th>
                   <th className="min-w-[200px]">Contact</th>
                   <th>Date of birth</th>
                   <th>Status</th>
-                  <th className="text-right">Actions</th>
+                  {!selecting && <th className="text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -224,16 +312,31 @@ export default function Students() {
                       key={s.id}
                       className="cursor-pointer"
                       style={{ animationDelay: `${Math.min(i * 15, 300)}ms` }}
-                      onClick={() => setEditingStudent(s)}
+                      onClick={() => (selecting ? toggleSelect(s.id) : setEditingStudent(s))}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          setEditingStudent(s);
+                          if (selecting) toggleSelect(s.id);
+                          else setEditingStudent(s);
                         }
                       }}
                     >
+                      {/* mark */}
+                      {selecting && (
+                        <td className="px-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(s.id)}
+                            onChange={() => toggleSelect(s.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4 cursor-pointer"
+                            style={{ accentColor: "var(--primary)" }}
+                            aria-label={`Select ${displayName(s)}`}
+                          />
+                        </td>
+                      )}
                       {/* student */}
                       <td>
                         <span className="flex items-center gap-3 min-w-0">
@@ -295,43 +398,45 @@ export default function Students() {
                         <span className="block text-[10px] mt-0.5" style={{ color: "var(--text-3)" }}>{s.level}</span>
                       </td>
                       {/* actions */}
-                      <td className="text-right whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/students/${s.id}`);
-                            }}
-                            className="btn btn-ghost h-8 w-8 p-0 rounded-lg"
-                            title="Open full profile"
-                          >
-                            <ExternalLink size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingStudent(s);
-                            }}
-                            className="btn btn-ghost h-8 w-8 p-0 rounded-lg"
-                            title="Edit student"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDelete(s);
-                            }}
-                            className="btn btn-ghost h-8 w-8 p-0 rounded-lg hover:!bg-red-50 hover:!text-red-500"
-                            title="Delete student"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </span>
-                      </td>
+                      {!selecting && (
+                        <td className="text-right whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/students/${s.id}`);
+                              }}
+                              className="btn btn-ghost h-8 w-8 p-0 rounded-lg"
+                              title="Open full profile"
+                            >
+                              <ExternalLink size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingStudent(s);
+                              }}
+                              className="btn btn-ghost h-8 w-8 p-0 rounded-lg"
+                              title="Edit student"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(s);
+                              }}
+                              className="btn btn-ghost h-8 w-8 p-0 rounded-lg hover:!bg-red-50 hover:!text-red-500"
+                              title="Delete student"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </span>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -349,16 +454,34 @@ export default function Students() {
                 key={s.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => setEditingStudent(s)}
+                onClick={() => (selecting ? toggleSelect(s.id) : setEditingStudent(s))}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    setEditingStudent(s);
+                    if (selecting) toggleSelect(s.id);
+                    else setEditingStudent(s);
                   }
                 }}
-                className="card p-4 text-left cursor-pointer transition-transform hover:-translate-y-0.5 animate-fade-up focus:outline-none focus-visible:ring-2"
-                style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                className="card relative p-4 text-left cursor-pointer transition-transform hover:-translate-y-0.5 animate-fade-up focus:outline-none focus-visible:ring-2"
+                style={{
+                  animationDelay: `${Math.min(i * 20, 400)}ms`,
+                  ...(selecting && selected.has(s.id)
+                    ? { borderColor: "var(--primary)", boxShadow: "0 0 0 3px var(--ring)" }
+                    : {}),
+                }}
               >
+                {selecting && (
+                  <span
+                    className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full border"
+                    style={{
+                      background: selected.has(s.id) ? "var(--primary)" : "var(--surface)",
+                      borderColor: selected.has(s.id) ? "var(--primary)" : "var(--border)",
+                      color: "#fff",
+                    }}
+                  >
+                    {selected.has(s.id) && <Check size={13} />}
+                  </span>
+                )}
                 <div className="flex items-start gap-3">
                   <StudentAvatar student={s} size="lg" />
                   <div className="min-w-0 flex-1">
@@ -373,30 +496,32 @@ export default function Students() {
                       <Badge tone="neutral">{s.studentId}</Badge>
                     </div>
                   </div>
-                  <span className="flex shrink-0 flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/students/${s.id}`);
-                      }}
-                      className="btn btn-ghost h-8 w-8 p-0 rounded-lg"
-                      title="Open full profile"
-                    >
-                      <ExternalLink size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(s);
-                      }}
-                      className="btn btn-ghost h-8 w-8 p-0 rounded-lg hover:!bg-red-50 hover:!text-red-500"
-                      title="Delete student"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </span>
+                  {!selecting && (
+                    <span className="flex shrink-0 flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/students/${s.id}`);
+                        }}
+                        className="btn btn-ghost h-8 w-8 p-0 rounded-lg"
+                        title="Open full profile"
+                      >
+                        <ExternalLink size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(s);
+                        }}
+                        className="btn btn-ghost h-8 w-8 p-0 rounded-lg hover:!bg-red-50 hover:!text-red-500"
+                        title="Delete student"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-3 space-y-1 text-xs" style={{ color: "var(--text-2)" }}>
@@ -452,20 +577,41 @@ export default function Students() {
       />
 
       <ConfirmDialog
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={confirmDelete}
-        title="Delete student?"
+        open={!!deleteTarget || bulkDelete}
+        onClose={() => {
+          setDeleteTarget(null);
+          setBulkDelete(false);
+        }}
+        onConfirm={bulkDelete ? confirmDeleteMany : confirmDelete}
+        title={bulkDelete ? "Delete selected students?" : "Delete student?"}
         confirmLabel="Delete"
         message={
-          deleteTarget && (
+          bulkDelete ? (
             <>
-              <b style={{ color: "var(--text)" }}>
-                {displayName(deleteTarget) || englishName(deleteTarget) || deleteTarget.studentId}
-              </b>{" "}
-              will be permanently removed from the system, together with their attendance and
-              weekly records. This cannot be undone.
+              <b style={{ color: "var(--text)" }}>{selected.size}</b> student
+              {selected.size === 1 ? "" : "s"} will be permanently removed from the system,
+              together with their attendance and weekly records. This cannot be undone.
+              {selected.size > 0 && (
+                <span className="mt-2 block text-xs leading-relaxed" style={{ color: "var(--text-2)" }}>
+                  {students
+                    .filter((s) => selected.has(s.id))
+                    .slice(0, 4)
+                    .map((s) => displayName(s) || englishName(s) || s.studentId)
+                    .join(" · ")}
+                  {selected.size > 4 ? ` · +${selected.size - 4} more` : ""}
+                </span>
+              )}
             </>
+          ) : (
+            deleteTarget && (
+              <>
+                <b style={{ color: "var(--text)" }}>
+                  {displayName(deleteTarget) || englishName(deleteTarget) || deleteTarget.studentId}
+                </b>{" "}
+                will be permanently removed from the system, together with their attendance and
+                weekly records. This cannot be undone.
+              </>
+            )
           )
         }
       />

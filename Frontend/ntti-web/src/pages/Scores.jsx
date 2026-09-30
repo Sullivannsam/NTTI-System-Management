@@ -9,6 +9,9 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Link2,
+  UserPlus,
+  Pencil,
+  Lock,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState } from "../components/Page";
@@ -81,7 +84,7 @@ function blankFallbackGroups(payload) {
 function loadLayout() {
   try {
     const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY));
-    return raw && typeof raw === "object" && raw.version === 1 ? blankFallbackGroups(raw) : { version: 1 };
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? blankFallbackGroups(raw) : { version: 1 };
   } catch {
     return { version: 1 };
   }
@@ -142,7 +145,7 @@ function SaveBadge({ dirty, savedAt }) {
   );
 }
 
-function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, onRenameGroup, onMerge, onSplit, onClearGroups, onRenameName, onSave, dirty, savedAt }) {
+function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, onRenameGroup, onMerge, onSplit, onClearGroups, onRenameName, onSave, dirty, savedAt, readOnly }) {
   const { rows = [], scores = {} } = meta || {};
   const layout = meta?.layout || null;
   const columns = layout ? layout.columns : bootstrapColumns(meta?.subjects || []);
@@ -154,14 +157,26 @@ function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, 
     <div className="overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
         <div className="min-w-0">
-          <input
-            value={listName}
-            onChange={(e) => onRenameName(e.target.value)}
-            placeholder="Score list name…"
-            aria-label="Score list name"
-            className="input h-10 w-full min-w-[220px] max-w-[380px] !rounded-lg !px-3 text-base font-bold"
-            style={{ color: "var(--text)" }}
-          />
+          <div className="flex items-center gap-2">
+            <input
+              value={listName}
+              onChange={(e) => onRenameName(e.target.value)}
+              readOnly={readOnly}
+              placeholder="Score list name…"
+              aria-label="Score list name"
+              className="input h-10 w-full min-w-[220px] max-w-[380px] !rounded-lg !px-3 text-base font-bold disabled:cursor-not-allowed"
+              style={{ color: "var(--text)" }}
+            />
+            {readOnly && (
+              <span
+                className="flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                style={{ borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-3)" }}
+                title="Press Edit to change anything on this sheet"
+              >
+                <Lock size={10} /> Read-only
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-xs" style={{ color: "var(--text-2)" }}>
             {columns.length} subject{columns.length === 1 ? "" : "s"} · {rows.length} student{rows.length === 1 ? "" : "s"} — columns, groups and names come straight from the imported file
           </p>
@@ -170,15 +185,16 @@ function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, 
           <button
             onClick={onSave}
             className="btn btn-primary h-9 px-3 text-sm gap-1.5"
-            title="Save this score list under its name (it is also auto-saved as you type)"
+            title="Save this score list — its subjects, student names and scores become a class you can reopen from the class dropdown"
           >
-            <Save size={14} /> Save & name list
+            <Save size={14} /> Save as class
           </button>
           <SaveBadge dirty={dirty} savedAt={savedAt} />
           <button
             onClick={onClear}
-            className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500"
-            title="Remove this (No class) cheatsheet"
+            disabled={readOnly}
+            className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={readOnly ? "Press Edit first to remove this cheatsheet" : "Remove this (No class) cheatsheet"}
           >
             <RotateCcw size={14} /> Clear
           </button>
@@ -192,6 +208,7 @@ function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, 
         groups={groups}
         frozen={frozen}
         setFrozen={setFrozen}
+        readOnly={readOnly}
         getValue={(rowKey, colKey) => (scores[rowKey] || {})[colKey] ?? ""}
         setValue={(rowKey, colKey, raw) => onScore(rowKey, colKey, raw)}
         onRenameColumn={onRenameColumn}
@@ -212,8 +229,125 @@ function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, 
   );
 }
 
+/* Add-a-student modal for the score sheet — the student is created in the
+   Students panel AND assigned to the class selected in Scores, so their row
+   appears right away for typing scores. An existing student ID just moves
+   that student into this class instead of duplicating them. */
+function AddStudentModal({ open, onClose, onAdd, cls }) {
+  const [sid, setSid] = useState("");
+  const [kh, setKh] = useState("");
+  const [first, setFirst] = useState("");
+  const [last, setLast] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setSid("");
+      setKh("");
+      setFirst("");
+      setLast("");
+      setErr("");
+    }
+  }, [open]);
+
+  if (!open) return null;
+  const canSave = kh.trim() || first.trim() || last.trim();
+  const submit = (e) => {
+    e.preventDefault();
+    if (!canSave) {
+      setErr("Type at least a name (Khmer or English).");
+      return;
+    }
+    onAdd({ sid: sid.trim(), kh: kh.trim(), first: first.trim(), last: last.trim() });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose} />
+      <form onSubmit={submit} className="relative card w-full max-w-md p-6 shadow-2xl animate-fade-up">
+        <div className="flex items-start gap-3">
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}
+          >
+            <Plus className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold" style={{ color: "var(--text)" }}>
+              Add student to {cls?.name}
+            </h3>
+            <p className="mt-1 text-xs" style={{ color: "var(--text-2)" }}>
+              They are added to the Students panel and to {cls?.name} — a row appears in the sheet below so you can
+              type their scores right away. If the ID matches an existing student, they simply join this class.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
+              Student ID <span className="font-medium normal-case">(optional)</span>
+            </label>
+            <input
+              value={sid}
+              onChange={(e) => setSid(e.target.value)}
+              placeholder="e.g. IT09A1-042"
+              className="input h-10 w-full text-sm"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
+              Khmer name <span className="font-medium normal-case">(optional)</span>
+            </label>
+            <input
+              value={kh}
+              onChange={(e) => setKh(e.target.value)}
+              placeholder="ឈ្មោះខ្មែរ"
+              className="input h-10 w-full text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
+              English name
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={first}
+                onChange={(e) => setFirst(e.target.value)}
+                placeholder="First name"
+                className="input h-10 w-full text-sm"
+              />
+              <input
+                value={last}
+                onChange={(e) => setLast(e.target.value)}
+                placeholder="Last name"
+                className="input h-10 w-full text-sm"
+              />
+            </div>
+          </div>
+          {err && (
+            <p className="text-xs font-semibold" style={{ color: "var(--danger)" }}>
+              {err}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button type="button" className="btn btn-ghost h-10 px-4 text-sm" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn h-10 px-4 text-sm gap-1.5" style={{ background: "var(--primary)", color: "#fff" }}>
+            <Plus size={15} /> Add & type scores
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function Scores() {
-  const { students, classes, logAudit, showToast, addStudentsBatch, importStudents } = useApp();
+  const { students, classes, logAudit, showToast, addClass, addStudentsBatch, updateStudent, importStudents } = useApp();
   const [scores, setScores] = useState(loadScores);
   const [schedules, setSchedules] = useState(loadSchedules);
   const [noneMeta, setNoneMeta] = useState(loadNoneMeta);
@@ -222,6 +356,12 @@ export default function Scores() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [frozen, setFrozen] = useState(false);
+  const [addStudentOpen, setAddStudentOpen] = useState(false);
+
+  /* Permission-style editing: the sheet is read-only until "Edit" is pressed.
+     Every mutating action (score cells, rename/merge headers, add subject,
+     add student, reset, save, import) is gated on this flag. */
+  const [editMode, setEditMode] = useState(false);
 
   /* ── save state ──
      Scores are written continuously by the effects above, so "saved" is tracked
@@ -331,7 +471,7 @@ export default function Scores() {
   const groups = clsLayout ? clsLayout.groups : null;
 
   const upsertLayout = (columns_, groups_) =>
-    setLayout((prev) => ({ ...prev, [classId]: { columns: columns_, groups: groups_ } }));
+    setLayout((prev) => ({ ...prev, version: 1, [classId]: { columns: columns_, groups: groups_ } }));
   const ensureLayout = () => clsLayout || layoutFromColumns(columns, null);
 
   /* ── score cells ── */
@@ -479,6 +619,50 @@ export default function Scores() {
     else showToast("That column already exists", "info");
   };
 
+  /* ── add a student straight from the sheet ──
+     Created in the Students panel AND assigned to the class selected here, so
+     their row appears in the sheet for typing scores. A matching student ID
+     links the existing student into this class instead of duplicating them. */
+  const addStudentToSheet = ({ sid, kh, first, last }) => {
+    if (!cls) return;
+    const shown = cleanName(kh) || [first, last].filter(Boolean).join(" ") || "(unnamed)";
+    const normId = (x) => norm(String(x ?? ""));
+    if (sid) {
+      const ex = students.find(
+        (s) =>
+          normId(s.studentId) === normId(sid) ||
+          (normId(sid).length >= 2 && normId(s.studentId).endsWith(`-${normId(sid)}`))
+      );
+      if (ex) {
+        if (ex.className === cls.id) {
+          showToast(`${shown} is already in ${cls.name}`, "info");
+          return;
+        }
+        importStudents(cls.id, [ex.id]);
+        logAudit(
+          "add_student_scoresheet",
+          `Linked existing student "${ex.firstName} ${ex.lastName}" (${ex.studentId}) into ${cls.name} from the score sheet`
+        );
+        showToast(`${shown} joined ${cls.name} — now type their scores`);
+        return;
+      }
+    }
+    const usedSids = new Set(students.map((s) => normId(s.studentId)));
+    const seq = { v: Math.max(0, ...students.map((s) => s.id)) + 1 };
+    const created = buildStudent(
+      { sid, kh, latin: "", firstName: first, lastName: last },
+      classes,
+      cls.id,
+      new Date().getFullYear(),
+      usedSids,
+      seq,
+      cls
+    );
+    addStudentsBatch([created]);
+    logAudit("add_student_scoresheet", `Added student "${shown}" (${created.studentId}) to ${cls.name} from the score sheet`);
+    showToast(`${shown} added to ${cls.name} · ID ${created.studentId} — now type their scores`);
+  };
+
   /* ── header editing: rename + merge + split ── */
   const onRenameColumn = (colKey, label) => upsertLayout(renameColumn(ensureLayout(), colKey, label).columns, renameColumn(ensureLayout(), colKey, label).groups);
   const onMerge = (keys, name) => {
@@ -547,10 +731,177 @@ export default function Scores() {
 
   const renameNoneName = (name) => setNoneMeta((prev) => (prev ? { ...prev, name } : prev));
 
+  /* ── cheatsheet → class ──
+     "Save & name list" also turns the "(No class)" cheatsheet into a real class:
+     it appears in the class dropdown with its subjects (schedule), student names
+     and scores. Creating happens once — the resulting class id is stored on the
+     list, so later saves update that same class instead of duplicating it. */
+  const ensureCheatsheetClass = (final, nm) => {
+    const linked = final.classId && classes.some((c) => c.id === final.classId) ? final.classId : "";
+    if (linked) return linked;
+    const sameName = classes.find((c) => norm(c.name) === norm(nm));
+    if (sameName) return sameName.id;
+    return addClass({
+      name: nm,
+      major: "it",
+      field: "",
+      shift: SHIFTS[0],
+      year: "Year 1",
+      semester: "Semester 1",
+      degree: "Diploma",
+    });
+  };
+
+  const syncCheatsheetToClass = (final, classId) => {
+    const cal = new Date().getFullYear();
+    const existingCls = classes.find((c) => c.id === classId) || null;
+    const nm = (final.name || "").trim() || "Cheatsheet";
+    const major = existingCls?.major || "it";
+    const field = existingCls?.field || "";
+    const shift = existingCls?.shift || SHIFTS[0];
+    const sem = String(existingCls?.semester || "Semester 1").match(/\d+/)?.[0] || "1";
+    const yr = String(existingCls?.year || "Year 1").match(/\d+/)?.[0] || "1";
+    const level = `S${sem}Y${yr}`;
+    const subjects = (final.layout?.columns?.map((c) => c.label) || final.subjects || [])
+      .map((n) => String(n ?? "").trim())
+      .filter(Boolean);
+    const cols = final.layout?.columns || bootstrapColumns(subjects);
+    const groups = final.layout?.groups || null;
+
+    /* schedule — the class shows in the dropdown once it has subjects */
+    setSchedules((prev) => {
+      const next = prev.filter((s) => !(s.classId ? s.classId === classId : s.className === classId));
+      next.push({
+        id: `sch_${classId}_${Date.now().toString(36)}`,
+        className: existingCls?.name || nm,
+        classId,
+        semester: sem,
+        year: yr,
+        major: majorName(major || "it") || "IT",
+        field,
+        studentYear: `${cal}-${cal + 1}`,
+        shift,
+        subjects,
+        teachers: ["Teacher 1", "Teacher 2", "Teacher 3", "Teacher 4", "Teacher 5", "Teacher 6", "Teacher 7"],
+        cells: {},
+      });
+      try {
+        const raw = JSON.parse(localStorage.getItem(SCHED_KEY) || "{}");
+        localStorage.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+
+    /* column layout — keep the cheatsheet's columns + group headers */
+    setLayout((prev) => {
+      const next = { ...prev, version: 1, [classId]: { columns: cols, groups } };
+      try {
+        localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+
+    /* students — one per cheatsheet row, matched by id/name or created */
+    const matchReg = (sidRaw, nameRaw) => {
+      const sid = norm(String(sidRaw ?? ""));
+      if (sid) {
+        const byId = students.find(
+          (s) =>
+            norm(String(s.studentId ?? "")) === sid ||
+            norm(String(s.studentId ?? "")).endsWith("-" + sid) ||
+            (sid.length >= 3 && norm(String(s.studentId ?? "")).includes(sid))
+        );
+        if (byId) return byId;
+      }
+      const nmc = norm(nameRaw);
+      if (!nmc) return null;
+      return (
+        students.find(
+          (s) =>
+            norm(s.khmerName) === nmc ||
+            norm(`${s.firstName} ${s.lastName}`) === nmc ||
+            (nmc.length >= 3 && (norm(s.khmerName).includes(nmc) || norm(`${s.firstName} ${s.lastName}`).includes(nmc)))
+        ) || null
+      );
+    };
+    const toLink = [];
+    const toCreate = [];
+    const rowLinks = [];
+    (final.rows || []).forEach((r) => {
+      const ex = matchReg(r.sidRaw, r.name);
+      if (ex) {
+        if (ex.className !== classId) toLink.push(ex.id);
+        rowLinks.push({ rowKey: r.key, studentId: ex.id });
+        return;
+      }
+      const clean = cleanName(r.name);
+      if (clean) toCreate.push(r);
+    });
+    let maxId = Math.max(0, ...students.map((s) => s.id));
+    const usedSids = new Set(students.map((s) => norm(String(s.studentId ?? ""))));
+    const seq = { v: maxId + 1 };
+    const lockedCls =
+      existingCls || { id: classId, name: nm, major, field, shift, degree: "Diploma", semester: `Semester ${sem}`, year: `Year ${yr}` };
+    const createdStudents = toCreate.map((r) => {
+      const clean = cleanName(r.name);
+      const sp = splitLatin(clean);
+      const base = buildStudent(
+        { sid: r.sidRaw, kh: clean, latin: "", firstName: sp.firstName, lastName: sp.lastName },
+        classes,
+        classId,
+        cal,
+        usedSids,
+        seq,
+        lockedCls
+      );
+      base.id = ++maxId;
+      return base;
+    });
+    createdStudents.forEach((c, i) => rowLinks.push({ rowKey: toCreate[i].key, studentId: c.id }));
+    if (toLink.length) {
+      toLink.forEach((id) => updateStudent(id, { className: classId, level, major, field, shift, status: "Learning" }));
+    }
+    if (createdStudents.length) addStudentsBatch(createdStudents);
+
+    /* scores — copy each cheatsheet row's cells under its student */
+    setScores((prev) => {
+      const next = { ...prev, [classId]: { ...(prev[classId] || {}) } };
+      rowLinks.forEach(({ rowKey, studentId }) => {
+        const src = final.scores?.[rowKey] || {};
+        if (!Object.keys(src).length) return;
+        next[classId][String(studentId)] = { ...(next[classId][String(studentId)] || {}), ...src };
+      });
+      try {
+        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
   const saveNone = () => {
     const nm = (noneMeta?.name || "").trim() || "Cheatsheet";
-    const final = noneMeta ? { ...noneMeta, name: nm } : noneMeta;
+    const subjects = (noneMeta?.layout?.columns?.map((c) => c.label) || noneMeta?.subjects || [])
+      .map((n) => String(n ?? "").trim())
+      .filter(Boolean);
+    let final = noneMeta ? { ...noneMeta, name: nm } : noneMeta;
     const stamp = stampNow();
+
+    let createdClassId = "";
+    if (final && subjects.length && (final.rows || []).length) {
+      const classId = ensureCheatsheetClass(final, nm);
+      if (classId) {
+        createdClassId = classId;
+        syncCheatsheetToClass(final, classId);
+        final = { ...final, classId };
+      }
+    }
+
     if (final) {
       try {
         localStorage.setItem(NONE_META_KEY, JSON.stringify(final));
@@ -561,12 +912,22 @@ export default function Scores() {
         return;
       }
     }
+    setNoneMeta(final ?? null);
     setNoneSavedSig(JSON.stringify(final ?? null));
     setNoneSavedAt(stamp);
     const subjectCount = final?.layout?.columns?.length || final?.subjects?.length || 0;
     const rowCount = final?.rows?.length || 0;
-    logAudit("save_scores_none", `Saved score list "${nm}" (${subjectCount} subjects · ${rowCount} students)`);
-    showToast(`Score list "${nm}" saved at ${stamp}`);
+    if (createdClassId) {
+      logAudit(
+        "save_scores_to_class",
+        `Saved score list "${nm}" as class ${createdClassId} (${subjectCount} subjects · ${rowCount} students with scores)`
+      );
+      showToast(`Class "${nm}" created — ${rowCount} students · ${subjectCount} subjects saved with their scores`);
+      setClassId(createdClassId);
+    } else {
+      logAudit("save_scores_none", `Saved score list "${nm}" (${subjectCount} subjects · ${rowCount} students)`);
+      showToast(`Score list "${nm}" saved at ${stamp}`);
+    }
   };
 
   /* ensure every column belongs to a group (even if the file had none) so the header stays gapless —
@@ -806,6 +1167,39 @@ export default function Scores() {
         actions={
           <>
             <button
+              onClick={() => setEditMode((e) => !e)}
+              className={`btn h-10 shrink-0 px-3.5 text-sm gap-1.5 ${editMode ? "btn-outline" : "btn-primary"}`}
+              title={
+                editMode
+                  ? "Lock the sheet — nothing can be changed until you press Edit again"
+                  : "Unlock the sheet — this is the only way to edit, add or modify scores, subjects and students"
+              }
+            >
+              {editMode ? (
+                <>
+                  <Lock size={15} /> Lock
+                </>
+              ) : (
+                <>
+                  <Pencil size={15} /> Edit
+                </>
+              )}
+            </button>
+            {editMode && (
+              <button
+                onClick={() => setAddStudentOpen(true)}
+                disabled={!cls}
+                className="btn btn-outline h-10 shrink-0 px-3.5 text-sm gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                title={
+                  cls
+                    ? `Add a student to ${cls.name} — they appear in the Students panel too, then type their scores in the sheet`
+                    : "Pick a class first — new students are added to the selected class and the Students panel"
+                }
+              >
+                <UserPlus size={15} /> Add student
+              </button>
+            )}
+            <button
               onClick={() => setImportOpen(true)}
               className="btn btn-outline h-10 shrink-0 px-3.5 text-sm gap-1.5"
               title={
@@ -841,18 +1235,23 @@ export default function Scores() {
               onSave={saveNone}
               dirty={noneDirty}
               savedAt={noneSavedAt}
+              readOnly={!editMode}
             />
           ) : (
             <EmptyState
               icon={ClipboardList}
-              title="No class selected"
+              title="Select a class or import"
               subtitle={
                 scoredClasses.length === 0
-                  ? "Create a class and give it subjects on the Schedule page for a live score sheet — or import an Excel cheatsheet and its columns become the score subjects exactly as written in the file."
-                  : "Subject columns and student names stay hidden until you pick a class — or import an Excel cheatsheet and its columns become the score subjects exactly as written in the file."
+                  ? "Select or import to see the students — pick a class from the dropdown, or import an Excel cheatsheet and its columns become the score subjects exactly as written in the file."
+                  : "Select or import to see the students — pick a class from the dropdown to open its score sheet, or import an Excel cheatsheet."
               }
               action={
-                <button onClick={() => setImportOpen(true)} className="btn btn-primary">
+                <button
+                  onClick={() => setImportOpen(true)}
+                  className="btn btn-primary"
+                  title="Import an Excel cheatsheet — its columns and group headers become the score subjects exactly as written in the file"
+                >
                   <FileSpreadsheet className="h-4 w-4" /> Import Excel
                 </button>
               }
@@ -885,6 +1284,15 @@ export default function Scores() {
             <div>
               <p className="text-base font-bold" style={{ color: "var(--text)" }}>
                 {cls.name} — score sheet
+                {!editMode && (
+                  <span
+                    className="ml-2 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider"
+                    style={{ borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-3)" }}
+                    title="The sheet is locked — press Edit to change scores, subjects or students"
+                  >
+                    <Lock size={10} /> Read-only
+                  </span>
+                )}
               </p>
               <p className="text-xs mt-0.5" style={{ color: "var(--text-2)" }}>
                 {[cls.field, cls.shift].filter(Boolean).join(" · ")} · {cls.year || "Year 1"} · {cls.semester || "Semester 1"} · {columns.length} subject{columns.length === 1 ? "" : "s"} · {roster.length} student{roster.length === 1 ? "" : "s"}
@@ -898,15 +1306,17 @@ export default function Scores() {
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <button
                 onClick={addSubjectColumn}
-                className="btn btn-outline h-9 px-3 text-sm gap-1.5"
-                title="Add a new empty score column (subject) for this class — scores go in here for everyone"
+                disabled={!editMode}
+                className="btn btn-outline h-9 px-3 text-sm gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                title={editMode ? "Add a new empty score column (subject) for this class — scores go in here for everyone" : "Press Edit first to add subjects"}
               >
                 <Plus size={14} /> Add subject
               </button>
               <button
                 onClick={() => setConfirmReset(true)}
-                className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500"
-                title="Clear all scores for this class"
+                disabled={!editMode}
+                className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                title={editMode ? "Clear all scores for this class" : "Press Edit first to reset scores"}
               >
                 <RotateCcw size={14} /> Reset
               </button>
@@ -946,6 +1356,7 @@ export default function Scores() {
               groups={groups}
               frozen={frozen}
               setFrozen={setFrozen}
+              readOnly={!editMode}
               getValue={valueOf}
               setValue={setScore}
               onBlur={onScoreBlur}
@@ -1002,6 +1413,13 @@ export default function Scores() {
         roster={roster}
         noneMode={!cls}
         onImport={applyImport}
+      />
+
+      <AddStudentModal
+        open={addStudentOpen}
+        onClose={() => setAddStudentOpen(false)}
+        onAdd={addStudentToSheet}
+        cls={cls}
       />
     </div>
   );

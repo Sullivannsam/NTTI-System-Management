@@ -235,6 +235,7 @@ function genStudents() {
   const plan = CLASSES.flatMap((classDef) =>
     Array.from({ length: classDef.id === DEMO_CLASS_ID ? 12 : 1 }, () => classDef)
   );
+  const idCounters = {};
 
   plan.forEach((classDef, idx) => {
     const i = idx; // 0-based
@@ -245,9 +246,19 @@ function genStudents() {
     const place = ["Phnom Penh", "Kandal", "Sihanoukville", "Battambang", "Siem Reap", "Kampong Cham"][
       Math.floor(rng() * 6)
     ];
+    /* IT bachelor → 27-IT-…, IT associate → 27-ITD-… (batch = academic year's
+       ending year); every other major/degree keeps the legacy NTTI-… format. */
+    const deg = classDef.degree || "";
+    const itCode =
+      classDef.major === "it" && (deg === "Bachelor" || deg === "Diploma")
+        ? `${String((enrollmentYear + 1) % 100).padStart(2, "0")}-${deg === "Diploma" ? "ITD" : "IT"}`
+        : "";
+    if (itCode) idCounters[itCode] = (idCounters[itCode] || 0) + 1;
     students.push({
       id: i + 1,
-      studentId: `NTTI-${enrollmentYear}-${String(i + 1).padStart(4, "0")}`,
+      studentId: itCode
+        ? `${itCode}-${String(idCounters[itCode]).padStart(6, "0")}`
+        : `NTTI-${enrollmentYear}-${String(i + 1).padStart(4, "0")}`,
       firstName,
       lastName,
       khmerName: `${KHMER_LAST[lastName] || ""} ${KHMER_FIRST[firstName] || ""}`.trim(),
