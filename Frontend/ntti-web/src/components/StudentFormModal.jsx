@@ -360,7 +360,6 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
             </div>
           </div>
 
-<<<<<<< HEAD
           {/* Right: Form fields */}
           <div className="flex-1">
             <div className="space-y-3">
@@ -391,31 +390,6 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
                   )}
                 </div>
               </div>
-=======
-          <div>
-            <label className="label">First name (EN) *</label>
-            <input className="input" value={form.firstName} onChange={set("firstName")} placeholder="e.g. Chab" />
-          </div>
-          <div>
-            <label className="label">Last name (EN) *</label>
-            <input className="input" value={form.lastName} onChange={set("lastName")} placeholder="e.g. Channara" />
-          </div>
-          <div>
-            <label className="label">Gender</label>
-            <select className="input" value={form.gender} onChange={set("gender")}>
-              <option>Male</option>
-              <option>Female</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Date of birth</label>
-            <input type="date" className="input" value={form.dob} onChange={set("dob")} />
-          </div>
-          <div>
-            <label className="label">Date of graduation</label>
-            <input type="date" className="input" value={form.graduationDate} onChange={set("graduationDate")} />
-          </div>
->>>>>>> 95d396a80ae72a6c8937119cb840ba74ea90d8b8
 
               {/* Personal info */}
               <div className="form-section-title">Personal Information</div>
@@ -452,6 +426,15 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
                 <div className="form-group">
                   <label className="form-label">Date of birth</label>
                   <input type="date" className="modern-input" value={form.dob} onChange={set("dob")} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Date of graduation</label>
+                  <input 
+                    type="date" 
+                    className="modern-input" 
+                    value={form.graduationDate} 
+                    onChange={set("graduationDate")} 
+                  />
                 </div>
               </div>
 

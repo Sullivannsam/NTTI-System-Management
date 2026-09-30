@@ -22,10 +22,11 @@ import {
 } from "lucide-react";
 import PageHeader, { ProgressBar, EmptyState } from "../components/Page";
 import { useApp } from "../context/AppContext";
-import { majorName, shiftRange, lastNWeeks } from "../data/seed";
+import { majorName, shiftRange, lastNWeeks, weekKeyOf, todayISO } from "../data/seed";
 import { StudentAvatar } from "../components/Badge";
 import StudentFormModal from "../components/StudentFormModal";
 import StudentAttendanceModal from "../components/StudentAttendanceModal";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { useDropPos } from "../components/Dropdown";
 
 /* ── weekly statuses (Excel tick letters) ────────────────── */
@@ -200,6 +201,24 @@ function doExport(sheets, type) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Numbered step badge for the marking wizard toolbar (1 = Subject, 2 = Week, 3 = Mark with).
+    `n` is passed in by the caller so the numbering shifts when the Subject row is hidden. */
+function stepLabel(n, text) {
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 pr-1">
+      <span
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+        style={{ background: "var(--primary)" }}
+      >
+        {n}
+      </span>
+      <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "#94a3b8" }}>
+        {text}
+      </span>
+    </span>
+  );
 }
 
 function ClassLabel({ cls, count, className, style, children }) {
@@ -1052,7 +1071,7 @@ function ClassGrid({
 }
 
 /* ── read-only view: every student × every subject, who missed what ── */
-function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay }) {
+function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay, onDeleteClass }) {
   const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
   const dayObj = scopeDay ? days.find((d) => d.date === scopeDay) || null : null;
   const allWeek = !dayObj;
@@ -1309,6 +1328,7 @@ export default function Attendance() {
   const [dlAll, setDlAll] = useState(false);
   const [dlChecked, setDlChecked] = useState({});
   const [dayStudent, setDayStudent] = useState(null); // student whose day log is open
+  const [delClassTarget, setDelClassTarget] = useState(null); // class awaiting delete confirmation
   const [focusKey, setFocusKey] = useState(() => weekKeyOf(todayISO())); // selected week (shared by all sheets)
   const [draft, setDraft] = useState({}); // staged cells: { studentId: { subjectKey: { dateISO: status } } } — saved only on Save
   const [subjectOf, setSubjectOf] = useState({}); // { classId: subjectKey } — which subject's session is being marked right now
@@ -1662,6 +1682,19 @@ export default function Attendance() {
     showToast(`Week removed`);
   };
 
+  /* Deleting a class is destructive, so it goes through ConfirmDialog.
+     deleteClass() already writes the audit entry and detaches schedules. */
+  const deleteClassNow = (cls) => setDelClassTarget(cls);
+
+  const confirmDeleteClass = () => {
+    if (!delClassTarget) return;
+    const { id, name } = delClassTarget;
+    deleteClass(id);
+    setSel((prev) => prev.filter((cid) => cid !== id));
+    setDelClassTarget(null);
+    showToast(`Deleted class "${name}"`);
+  };
+
   const noSelected = dlSel && !dlAll && !classes.some((c) => dlChecked[c.id]);
   const dlSheets = () => {
     const list = dlAll ? classes : classes.filter((c) => dlChecked[c.id]);
@@ -1995,6 +2028,23 @@ export default function Attendance() {
         records={dayStudent ? attendance.filter((a) => a.studentId === dayStudent.id) : []}
         weeks={dayStudent ? weeksOf[dayStudent.className] : undefined}
         onClose={() => setDayStudent(null)}
+      />
+
+      <ConfirmDialog
+        open={!!delClassTarget}
+        onClose={() => setDelClassTarget(null)}
+        onConfirm={confirmDeleteClass}
+        title="Delete class?"
+        confirmLabel="Delete"
+        message={
+          delClassTarget && (
+            <>
+              <b style={{ color: "var(--text)" }}>{delClassTarget.name}</b> will be removed. Its
+              students are kept but become unassigned, and the class&apos;s attendance sheets are
+              discarded. This cannot be undone.
+            </>
+          )
+        }
       />
 
       {dlSel &&
