@@ -37,13 +37,6 @@ const gradeOf = (avg) => {
   return { g: "F", tone: "bg-red-500/15 text-red-600 border-red-500/30" };
 };
 
-/* medal colors for the top three ranks */
-const RANK_GRAD = {
-  1: "linear-gradient(135deg,#f59e0b,#fbbf24)",
-  2: "linear-gradient(135deg,#94a3b8,#cbd5e1)",
-  3: "linear-gradient(135deg,#b45309,#f59e0b)",
-};
-
 const initialsOf = (s) =>
   `${String(s.firstName || "?")[0] || ""}${String(s.lastName || "")[0] || ""}`.toUpperCase();
 
@@ -240,6 +233,7 @@ export default function Billboard() {
                   <th className="sticky left-16 z-10 min-w-[190px] px-3 py-3.5" style={{ background: "var(--surface)" }}>
                     Student
                   </th>
+                  <th className="px-3 py-3.5 text-center whitespace-nowrap" style={{ minWidth: 120 }}>ID</th>
                   {subjects.map((sub, i) => (
                     <th
                       key={i}
@@ -258,14 +252,11 @@ export default function Billboard() {
               <tbody>
                 {rows.map((row) => {
                   const gr = gradeOf(row.avg);
-                  const grad = RANK_GRAD[row.rank];
+                  const latinName = [row.student.firstName, row.student.lastName].filter(Boolean).join(" ");
                   return (
                     <tr key={row.student.id} className="border-t transition-colors hover:bg-[var(--surface-2)]" style={{ borderColor: "var(--border)" }}>
                       <td className="sticky left-0 z-10 px-5 py-2.5 text-center" style={{ background: "var(--surface)" }}>
-                        <span
-                          className={clsx("inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-extrabold", grad ? "text-white" : "")}
-                          style={grad ? { background: grad } : { background: "var(--surface-2)", color: "var(--text-2)" }}
-                        >
+                        <span className="text-[13px] font-bold tabular-nums" style={{ color: "var(--text)" }}>
                           {row.rank}
                         </span>
                       </td>
@@ -276,13 +267,22 @@ export default function Billboard() {
                           </span>
                           <span className="min-w-0">
                             <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>
-                              {row.student.khmerName || `${row.student.firstName} ${row.student.lastName}`}
+                              {row.student.khmerName || latinName}
                             </span>
-                            <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
-                              {row.student.khmerName ? `${row.student.firstName} ${row.student.lastName} · ` : ""}{row.student.studentId}
-                            </span>
+                            {latinName && row.student.khmerName && (
+                              <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
+                                {latinName}
+                              </span>
+                            )}
                           </span>
                         </div>
+                      </td>
+                      <td
+                        className="px-3 py-2.5 text-center text-[12.5px] font-semibold tabular-nums whitespace-nowrap"
+                        style={{ minWidth: 120, color: row.student.studentId ? "var(--text-2)" : "var(--text-3)" }}
+                        title={row.student.studentId || undefined}
+                      >
+                        {row.student.studentId || "–"}
                       </td>
                       {subjects.map((sub, si) => {
                         const v = rawOf(row.student.id, sub);
