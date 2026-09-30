@@ -5,6 +5,8 @@ import {
   Save,
   RotateCcw,
   AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
   FileSpreadsheet,
   Link2,
 } from "lucide-react";
@@ -115,7 +117,32 @@ function loadNoneMeta() {
 }
 
 /* "(No class)" cheatsheet card */
-function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, onRenameGroup, onMerge, onSplit, onClearGroups, onRenameName, onSave }) {
+/** Always-visible save state, so the admin can confirm the sheet is written
+    without waiting for a toast. Green = written, amber = edits not yet saved. */
+function SaveBadge({ dirty, savedAt }) {
+  if (dirty) {
+    return (
+      <span
+        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold"
+        style={{ background: "var(--warning-soft)", color: "var(--warning)" }}
+        title="You have edits that are not written yet — press the Save button"
+      >
+        <AlertCircle size={13} /> Unsaved changes
+      </span>
+    );
+  }
+  return (
+    <span
+      className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold"
+      style={{ background: "var(--success-soft)", color: "var(--success)" }}
+      title="Everything on this sheet is written to this browser"
+    >
+      <CheckCircle2 size={13} /> {savedAt ? `Scores saved ${savedAt}` : "Scores are saved"}
+    </span>
+  );
+}
+
+function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, onRenameGroup, onMerge, onSplit, onClearGroups, onRenameName, onSave, dirty, savedAt }) {
   const { rows = [], scores = {} } = meta || {};
   const layout = meta?.layout || null;
   const columns = layout ? layout.columns : bootstrapColumns(meta?.subjects || []);
@@ -147,6 +174,7 @@ function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, 
           >
             <Save size={14} /> Save & name list
           </button>
+          <SaveBadge dirty={dirty} savedAt={savedAt} />
           <button
             onClick={onClear}
             className="btn btn-outline h-9 px-3 text-sm gap-1.5 !text-red-500"
@@ -194,6 +222,31 @@ export default function Scores() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [frozen, setFrozen] = useState(false);
+
+  /* ── save state ──
+     Scores are written continuously by the effects above, so "saved" is tracked
+     by comparing the current data against the signature captured at the last
+     explicit save. Switching class re-baselines, since what is already in
+     localStorage counts as saved. */
+  const [savedSig, setSavedSig] = useState(null);
+  const [savedAt, setSavedAt] = useState(null);
+  const [noneSavedSig, setNoneSavedSig] = useState(null);
+  const [noneSavedAt, setNoneSavedAt] = useState(null);
+
+  const scoresSig = useMemo(() => JSON.stringify(scores[classId] || {}), [scores, classId]);
+  const noneSig = useMemo(() => JSON.stringify(noneMeta ?? null), [noneMeta]);
+
+  const scoresDirty = savedSig !== null && savedSig !== scoresSig;
+  const noneDirty = noneSavedSig !== null && noneSavedSig !== noneSig;
+
+  useEffect(() => {
+    setSavedSig(JSON.stringify(scores[classId] || {}));
+    setSavedAt(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId]);
+
+  const stampNow = () =>
+    new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   // re-read latest schedules (subjects follow the Schedule page after Save)
   useEffect(() => {
@@ -321,8 +374,25 @@ export default function Scores() {
   const filledCount = roster.filter((s) => subjectValues(s.id).some((n) => n != null)).length;
 
   const save = () => {
-    logAudit("save_scores", `Saved scores for ${cls?.name || "class"} (${roster.length} students · ${columns.length} subjects)`);
-    showToast("Scores saved");
+    if (!cls) return;
+    // Explicit write, verified by reading the value back — so the badge never
+    // claims "saved" when the browser actually refused the write.
+    const stamp = stampNow();
+    try {
+      localStorage.setItem(SCORES_KEY, JSON.stringify(scores));
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+      const back = JSON.parse(localStorage.getItem(SCORES_KEY) || "null");
+      if (!back || JSON.stringify(back[classId] || {}) !== JSON.stringify(scores[classId] || {})) {
+        throw new Error("read-back mismatch");
+      }
+    } catch {
+      showToast("Could not save — this browser refused to store the data", "error");
+      return;
+    }
+    setSavedSig(scoresSig);
+    setSavedAt(stamp);
+    logAudit("save_scores", `Saved scores for ${cls.name} (${roster.length} students · ${columns.length} subjects)`);
+    showToast(`Scores saved at ${stamp}`);
   };
 
   const resetClass = () => {
@@ -470,6 +540,8 @@ export default function Scores() {
 
   const clearNone = () => {
     setNoneMeta(null);
+    setNoneSavedSig(null);
+    setNoneSavedAt(null);
     showToast("Cheatsheet cleared", "info");
   };
 
@@ -478,17 +550,23 @@ export default function Scores() {
   const saveNone = () => {
     const nm = (noneMeta?.name || "").trim() || "Cheatsheet";
     const final = noneMeta ? { ...noneMeta, name: nm } : noneMeta;
+    const stamp = stampNow();
     if (final) {
       try {
         localStorage.setItem(NONE_META_KEY, JSON.stringify(final));
+        const back = JSON.parse(localStorage.getItem(NONE_META_KEY) || "null");
+        if (!back || (back.name || "") !== nm) throw new Error("read-back mismatch");
       } catch {
-        /* ignore */
+        showToast("Could not save — this browser refused to store the data", "error");
+        return;
       }
     }
+    setNoneSavedSig(JSON.stringify(final ?? null));
+    setNoneSavedAt(stamp);
     const subjectCount = final?.layout?.columns?.length || final?.subjects?.length || 0;
     const rowCount = final?.rows?.length || 0;
     logAudit("save_scores_none", `Saved score list "${nm}" (${subjectCount} subjects · ${rowCount} students)`);
-    showToast(`Score list "${nm}" saved`);
+    showToast(`Score list "${nm}" saved at ${stamp}`);
   };
 
   /* ensure every column belongs to a group (even if the file had none) so the header stays gapless —
@@ -565,6 +643,9 @@ export default function Scores() {
       } catch {
         /* ignore */
       }
+      // the import already wrote to storage, so the sheet starts out saved
+      setNoneSavedSig(JSON.stringify(meta));
+      setNoneSavedAt(stampNow());
       showToast(
         `Cheatsheet imported & saved — ${finalLayout.columns.length} subject${finalLayout.columns.length === 1 ? "" : "s"} · ${keep.length} student${keep.length === 1 ? "" : "s"} (columns + group headers match the file)`
       );
@@ -758,6 +839,8 @@ export default function Scores() {
               onClearGroups={onNoneClearGroups}
               onRenameName={renameNoneName}
               onSave={saveNone}
+              dirty={noneDirty}
+              savedAt={noneSavedAt}
             />
           ) : (
             <EmptyState
@@ -830,6 +913,7 @@ export default function Scores() {
               <button onClick={save} className="btn btn-primary h-9 px-4 text-sm gap-1.5" title="Save the score sheet (also auto-saves as you type)">
                 <Save size={14} /> Save scores
               </button>
+              <SaveBadge dirty={scoresDirty} savedAt={savedAt} />
             </div>
           </div>
 
