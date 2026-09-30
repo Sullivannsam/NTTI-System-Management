@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
 import { useApp } from "../context/AppContext";
-import { MAJORS, classesOfMajor, SHIFTS, FIELDS_OF_STUDY, latinToKhmer, levelsForMajor } from "../data/seed";
+import { MAJORS, classesOfMajor, SHIFTS, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
 import Avatar from "./Avatar";
 
 const makeForm = (classes, overrides = {}) => {
@@ -148,8 +148,10 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
     const payload = {
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
-      khmerName:
-        form.khmerName.trim() || latinToKhmer(`${form.lastName.trim()} ${form.firstName.trim()}`),
+      // Left blank on purpose: a guessed transliteration puts Khmer text into a
+      // field that claims to be English, and it lands in the wrong box on reload.
+      // A Khmer-only student simply has no English name.
+      khmerName: form.khmerName.trim(),
       photo: form.photo || "",
       gender: form.gender,
       dob: form.dob,
