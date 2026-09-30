@@ -261,7 +261,11 @@ export default function Billboard() {
                         </span>
                       </td>
                       <td className="sticky left-16 z-10 px-3 py-2.5" style={{ background: "var(--surface)" }}>
-                        <div className="flex items-center gap-2.5">
+                        <Link
+                          to={`/students/${row.student.id}`}
+                          className="flex items-center gap-2.5 rounded-lg transition-opacity hover:opacity-75"
+                          title="Open student profile"
+                        >
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-extrabold" style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
                             {initialsOf(row.student)}
                           </span>
@@ -275,7 +279,7 @@ export default function Billboard() {
                               </span>
                             )}
                           </span>
-                        </div>
+                        </Link>
                       </td>
                       <td
                         className="px-3 py-2.5 text-center text-[12.5px] font-semibold tabular-nums whitespace-nowrap"
