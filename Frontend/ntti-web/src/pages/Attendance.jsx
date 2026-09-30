@@ -30,33 +30,30 @@ import { useDropPos } from "../components/Dropdown";
 
 /* ── weekly statuses (Excel tick letters) ────────────────── */
 const WEEK_STATUS = {
-  present: { label: "Present", short: "P", color: "var(--success)", soft: "var(--success-soft)" },
-  late: { label: "Late", short: "L", color: "var(--warning)", soft: "var(--warning-soft)" },
-  absent: { label: "Absent", short: "A", color: "var(--danger)", soft: "var(--danger-soft)" },
-  leave: { label: "Permission", short: "PE", color: "var(--info)", soft: "var(--info-soft)" },
+  present: { label: "Present", short: "P", color: "#10b981", soft: "#d1fae5" },
+  late: { label: "Late", short: "L", color: "#f59e0b", soft: "#fef3c7" },
+  absent: { label: "Absent", short: "A", color: "#ef4444", soft: "#fee2e2" },
+  leave: { label: "Permission", short: "PE", color: "#3b82f6", soft: "#dbeafe" },
 };
 
 /* ── the marking toolbar: pick a tool, then click cells ──
    Order matters: this is also the keyboard-shortcut order (1..4, then 0). */
 const MARK_TOOLS = [
-  { value: "present", label: "Present", short: "P", hint: "1", color: "var(--success)", soft: "var(--success-soft)" },
-  { value: "late", label: "Late", short: "L", hint: "2", color: "var(--warning)", soft: "var(--warning-soft)" },
-  { value: "absent", label: "Absent", short: "A", hint: "3", color: "var(--danger)", soft: "var(--danger-soft)" },
-  { value: "leave", label: "Permission", short: "PE", hint: "4", color: "var(--info)", soft: "var(--info-soft)" },
-  { value: "", label: "Erase", short: "–", hint: "0", color: "var(--text-3)", soft: "var(--surface-2)" },
+  { value: "present", label: "Present", short: "P", hint: "1", color: "#10b981", soft: "#d1fae5" },
+  { value: "late", label: "Late", short: "L", hint: "2", color: "#f59e0b", soft: "#fef3c7" },
+  { value: "absent", label: "Absent", short: "A", hint: "3", color: "#ef4444", soft: "#fee2e2" },
+  { value: "leave", label: "Permission", short: "PE", hint: "4", color: "#3b82f6", soft: "#dbeafe" },
+  { value: "", label: "Erase", short: "–", hint: "0", color: "#64748b", soft: "#f1f5f9" },
 ];
 
 const toolOf = (v) => MARK_TOOLS.find((t) => t.value === v) || MARK_TOOLS[0];
 
-const rateTone = (r) => (r >= 85 ? "var(--success)" : r >= 70 ? "var(--warning)" : "var(--danger)");
+const rateTone = (r) => (r >= 85 ? "#10b981" : r >= 70 ? "#f59e0b" : "#ef4444");
 
 const LS_EXTRA_WEEKS = "ntti.weekly.extra.v1";
 const LS_WEEKS = "ntti.weekly.weeks.v1";
-const LS_SCHED = "ntti.schedule.v2"; // mirrors Schedule.js's storage key exactly
+const LS_SCHED = "ntti.schedule.v2";
 
-/* ── read the timetable (Schedule page) so Attendance knows how many
-   subjects meet on a given weekday, and can open one attendance session
-   per subject instead of one per day ─────────────────────────────── */
 function readScheduleState() {
   try {
     const raw = localStorage.getItem(LS_SCHED);
@@ -79,12 +76,6 @@ function scheduleForClassId(schedules, cls) {
 
 const schedCellKey = (c, r) => `${c}|${r}`;
 
-/**
- * Every subject taught to a class, tagged with the weekday + time it meets
- * (read straight from the Schedule page's timetable). A class that hasn't
- * set up a timetable yet — or has no subjects — falls back to a single
- * "General" subject, so attendance behaves exactly as before for it.
- */
 function subjectsForClass(schedules, cls) {
   const sched = scheduleForClassId(schedules, cls);
   if (!sched || !Array.isArray(sched.subjects) || !sched.subjects.length) {
@@ -102,8 +93,6 @@ function subjectsForClass(schedules, cls) {
         break;
       }
     }
-    // Use the subject name itself as the key so records saved before a
-    // timetable existed ("general") keep working alongside real subjects.
     return { key: name || `subject-${c}`, name: name || `Subject ${c + 1}`, day, time, teacher };
   });
   return out.length ? out : [{ key: "general", name: "General", day: "", time: "", teacher: "" }];
@@ -130,7 +119,6 @@ function weekFromKey(key) {
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-/** The seven day cells (Monday–Sunday) for the week that starts at startISO. */
 function weekDays(startISO) {
   const start = new Date(startISO + "T00:00:00");
   return DAY_NAMES.map((name, i) => {
@@ -143,7 +131,6 @@ function weekDays(startISO) {
   });
 }
 
-/* ── weekly attendance HTML export (mirrors Schedule export) ─ */
 const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 function statusLetter(st) {
@@ -215,7 +202,6 @@ function doExport(sheets, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/* ── clickable class label → info popover ──────────────── */
 function ClassLabel({ cls, count, className, style, children }) {
   const ref = useRef(null);
   const [open, setOpen] = useState(false);
@@ -252,7 +238,7 @@ function ClassLabel({ cls, count, className, style, children }) {
         <ChevronRight
           size={11}
           className={`shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`}
-          style={{ color: "var(--text-3)" }}
+          style={{ color: "#94a3b8" }}
         />
       </span>
       {open &&
@@ -262,20 +248,34 @@ function ClassLabel({ cls, count, className, style, children }) {
             <div className="fixed inset-0 z-40" onMouseDown={() => setOpen(false)} />
             <div
               ref={menuRef}
-              className={`fixed z-50 card p-3 shadow-lg ${pos.up ? "animate-fade-down" : "animate-fade-up"}`}
-              style={{ left: pos.left, width: pos.width, maxHeight: pos.maxHeight, top: pos.top, bottom: pos.bottom }}
+              className={`fixed z-50 rounded-xl p-3 shadow-lg border ${pos.up ? "animate-fade-down" : "animate-fade-up"}`}
+              style={{
+                left: pos.left,
+                width: pos.width,
+                maxHeight: pos.maxHeight,
+                top: pos.top,
+                bottom: pos.bottom,
+                background: "#ffffff",
+                borderColor: "#e2e8f0",
+              }}
             >
               <div className="flex items-center justify-between gap-3 mb-2">
-                <span className="text-sm font-bold truncate" style={{ color: "var(--text)" }}>{cls.name}</span>
-                <span className="shrink-0 text-[10px] font-bold rounded-md px-1.5 py-0.5" style={{ background: "var(--surface-3)", color: "var(--text-2)" }}>
+                <span className="text-sm font-bold truncate" style={{ color: "#1e293b" }}>
+                  {cls.name}
+                </span>
+                <span className="shrink-0 text-[10px] font-bold rounded px-2 py-1" style={{ background: "#f1f5f9", color: "#64748b" }}>
                   {count} students
                 </span>
               </div>
               <div className="grid grid-cols-[62px_1fr] gap-x-3 gap-y-1.5">
                 {rows.map(([k, v]) => (
                   <Fragment key={k}>
-                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>{k}</span>
-                    <span className="text-xs font-medium break-words" style={{ color: "var(--text)" }}>{v}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#94a3b8" }}>
+                      {k}
+                    </span>
+                    <span className="text-xs font-medium break-words" style={{ color: "#334155" }}>
+                      {v}
+                    </span>
                   </Fragment>
                 ))}
               </div>
@@ -287,7 +287,6 @@ function ClassLabel({ cls, count, className, style, children }) {
   );
 }
 
-/* ── checkable multi-select (portaled, flip-aware) ─────── */
 function ClassMultiSelect({ options, value = [], onChange, allCount }) {
   const ref = useRef(null);
   const menuRef = useRef(null);
@@ -361,7 +360,7 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
         ? `All classes (${allCount})`
         : single
           ? single.label
-          : `${value.length} classes selected`;
+          : `${value.length} selected`;
 
   return (
     <div className="relative w-full">
@@ -369,23 +368,23 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
         ref={ref}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex h-11 w-full items-center justify-between gap-2 border rounded-lg px-3 text-sm transition-colors"
+        className="flex h-10 w-full items-center justify-between gap-2 border rounded-lg px-3 text-sm transition-all duration-200"
         style={{
-          background: "var(--surface)",
-          borderColor: open ? "var(--primary)" : "var(--border)",
-          color: "var(--text)",
-          boxShadow: open ? "0 0 0 3px var(--ring)" : "none",
+          background: "#ffffff",
+          borderColor: open ? "#10b981" : "#e2e8f0",
+          color: "#1e293b",
+          boxShadow: open ? "0 0 0 2px rgba(16, 185, 129, 0.1)" : "none",
         }}
       >
         <span className="flex items-center gap-2 min-w-0">
           <ChevronDown
             size={15}
             className={`shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-            style={{ color: "var(--text-3)" }}
+            style={{ color: "#94a3b8" }}
           />
-          <span className="truncate font-medium">{label}</span>
+          <span className="truncate font-medium text-sm">{label}</span>
         </span>
-        <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums" style={{ background: "var(--surface-3)", color: "var(--text-2)" }}>
+        <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tabular-nums" style={{ background: "#f1f5f9", color: "#64748b" }}>
           {value.length}/{allCount}
         </span>
       </button>
@@ -397,38 +396,38 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
             <div className="fixed inset-0 z-40" onMouseDown={close} />
             <div
               ref={menuRef}
-              className={`fixed z-50 card p-1.5 overflow-y-auto thin-scroll shadow-lg ${
-                pos.up ? "animate-fade-down" : "animate-fade-up"
-              }`}
+              className={`fixed z-50 rounded-xl p-1.5 overflow-y-auto thin-scroll shadow-lg border ${pos.up ? "animate-fade-down" : "animate-fade-up"}`}
               style={{
                 left: pos.left,
                 minWidth: pos.minWidth,
                 maxHeight: pos.maxHeight,
                 ...(pos.bottom != null ? { bottom: pos.bottom } : { top: pos.top }),
+                background: "#ffffff",
+                borderColor: "#e2e8f0",
               }}
             >
               <button
                 type="button"
                 onClick={toggleAll}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold transition-colors hover:bg-[var(--surface-2)]"
-                style={{ color: "var(--primary-strong)" }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold transition-colors hover:bg-emerald-50"
+                style={{ color: "#047857" }}
               >
                 <span
                   className="flex h-4 w-4 items-center justify-center rounded border shrink-0"
                   style={{
-                    borderColor: allSelected ? "var(--primary)" : "var(--border)",
-                    background: allSelected ? "var(--primary)" : "transparent",
+                    borderColor: allSelected ? "#10b981" : "#cbd5e1",
+                    background: allSelected ? "#10b981" : "transparent",
                   }}
                 >
                   {allSelected ? <Check size={11} style={{ color: "#fff" }} /> : null}
                 </span>
                 <Users size={14} />
                 All classes
-                <span className="ml-auto text-[10px] font-bold tabular-nums" style={{ color: "var(--text-3)" }}>
+                <span className="ml-auto text-[10px] font-bold tabular-nums" style={{ color: "#94a3b8" }}>
                   {allCount}
                 </span>
               </button>
-              <div className="my-1 h-px" style={{ background: "var(--border)" }} />
+              <div className="my-1 h-px" style={{ background: "#e2e8f0" }} />
               {options.map((o) => {
                 const on = value.includes(o.value);
                 return (
@@ -436,14 +435,14 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
                     key={o.value}
                     type="button"
                     onClick={() => toggle(o.value)}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-2)]"
-                    style={{ color: "var(--text)" }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-slate-50"
+                    style={{ color: "#1e293b" }}
                   >
                     <span
                       className="flex h-4 w-4 items-center justify-center rounded border shrink-0"
                       style={{
-                        borderColor: on ? "var(--primary)" : "var(--border)",
-                        background: on ? "var(--primary)" : "transparent",
+                        borderColor: on ? "#10b981" : "#cbd5e1",
+                        background: on ? "#10b981" : "transparent",
                       }}
                     >
                       {on ? <Check size={11} style={{ color: "#fff" }} /> : null}
@@ -451,12 +450,12 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
                     <span className="truncate">
                       {o.label}
                       {o.detail ? (
-                        <span className="ml-1.5 text-[10px]" style={{ color: "var(--text-3)" }}>
+                        <span className="ml-1.5 text-[10px]" style={{ color: "#94a3b8" }}>
                           {o.detail}
                         </span>
                       ) : null}
                     </span>
-                    <span className="ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums" style={{ background: "var(--surface-3)", color: "var(--text-2)" }}>
+                    <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold tabular-nums" style={{ background: "#f1f5f9", color: "#64748b" }}>
                       {o.count}
                     </span>
                   </button>
@@ -470,13 +469,6 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
   );
 }
 
-/* ── one class = one Excel-style sheet ─────────────────── */
-/* ── the marking sheet ───────────────────────────────────
-   Marking is a two-step "pick a pen, then click" model instead of a
-   dropdown per cell: choose a tool in the toolbar once, then every cell
-   is a single click (or a drag across several). Clicking a cell that
-   already holds the active tool's status clears it, so one control both
-   sets and unsets. */
 function ClassGrid({
   cls,
   students,
@@ -518,7 +510,6 @@ function ClassGrid({
     ? Math.round(students.reduce((acc, s) => acc + rateFor(s), 0) / students.length)
     : 0;
 
-  /* how the week currently stands, for the summary chips */
   const tally = useMemo(() => {
     const out = { present: 0, late: 0, absent: 0, leave: 0, blank: 0 };
     students.forEach((s) => {
@@ -529,7 +520,7 @@ function ClassGrid({
       });
     });
     return out;
-  }, [students, days, dailyOf, subject]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [students, days, dailyOf, subject]);
 
   const countsFor = (date) => {
     const out = { present: 0, late: 0, absent: 0, leave: 0, blank: 0 };
@@ -541,8 +532,6 @@ function ClassGrid({
     return out;
   };
 
-  /* drag-to-paint: mousedown starts a stroke, mouseenter continues it.
-     A plain click (no drag) toggles; dragging always paints the tool. */
   const painting = useRef(false);
   useEffect(() => {
     const stop = () => {
@@ -560,7 +549,6 @@ function ClassGrid({
 
   const startCell = (s, d) => {
     painting.current = true;
-    // click on a cell that already has this status → clear it
     onPick(s, d.date, statusOf(s, d.date) === tool ? "" : tool);
   };
 
@@ -569,8 +557,6 @@ function ClassGrid({
     if (statusOf(s, d.date) !== tool) onPick(s, d.date, tool);
   };
 
-  /* bulk fills — all built on the active tool so there is only ever one
-     thing to understand: whatever the toolbar says is what gets written */
   const fillColumn = (d) =>
     onPickMany(students.map((s) => ({ student: s, date: d.date, status: tool })));
 
@@ -586,107 +572,85 @@ function ClassGrid({
     if (cells.length) onPickMany(cells);
   };
 
-  const stepLabel = (n, text) => (
-    <span className="mr-1 flex shrink-0 items-center gap-1.5">
-      <span
-        className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-extrabold"
-        style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}
-      >
-        {n}
-      </span>
-      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-        {text}
-      </span>
-    </span>
-  );
-
   return (
     <div
       className="overflow-hidden rounded-2xl border shadow-sm"
-      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+      style={{ borderColor: "#e2e8f0", background: "#ffffff" }}
     >
-      {/* ── sheet header: who, when, and how the week stands ── */}
-      <div className="px-5 py-4" style={{ background: "var(--surface-1)" }}>
+      <div className="px-5 py-4" style={{ background: "#f8fafc" }}>
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: "var(--primary)" }} />
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: "#10b981" }} />
               <ClassLabel
                 cls={cls}
                 count={students.length}
                 className="group flex min-w-0 cursor-pointer items-center gap-1.5"
               >
                 <h2
-                  className="truncate text-lg font-bold transition-colors group-hover:text-[var(--primary-strong)]"
-                  style={{ color: "var(--text)" }}
+                  className="truncate text-lg font-bold transition-colors group-hover:text-emerald-600"
+                  style={{ color: "#1e293b" }}
                 >
                   {cls.name}
                 </h2>
               </ClassLabel>
             </div>
-            <p className="mt-1 text-[11px]" style={{ color: "var(--text-3)" }}>
-              {students.length} students · {week ? `Week ${weekNo} · ${week.range}` : "no week selected"} · {avgRate}%
-              average
+            <p className="mt-1 text-[11px]" style={{ color: "#94a3b8" }}>
+              {students.length} students · {week ? `Week ${weekNo} · ${week.range}` : "no week"} · {avgRate}% average
               {hasRealSubjects ? (
                 <>
                   {" "}
-                  · <b style={{ color: "var(--text-2)" }}>{subjectLabelOf(activeSubj)}</b>
+                  · <b style={{ color: "#64748b" }}>{subjectLabelOf(activeSubj)}</b>
                 </>
               ) : null}
-              {" · "}
-              <span style={{ color: "var(--text-3)" }}>click the class name for full details</span>
             </p>
 
-            {/* at-a-glance tally for the week on screen */}
             {week && students.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-1">
                 {MARK_TOOLS.filter((t) => t.value).map((t) => (
                   <span
                     key={t.value}
-                    className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-semibold"
+                    className="flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-semibold"
                     style={{ background: t.soft, color: t.color }}
-                    title={`${tally[t.value]} ${t.label.toLowerCase()} marks this week`}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.color }} />
+                    <span className="h-1 w-1 rounded-full" style={{ background: t.color }} />
                     {t.label} <b className="tabular-nums">{tally[t.value]}</b>
                   </span>
                 ))}
                 <span
-                  className="flex items-center gap-1.5 rounded-lg border border-dashed px-2 py-1 text-[11px] font-semibold"
-                  style={{ borderColor: "var(--border)", color: "var(--text-3)" }}
-                  title="Cells still waiting to be marked for this subject"
+                  className="flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold"
+                  style={{ borderColor: "#cbd5e1", color: "#94a3b8" }}
                 >
-                  Not marked <b className="tabular-nums">{tally.blank}</b>
+                  Empty <b className="tabular-nums">{tally.blank}</b>
                 </span>
               </div>
             )}
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-2">
             {dirtySubjects.length > 0 && (
               <span
-                className="flex h-9 items-center rounded-lg px-2.5 text-[11px] font-bold"
-                style={{ background: "var(--warning-soft)", color: "var(--text-2)" }}
-                title={`Unsaved: ${dirtySubjects.map((s) => s.name).join(", ")}`}
+                className="flex items-center rounded-lg px-2.5 py-1.5 text-[10px] font-bold"
+                style={{ background: "#fef3c7", color: "#92400e" }}
               >
-                {dirtySubjects.length} subject{dirtySubjects.length === 1 ? "" : "s"} unsaved
+                {dirtySubjects.length} unsaved
               </span>
             )}
             <button
               onClick={onReset}
-              className="flex h-9 items-center gap-1.5 rounded-lg border bg-[var(--surface-2)] px-3 text-xs font-medium transition-colors hover:bg-[var(--danger-soft)]"
-              title="Clear every subject's marks for this week — nothing is written until you Save"
-              style={{ borderColor: "var(--border)", color: "var(--danger)" }}
+              className="flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-all hover:bg-red-50"
+              style={{ borderColor: "#e2e8f0", color: "#dc2626" }}
+              title="Clear this week's marks"
             >
-              <RotateCcw size={14} /> Reset week
+              <RotateCcw size={13} /> Reset
             </button>
             <button
               onClick={onSave}
               disabled={dirtySubjects.length === 0}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[var(--primary-strong)] disabled:cursor-not-allowed disabled:opacity-50"
-              title="Save the marked attendance for every subject in this class — one save for the whole sheet"
+              className="flex items-center gap-1 rounded-lg px-3.5 py-2 text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: "#10b981" }}
             >
-              <CheckCircle2 size={14} /> Save sheet
+              <CheckCircle2 size={13} /> Save
             </button>
           </div>
         </div>
@@ -694,28 +658,24 @@ function ClassGrid({
 
       {students.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-5 py-6 text-center">
-          <span className="text-sm font-medium" style={{ color: "var(--text-2)" }}>
-            No students in {cls.name} yet
-          </span>
-          <span className="text-xs" style={{ color: "var(--text-3)" }}>
-            Add students from the Students page.
+          <span className="text-sm font-medium" style={{ color: "#64748b" }}>
+            No students yet
           </span>
         </div>
       ) : !week ? (
-        <div className="px-5 py-6 text-center text-sm" style={{ color: "var(--text-3)" }}>
-          No week in this sheet yet — add one to start marking attendance.
+        <div className="px-5 py-6 text-center text-sm" style={{ color: "#94a3b8" }}>
+          No week selected
         </div>
       ) : (
         <>
-          {/* Step 1 — which session. One class can meet several times a day
-              (Monday: Math, English, Khmer), so each subject keeps its own
-              attendance. Hidden when the class has no timetable yet. */}
           {hasRealSubjects && (
             <div
               className="flex items-center gap-1.5 overflow-x-auto thin-scroll border-b px-5 py-2"
-              style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+              style={{ borderColor: "#e2e8f0", background: "#fafbfc" }}
             >
-              {stepLabel(1, "Subject")}
+              <span className="text-[9px] font-bold uppercase tracking-wider shrink-0" style={{ color: "#94a3b8" }}>
+                Subject
+              </span>
               {subjects.map((sub) => {
                 const active = sub.key === subject;
                 return (
@@ -723,23 +683,17 @@ function ClassGrid({
                     key={sub.key}
                     type="button"
                     onClick={() => onSelectSubject(sub.key)}
-                    className="flex shrink-0 flex-col items-start rounded-lg px-2.5 py-1 text-left transition-colors"
+                    className="flex shrink-0 flex-col items-start rounded-lg px-2 py-1 text-left transition-colors"
                     style={
                       active
-                        ? { background: "var(--primary)", color: "#fff" }
-                        : { background: "var(--surface-2)", color: "var(--text-2)" }
-                    }
-                    title={
-                      sub.day
-                        ? `Meets ${sub.day}${sub.time ? ` · ${sub.time}` : ""}${sub.teacher ? ` · ${sub.teacher}` : ""}`
-                        : sub.name
+                        ? { background: "#10b981", color: "#fff" }
+                        : { background: "#f1f5f9", color: "#64748b" }
                     }
                   >
-                    <span className="text-[11px] font-bold leading-tight">{sub.name}</span>
+                    <span className="text-[10px] font-bold leading-tight">{sub.name}</span>
                     {sub.day ? (
-                      <span className="text-[9px] leading-tight" style={{ opacity: active ? 0.85 : 0.7 }}>
+                      <span className="text-[8px] leading-tight" style={{ opacity: 0.8 }}>
                         {sub.day}
-                        {sub.time ? ` · ${sub.time}` : ""}
                       </span>
                     ) : null}
                   </button>
@@ -748,12 +702,13 @@ function ClassGrid({
             </div>
           )}
 
-          {/* Step 2 — which week */}
           <div
             className="flex items-center gap-1.5 overflow-x-auto thin-scroll border-b px-5 py-2"
-            style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+            style={{ borderColor: "#e2e8f0", background: "#ffffff" }}
           >
-            {stepLabel(hasRealSubjects ? 2 : 1, "Week")}
+            <span className="text-[9px] font-bold uppercase tracking-wider shrink-0" style={{ color: "#94a3b8" }}>
+              Week
+            </span>
             {weeks.map((w, i) => {
               const active = w.key === week.key;
               return (
@@ -761,13 +716,12 @@ function ClassGrid({
                   key={w.key}
                   type="button"
                   onClick={() => onSelectWeek(w.key)}
-                  className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold tabular-nums transition-colors"
+                  className="shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold tabular-nums transition-colors"
                   style={
                     active
-                      ? { background: "var(--primary)", color: "#fff" }
-                      : { background: "var(--surface-2)", color: "var(--text-2)" }
+                      ? { background: "#10b981", color: "#fff" }
+                      : { background: "#f1f5f9", color: "#64748b" }
                   }
-                  title={`Week ${i + 1} · ${w.range}`}
                 >
                   W{i + 1}
                 </button>
@@ -776,32 +730,31 @@ function ClassGrid({
             <button
               type="button"
               onClick={onAddWeek}
-              className="flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--primary-soft)]"
-              style={{ borderColor: "var(--border)", color: "var(--primary-strong)" }}
-              title="Add a new week to this class only"
+              className="flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[10px] font-medium transition-colors hover:bg-emerald-50"
+              style={{ borderColor: "#cbd5e1", color: "#047857" }}
             >
-              <PlusCircle size={13} /> Add W{weeks.length + 1}
+              <PlusCircle size={12} /> Add
             </button>
             <button
               type="button"
               onClick={() => onRemoveWeek(week.key)}
               disabled={weeks.length <= 1}
-              className="flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ borderColor: "var(--border)", color: "var(--danger)" }}
-              title={`Delete week ${weekNo}${weeks.length <= 1 ? " — a sheet needs at least one week" : ""}`}
+              className="flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-[10px] font-medium transition-colors hover:bg-red-50 disabled:opacity-40"
+              style={{ borderColor: "#cbd5e1", color: "#dc2626" }}
             >
-              <Trash2 size={13} /> Remove week
+              <Trash2 size={12} /> Remove
             </button>
           </div>
 
-          {/* Step 3 — the marking toolbar. Pick once, then click cells. */}
           <div
-            className="border-b px-5 py-3"
-            style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+            className="border-b px-5 py-2.5"
+            style={{ borderColor: "#e2e8f0", background: "#fafbfc" }}
           >
             <div className="flex flex-wrap items-center gap-2">
-              {stepLabel(hasRealSubjects ? 3 : 2, "Mark with")}
-              <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "#94a3b8" }}>
+                Mark with
+              </span>
+              <div className="flex flex-wrap items-center gap-1">
                 {MARK_TOOLS.map((t) => {
                   const active = t.value === tool;
                   return (
@@ -809,75 +762,71 @@ function ClassGrid({
                       key={t.value || "erase"}
                       type="button"
                       onClick={() => onToolChange(t.value)}
-                      className="flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-bold transition-all"
+                      className="flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition-all"
                       style={
                         active
                           ? {
-                              background: t.value ? t.color : "var(--surface-3)",
-                              borderColor: t.value ? t.color : "var(--text-3)",
-                              color: t.value ? "#fff" : "var(--text)",
-                              boxShadow: "0 6px 14px -8px var(--text-2)",
+                              background: t.value ? t.color : "#e2e8f0",
+                              borderColor: t.value ? t.color : "#94a3b8",
+                              color: t.value ? "#fff" : "#1e293b",
+                              boxShadow: "0 2px 6px -2px rgba(0,0,0,0.1)",
                             }
-                          : { background: "var(--surface)", borderColor: "var(--border)", color: "var(--text-2)" }
+                          : {
+                              background: "#ffffff",
+                              borderColor: "#cbd5e1",
+                              color: "#64748b",
+                            }
                       }
-                      title={`${t.label} — press ${t.hint}`}
-                      aria-pressed={active}
                     >
                       <span
-                        className="flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-extrabold"
+                        className="flex h-4 w-4 items-center justify-center rounded text-[9px] font-extrabold"
                         style={
                           active
-                            ? { background: "rgba(255,255,255,.22)", color: "inherit" }
+                            ? { background: "rgba(255,255,255,.2)", color: "inherit" }
                             : { background: t.soft, color: t.color }
                         }
                       >
                         {t.short}
                       </span>
                       {t.label}
-                      <span className="text-[9px] font-semibold opacity-60">{t.hint}</span>
                     </button>
                   );
                 })}
               </div>
 
-              <div className="ml-auto flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={fillBlanks}
-                  disabled={!tool}
-                  className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition-colors hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
-                  title={`Give every still-unmarked cell this week the "${activeTool.label}" status`}
-                >
-                  <Wand2 size={13} /> Fill empty cells
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={fillBlanks}
+                disabled={!tool}
+                className="ml-auto flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold transition-colors hover:bg-emerald-50 disabled:opacity-40"
+                style={{ borderColor: "#cbd5e1", color: "#047857" }}
+              >
+                <Wand2 size={12} /> Fill empty
+              </button>
             </div>
 
-            <p className="mt-2 text-[11px]" style={{ color: "var(--text-3)" }}>
-              Click a cell to mark it{" "}
-              <b style={{ color: activeTool.value ? activeTool.color : "var(--text-2)" }}>
-                {activeTool.value ? activeTool.label : "empty"}
-              </b>
-              . Hold and drag to mark a whole row or column at once. Click the same cell again to undo it. Keys{" "}
-              <b style={{ color: "var(--text-2)" }}>1–4</b> and <b style={{ color: "var(--text-2)" }}>0</b> switch tools.
-              Nothing is stored until you press <b style={{ color: "var(--text-2)" }}>Save sheet</b>.
+            <p className="mt-1.5 text-[10px]" style={{ color: "#94a3b8" }}>
+              Click to mark · Drag to fill a row/column · Press <b>1–4</b> or <b>0</b> to switch tools
             </p>
           </div>
 
           <div className="overflow-x-auto thin-scroll">
             <table
               className="w-full text-sm"
-              style={{ minWidth: 260 + days.length * 124 + 92, borderCollapse: "separate", borderSpacing: 0 }}
+              style={{
+                minWidth: 260 + days.length * 110 + 80,
+                borderCollapse: "separate",
+                borderSpacing: 0,
+              }}
             >
               <thead>
                 <tr>
                   <th
-                    className="sticky left-0 z-20 px-4 py-2 text-left text-[11px] font-bold uppercase tracking-wider"
+                    className="sticky left-0 z-20 px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider"
                     style={{
-                      background: "var(--surface)",
-                      color: "var(--text-3)",
-                      borderBottom: "1px solid var(--border)",
+                      background: "#ffffff",
+                      color: "#94a3b8",
+                      borderBottom: "1px solid #e2e8f0",
                     }}
                   >
                     Student
@@ -889,49 +838,45 @@ function ClassGrid({
                     return (
                       <th
                         key={d.date}
-                        className="px-1.5 py-1.5 align-top"
+                        className="px-1 py-1.5 align-top"
                         style={{
-                          borderBottom: "1px solid var(--border)",
-                          borderLeft: "1px solid var(--border)",
-                          background: isSubjectDay ? "var(--primary-soft)" : undefined,
+                          borderBottom: "1px solid #e2e8f0",
+                          borderLeft: "1px solid #e2e8f0",
+                          background: isSubjectDay ? "#d1fae5" : undefined,
                         }}
                       >
-                        <div className="flex flex-col items-stretch gap-1">
+                        <div className="flex flex-col items-stretch gap-0.5">
                           <div className="flex flex-col items-center leading-tight">
                             <span
-                              className="text-[11px] font-bold"
-                              style={{ color: isSubjectDay ? "var(--primary-strong)" : "var(--text-2)" }}
-                              title={
-                                isSubjectDay ? `${activeSubj.name} usually meets on ${d.name}` : `${d.name} · ${d.short}`
-                              }
+                              className="text-[10px] font-bold"
+                              style={{ color: isSubjectDay ? "#047857" : "#64748b" }}
                             >
                               {d.name}
                             </span>
-                            <span className="text-[9px] tabular-nums" style={{ color: "var(--text-3)" }}>
+                            <span className="text-[8px] tabular-nums" style={{ color: "#94a3b8" }}>
                               {d.short}
-                              {c.blank > 0 ? ` · ${c.blank} left` : " · done"}
                             </span>
                           </div>
                           <button
                             type="button"
                             onClick={() => fillColumn(d)}
-                            className="flex h-6 items-center justify-center gap-1 rounded-md border text-[10px] font-semibold transition-colors hover:bg-[var(--surface-2)]"
-                            style={{ borderColor: "var(--border)", color: "var(--text-3)" }}
-                            title={`Mark the whole class ${activeTool.label.toLowerCase()} on ${d.name}`}
+                            className="flex h-5 items-center justify-center gap-0.5 rounded border text-[9px] font-semibold transition-colors hover:bg-slate-100"
+                            style={{ borderColor: "#cbd5e1", color: "#64748b" }}
+                            title={`Fill ${activeTool.label}`}
                           >
-                            <ChevronsDown size={11} /> All {activeTool.short || "–"}
+                            <ChevronsDown size={10} /> {activeTool.short || "–"}
                           </button>
                         </div>
                       </th>
                     );
                   })}
                   <th
-                    className="px-2 py-2 text-right text-[11px] font-bold uppercase tracking-wider"
+                    className="px-2 py-2 text-right text-[10px] font-bold uppercase tracking-wider"
                     style={{
-                      background: "var(--surface)",
-                      color: "var(--text-3)",
-                      borderBottom: "1px solid var(--border)",
-                      borderLeft: "1px solid var(--border)",
+                      background: "#ffffff",
+                      color: "#94a3b8",
+                      borderBottom: "1px solid #e2e8f0",
+                      borderLeft: "1px solid #e2e8f0",
                     }}
                   >
                     Rate
@@ -941,30 +886,30 @@ function ClassGrid({
               <tbody>
                 {students.map((s, rowIdx) => {
                   const rate = rateFor(s);
-                  const zebra = rowIdx % 2 === 1 ? "var(--surface-1)" : "var(--surface)";
+                  const zebra = rowIdx % 2 === 1 ? "#fafbfc" : "#ffffff";
                   return (
                     <tr key={s.id} className="group">
                       <td
-                        className="sticky left-0 z-10 px-4 py-1.5"
-                        style={{ background: zebra, borderBottom: "1px solid var(--border)" }}
+                        className="sticky left-0 z-10 px-3 py-1"
+                        style={{ background: zebra, borderBottom: "1px solid #e2e8f0" }}
                       >
                         <div className="flex min-w-0 items-center gap-2">
                           <button
                             type="button"
                             onClick={() => onStudentClick?.(s)}
-                            className="flex min-w-0 items-center gap-2.5 text-left"
-                            title="Open this student's full attendance history"
+                            className="flex min-w-0 items-center gap-2 text-left"
+                            title="Open attendance history"
                           >
                             <StudentAvatar student={s} size="sm" />
                             <div className="min-w-0">
                               <p
-                                className="truncate text-[13px] font-semibold leading-tight"
-                                style={{ color: "var(--text)" }}
+                                className="truncate text-[12px] font-semibold leading-tight"
+                                style={{ color: "#1e293b" }}
                               >
                                 {s.khmerName || `${s.firstName} ${s.lastName}`}
                               </p>
                               {s.khmerName ? (
-                                <p className="truncate text-[11px] leading-tight" style={{ color: "var(--text-3)" }}>
+                                <p className="truncate text-[10px] leading-tight" style={{ color: "#94a3b8" }}>
                                   {s.firstName} {s.lastName}
                                 </p>
                               ) : null}
@@ -973,11 +918,11 @@ function ClassGrid({
                           <button
                             type="button"
                             onClick={() => fillRow(s)}
-                            className="ml-auto flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10px] font-semibold opacity-0 transition-opacity hover:bg-[var(--surface-2)] focus:opacity-100 group-hover:opacity-100"
-                            style={{ borderColor: "var(--border)", color: "var(--text-3)" }}
-                            title={`Mark the whole week ${activeTool.label.toLowerCase()} for this student`}
+                            className="ml-auto flex h-5 shrink-0 items-center gap-0.5 rounded border px-1 text-[9px] font-semibold opacity-0 transition-opacity hover:bg-slate-100 focus:opacity-100 group-hover:opacity-100"
+                            style={{ borderColor: "#cbd5e1", color: "#64748b" }}
+                            title={`Fill row with ${activeTool.label}`}
                           >
-                            <ChevronsRight size={11} /> All {activeTool.short || "–"}
+                            <ChevronsRight size={10} />
                           </button>
                         </div>
                       </td>
@@ -988,11 +933,11 @@ function ClassGrid({
                         return (
                           <td
                             key={d.date}
-                            className="px-1.5 py-1"
+                            className="px-1 py-1"
                             style={{
                               background: zebra,
-                              borderBottom: "1px solid var(--border)",
-                              borderLeft: "1px solid var(--border)",
+                              borderBottom: "1px solid #e2e8f0",
+                              borderLeft: "1px solid #e2e8f0",
                             }}
                           >
                             <button
@@ -1002,34 +947,30 @@ function ClassGrid({
                                 startCell(s, d);
                               }}
                               onMouseEnter={() => dragCell(s, d)}
-                              className="flex h-9 w-full select-none items-center justify-center gap-1.5 rounded-lg border text-[11px] transition-all duration-100 hover:scale-[1.03]"
+                              className="flex h-8 w-full select-none items-center justify-center gap-1 rounded border text-[10px] font-medium transition-all duration-75 hover:scale-[1.02]"
                               style={
                                 meta
-                                  ? { background: meta.soft, color: meta.color, borderColor: "transparent", fontWeight: 700 }
+                                  ? {
+                                      background: meta.soft,
+                                      color: meta.color,
+                                      borderColor: "transparent",
+                                      fontWeight: 600,
+                                    }
                                   : {
                                       background: "transparent",
                                       borderStyle: "dashed",
-                                      borderColor: "var(--border)",
-                                      color: "var(--text-3)",
-                                      fontWeight: 500,
+                                      borderColor: "#cbd5e1",
+                                      color: "#94a3b8",
                                     }
-                              }
-                              aria-label={`${s.firstName} ${s.lastName} — ${d.name} ${d.short} — ${
-                                meta ? meta.label : "not marked"
-                              }`}
-                              title={
-                                meta
-                                  ? `${meta.label} — ${d.name} ${d.short}. Click to undo, or pick another tool first.`
-                                  : `Not marked — ${d.name} ${d.short}. Click to set ${activeTool.label}.`
                               }
                             >
                               {meta ? (
                                 <>
-                                  <span className="text-[10px] font-extrabold">{meta.short}</span>
-                                  <span className="truncate">{meta.label}</span>
+                                  <span className="text-[9px] font-extrabold">{meta.short}</span>
+                                  <span className="hidden sm:inline">{meta.label}</span>
                                 </>
                               ) : (
-                                <span className="opacity-70">+ mark</span>
+                                <span className="opacity-60">+</span>
                               )}
                             </button>
                           </td>
@@ -1037,14 +978,14 @@ function ClassGrid({
                       })}
 
                       <td
-                        className="px-2 py-1.5 text-right"
+                        className="px-2 py-1 text-right"
                         style={{
                           background: zebra,
-                          borderBottom: "1px solid var(--border)",
-                          borderLeft: "1px solid var(--border)",
+                          borderBottom: "1px solid #e2e8f0",
+                          borderLeft: "1px solid #e2e8f0",
                         }}
                       >
-                        <span className="text-xs font-bold tabular-nums" style={{ color: rateTone(rate) }}>
+                        <span className="text-[10px] font-bold tabular-nums" style={{ color: rateTone(rate) }}>
                           {rate}%
                         </span>
                       </td>
@@ -1055,41 +996,37 @@ function ClassGrid({
               <tfoot>
                 <tr>
                   <td
-                    className="sticky left-0 z-10 px-4 py-2 text-[10px] font-bold uppercase tracking-wider"
-                    style={{ background: "var(--surface-1)", color: "var(--text-3)" }}
+                    className="sticky left-0 z-10 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider"
+                    style={{ background: "#fafbfc", color: "#94a3b8" }}
                   >
-                    Day totals
+                    Daily
                   </td>
                   {days.map((d) => {
                     const c = countsFor(d.date);
                     return (
                       <td
                         key={d.date}
-                        className="px-1.5 py-2 text-center"
-                        style={{ background: "var(--surface-1)", borderLeft: "1px solid var(--border)" }}
+                        className="px-1 py-1.5 text-center"
+                        style={{ background: "#fafbfc", borderLeft: "1px solid #e2e8f0" }}
                       >
-                        <div className="flex items-center justify-center gap-1 text-[10px] font-bold tabular-nums">
+                        <div className="flex items-center justify-center gap-0.5 text-[9px] font-bold tabular-nums flex-wrap">
                           {MARK_TOOLS.filter((t) => t.value && c[t.value] > 0).map((t) => (
                             <span
                               key={t.value}
-                              className="rounded px-1 py-0.5"
-                              style={{ background: t.soft, color: t.color }}
-                              title={`${c[t.value]} ${t.label.toLowerCase()}`}
+                              className="rounded px-1 py-px"
+                              style={{ background: t.soft, color: t.color, fontSize: "8px" }}
                             >
-                              {c[t.value]}
-                              {t.short}
+                              {c[t.value]}{t.short}
                             </span>
                           ))}
                           {c.blank > 0 && (
-                            <span style={{ color: "var(--text-3)" }} title={`${c.blank} not marked`}>
-                              {c.blank}·
-                            </span>
+                            <span style={{ color: "#94a3b8", fontSize: "8px" }}>{c.blank}·</span>
                           )}
                         </div>
                       </td>
                     );
                   })}
-                  <td style={{ background: "var(--surface-1)", borderLeft: "1px solid var(--border)" }} />
+                  <td style={{ background: "#fafbfc", borderLeft: "1px solid #e2e8f0" }} />
                 </tr>
               </tfoot>
             </table>
@@ -1100,7 +1037,6 @@ function ClassGrid({
   );
 }
 
-/* ── read-only view: every student × every subject, who missed what ── */
 function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay }) {
   const days = useMemo(() => (week ? weekDays(week.start) : []), [week]);
   const dayObj = scopeDay ? days.find((d) => d.date === scopeDay) || null : null;
@@ -1163,37 +1099,74 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
     }, 0);
 
   return (
-    <div className="overflow-hidden rounded-2xl border shadow-sm" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-      <div className="px-5 py-3.5 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ background: "var(--surface-1)" }}>
-        <span className="h-3 w-3 rounded-full shrink-0" style={{ background: "var(--primary)" }} />
-        <h2 className="text-lg font-bold truncate" style={{ color: "var(--text)" }}>{cls.name}</h2>
-        <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+    <div
+      className="overflow-hidden rounded-2xl border shadow-sm"
+      style={{ borderColor: "#e2e8f0", background: "#ffffff" }}
+    >
+      <div className="px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ background: "#f8fafc" }}>
+        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: "#10b981" }} />
+        <h2 className="text-lg font-bold truncate" style={{ color: "#1e293b" }}>
+          {cls.name}
+        </h2>
+        <span className="text-[10px]" style={{ color: "#94a3b8" }}>
           {students.length} students · {allWeek ? weekLabel : `${dayObj.name} · ${dayObj.short}`} · {subjects.length} subject{subjects.length === 1 ? "" : "s"}
         </span>
       </div>
 
       <div className="overflow-x-auto thin-scroll">
-        <table className="w-full text-sm" style={{ minWidth: 280 + subjects.length * 118 + 210, borderCollapse: "separate", borderSpacing: "0 6px" }}>
+        <table
+          className="w-full text-sm"
+          style={{
+            minWidth: 280 + subjects.length * 110 + 200,
+            borderCollapse: "separate",
+            borderSpacing: "0 4px",
+          }}
+        >
           <thead>
             <tr>
-              <th className="sticky left-0 z-20 text-left px-4 py-2 text-[11px] font-bold uppercase tracking-wider" style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>
+              <th
+                className="sticky left-0 z-20 text-left px-3 py-2 text-[10px] font-bold uppercase tracking-wider"
+                style={{ background: "#ffffff", color: "#94a3b8", borderBottom: "1px solid #e2e8f0" }}
+              >
                 Student
               </th>
               {subjects.map((sub) => {
                 const abs = subjectAbs(sub);
                 const meets = allWeek || subMeetsDay(sub, dayObj);
                 return (
-                  <th key={sub.key} className="text-center px-1.5 py-2 align-top" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)", background: !allWeek && meets ? "var(--primary-soft)" : undefined }}>
-                    <span className="block text-[11px] font-bold leading-tight" style={{ color: !allWeek && meets ? "var(--primary-strong)" : "var(--text-2)" }}>{sub.name}</span>
-                    <span className="block text-[9px] leading-tight" style={{ color: "var(--text-3)" }}>{sub.day ? `${sub.day}${sub.time ? ` · ${sub.time}` : ""}` : "no timetable"}</span>
-                    {abs > 0 ? <span className="block text-[9px] font-bold leading-tight" style={{ color: "var(--danger)" }}>{abs} absent</span> : null}
+                  <th
+                    key={sub.key}
+                    className="text-center px-1.5 py-2 align-top"
+                    style={{
+                      borderBottom: "1px solid #e2e8f0",
+                      borderLeft: "1px solid #e2e8f0",
+                      background: !allWeek && meets ? "#d1fae5" : undefined,
+                    }}
+                  >
+                    <span className="block text-[10px] font-bold leading-tight" style={{ color: !allWeek && meets ? "#047857" : "#64748b" }}>
+                      {sub.name}
+                    </span>
+                    <span className="block text-[8px] leading-tight" style={{ color: "#94a3b8" }}>
+                      {sub.day ? `${sub.day}` : "—"}
+                    </span>
+                    {abs > 0 ? (
+                      <span className="block text-[8px] font-bold leading-tight" style={{ color: "#ef4444" }}>
+                        {abs} abs
+                      </span>
+                    ) : null}
                   </th>
                 );
               })}
-              <th className="text-left px-3 py-2 text-[11px] font-bold uppercase tracking-wider" style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
-                Missed subjects
+              <th
+                className="text-left px-3 py-2 text-[10px] font-bold uppercase tracking-wider"
+                style={{ background: "#ffffff", color: "#94a3b8", borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0" }}
+              >
+                Missed
               </th>
-              <th className="text-right px-3 py-2 text-[11px] font-bold uppercase tracking-wider" style={{ background: "var(--surface)", color: "var(--text-3)", borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+              <th
+                className="text-right px-3 py-2 text-[10px] font-bold uppercase tracking-wider"
+                style={{ background: "#ffffff", color: "#94a3b8", borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0" }}
+              >
                 Rate
               </th>
             </tr>
@@ -1204,12 +1177,16 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
               const ov = overall(s);
               return (
                 <tr key={s.id}>
-                  <td className="sticky left-0 z-10 px-4 py-1.5" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
-                    <button type="button" className="flex items-center gap-2.5 min-w-0 text-left" title={`${s.firstName} ${s.lastName}`}>
+                  <td className="sticky left-0 z-10 px-3 py-1" style={{ background: "#ffffff", borderBottom: "1px solid #e2e8f0" }}>
+                    <button type="button" className="flex items-center gap-2 min-w-0 text-left" title={`${s.firstName} ${s.lastName}`}>
                       <StudentAvatar student={s} size="sm" />
                       <div className="min-w-0">
-                        <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text)" }}>{s.khmerName || `${s.firstName} ${s.lastName}`}</p>
-                        <p className="text-[10px] leading-tight truncate" style={{ color: "var(--text-3)" }}>{s.studentId || ""}</p>
+                        <p className="text-[12px] font-semibold leading-tight truncate" style={{ color: "#1e293b" }}>
+                          {s.khmerName || `${s.firstName} ${s.lastName}`}
+                        </p>
+                        <p className="text-[9px] leading-tight truncate" style={{ color: "#94a3b8" }}>
+                          {s.studentId || ""}
+                        </p>
                       </div>
                     </button>
                   </td>
@@ -1219,14 +1196,20 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
                       const w = weekStat(s, sub);
                       const rate = w.marked ? Math.round((w.pres / w.marked) * 100) : null;
                       return (
-                        <td key={sub.key} className="px-1.5 py-1.5 text-center" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                        <td key={sub.key} className="px-1.5 py-1 text-center" style={{ borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0" }}>
                           {rate == null ? (
-                            <span className="text-[11px]" style={{ color: "var(--text-3)" }}>—</span>
+                            <span className="text-[10px]" style={{ color: "#94a3b8" }}>
+                              —
+                            </span>
                           ) : (
                             <span className="inline-flex flex-col items-center gap-0.5">
-                              <span className="text-xs font-bold tabular-nums" style={{ color: rateTone(rate) }}>{rate}%</span>
+                              <span className="text-[10px] font-bold tabular-nums" style={{ color: rateTone(rate) }}>
+                                {rate}%
+                              </span>
                               {w.abs > 0 ? (
-                                <span className="rounded-full px-1.5 py-px text-[9px] font-bold" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>{w.abs} absent</span>
+                                <span className="rounded-full px-1 py-px text-[8px] font-bold" style={{ background: "#fee2e2", color: "#dc2626" }}>
+                                  {w.abs}
+                                </span>
                               ) : null}
                             </span>
                           )}
@@ -1237,34 +1220,44 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
                     const meta = WEEK_STATUS[st];
                     const meets = subMeetsDay(sub, dayObj);
                     return (
-                      <td key={sub.key} className="px-1.5 py-1.5 text-center" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                      <td key={sub.key} className="px-1.5 py-1 text-center" style={{ borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0" }}>
                         {meta ? (
-                          <span className="inline-flex h-7 min-w-[54px] items-center justify-center rounded-md px-1.5 text-[11px] font-bold" style={{ background: meta.soft, color: meta.color }}>{meta.short}</span>
+                          <span className="inline-flex h-6 min-w-[50px] items-center justify-center rounded px-1.5 text-[10px] font-bold" style={{ background: meta.soft, color: meta.color }}>
+                            {meta.short}
+                          </span>
                         ) : (
-                          <span className="text-[11px]" style={{ color: "var(--text-3)" }}>{meets ? "·" : "–"}</span>
+                          <span className="text-[10px]" style={{ color: "#94a3b8" }}>
+                            {meets ? "·" : "–"}
+                          </span>
                         )}
                       </td>
                     );
                   })}
 
-                  <td className="px-3 py-1.5" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                  <td className="px-3 py-1" style={{ borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0" }}>
                     {missed.length === 0 ? (
-                      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>—</span>
+                      <span className="text-[10px]" style={{ color: "#94a3b8" }}>
+                        —
+                      </span>
                     ) : (
-                      <span className="flex flex-wrap gap-1">
+                      <span className="flex flex-wrap gap-0.5">
                         {missed.map((m) => (
-                          <span key={m.sub.key} className="rounded-md px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>
-                            {m.sub.name}{allWeek && m.n > 1 ? ` ×${m.n}` : ""}
+                          <span key={m.sub.key} className="rounded px-1.5 py-0.5 text-[9px] font-bold" style={{ background: "#fee2e2", color: "#dc2626" }}>
+                            {m.sub.name}
                           </span>
                         ))}
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-1.5 text-right" style={{ borderBottom: "1px solid var(--border)", borderLeft: "1px solid var(--border)" }}>
+                  <td className="px-3 py-1 text-right" style={{ borderBottom: "1px solid #e2e8f0", borderLeft: "1px solid #e2e8f0" }}>
                     {ov.rate == null ? (
-                      <span className="text-[11px]" style={{ color: "var(--text-3)" }}>—</span>
+                      <span className="text-[10px]" style={{ color: "#94a3b8" }}>
+                        —
+                      </span>
                     ) : (
-                      <span className="text-xs font-bold tabular-nums" style={{ color: rateTone(ov.rate) }}>{ov.rate}%</span>
+                      <span className="text-[10px] font-bold tabular-nums" style={{ color: rateTone(ov.rate) }}>
+                        {ov.rate}%
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -1277,7 +1270,6 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
   );
 }
 
-/* ── page ──────────────────────────────────────────────── */
 export default function Attendance() {
   const { students, classes, attendance, saveAttendance, showToast, logAudit } = useApp();
   const [searchParams] = useSearchParams();
@@ -1294,14 +1286,14 @@ export default function Attendance() {
   const [dlSel, setDlSel] = useState(false);
   const [dlAll, setDlAll] = useState(false);
   const [dlChecked, setDlChecked] = useState({});
-  const [dayStudent, setDayStudent] = useState(null); // student whose day log is open
-  const [focusKey, setFocusKey] = useState(() => weekKeyOf(todayISO())); // selected week (shared by all sheets)
-  const [draft, setDraft] = useState({}); // staged cells: { studentId: { subjectKey: { dateISO: status } } } — saved only on Save
-  const [subjectOf, setSubjectOf] = useState({}); // { classId: subjectKey } — which subject's session is being marked right now
-  const [mode, setMode] = useState("mark"); // "mark" | "view"
-  const [tool, setTool] = useState("present"); // active marking tool — shared by every sheet on screen
-  const [viewDay, setViewDay] = useState(null); // view scope: null = whole week, else a dateISO
-  const [scheduleState] = useState(() => readScheduleState()); // read once; Schedule page owns live edits
+  const [dayStudent, setDayStudent] = useState(null);
+  const [focusKey, setFocusKey] = useState(() => weekKeyOf(todayISO()));
+  const [draft, setDraft] = useState({});
+  const [subjectOf, setSubjectOf] = useState({});
+  const [mode, setMode] = useState("mark");
+  const [tool, setTool] = useState("present");
+  const [viewDay, setViewDay] = useState(null);
+  const [scheduleState] = useState(() => readScheduleState());
   const [weekMap, setWeekMap] = useState(() => {
     const base = lastNWeeks(15).map((w) => w.key);
     try {
@@ -1310,7 +1302,6 @@ export default function Attendance() {
         const v = JSON.parse(raw);
         if (v && typeof v === "object" && !Array.isArray(v)) return v;
       }
-      // migrate legacy per-class extra weeks into the explicit week list
       const old = localStorage.getItem(LS_EXTRA_WEEKS);
       const ov = old ? JSON.parse(old) : {};
       const map = {};
@@ -1358,9 +1349,6 @@ export default function Attendance() {
     return map;
   }, [classes]);
 
-  /* every subject a class is taught, tagged with the weekday/time it meets —
-     this is what lets "Monday · 3 subjects" become 3 separate attendance
-     sessions instead of one shared day slot */
   const subjectsOf = useMemo(() => {
     const map = {};
     classes.forEach((c) => {
@@ -1393,13 +1381,13 @@ export default function Attendance() {
   };
   const filteredOptions = useMemo(
     () => (classQ ? classOptions.filter((o) => classMatches(o.value, classQ)) : classOptions),
-    [classOptions, classQ, classById] // eslint-disable-line react-hooks/exhaustive-deps
+    [classOptions, classQ, classById]
   );
   const visibleSel = useMemo(() => {
     const matched = classQ ? classes.filter((c) => classMatches(c.id, classQ)).map((c) => c.id) : [];
     const base = classQ || sel.length > 0 ? sel : q.trim() ? classes.map((c) => c.id) : [];
     return Array.from(new Set([...base, ...matched]));
-  }, [sel, classQ, q, classes, classById]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sel, classQ, q, classes, classById]);
 
   const roster = useMemo(() => {
     if (visibleSel.length === 0) return [];
@@ -1427,7 +1415,6 @@ export default function Attendance() {
     return ids.map((id) => ({ cls: classById[id], list: map[id] }));
   }, [roster, classById]);
 
-  /* view mode: the week + day the report is scoped to */
   const viewWeeks = useMemo(() => {
     for (const id of visibleSel) if (weeksOf[id]?.length) return weeksOf[id];
     return [];
@@ -1436,9 +1423,6 @@ export default function Attendance() {
   const viewWeekNo = viewWeek ? viewWeeks.findIndex((w) => w.key === viewWeek.key) + 1 : 0;
   const viewDays = useMemo(() => (viewWeek ? weekDays(viewWeek.start) : []), [viewWeek]);
 
-  /* staged view = persisted daily attendance + unsaved draft overrides,
-     now keyed student -> subject -> date, so each subject's session for a
-     day is independent of every other subject's session that same day */
   const dailyOf = useMemo(() => {
     const map = {};
     Object.keys(attendanceOf).forEach((id) => {
@@ -1474,7 +1458,7 @@ export default function Attendance() {
       return acc + Math.round((pres / days.length) * 100);
     }, 0);
     return Math.round(total / roster.length);
-  }, [roster, dailyOf, weeksOf, focusKey, subjectOf, subjectsOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roster, dailyOf, weeksOf, focusKey, subjectOf, subjectsOf]);
 
   const pickDay = (s, date, subject, status) => {
     setDraft((prev) => {
@@ -1487,8 +1471,6 @@ export default function Attendance() {
     });
   };
 
-  /* stage many cells in one write — used by the row / column / fill-empty
-     buttons so a 40-student column is a single state update, not 40 */
   const pickMany = (cells, subject) => {
     if (!cells.length) return;
     setDraft((prev) => {
@@ -1502,7 +1484,6 @@ export default function Attendance() {
     });
   };
 
-  /* 1–4 pick a status, 0 erases — but never while the admin is typing */
   useEffect(() => {
     if (mode !== "mark") return undefined;
     const onKey = (e) => {
@@ -1540,10 +1521,9 @@ export default function Attendance() {
       });
       return next;
     });
-    showToast(`Week ${wk.range} cleared for ${classById[clsId]?.name || clsId} (all subjects) — press Save to keep it`);
+    showToast(`Week cleared for ${classById[clsId]?.name || clsId}`);
   };
 
-  /* build attendance records from the current draft for some students + subjects */
   const draftRecords = (list, subKeys) => {
     const records = [];
     list.forEach((s) => {
@@ -1578,22 +1558,20 @@ export default function Attendance() {
     });
   };
 
-  /* save every subject of one class sheet in a single write */
   const saveSheet = (clsId) => {
     const list = roster.filter((s) => s.className === clsId);
     const subKeys = (subjectsOf[clsId] || []).filter((sub) => classDirty(clsId, sub.key)).map((sub) => sub.key);
     const records = draftRecords(list, subKeys);
     if (!records.length) {
-      showToast("No changes to save for this sheet");
+      showToast("No changes to save");
       return;
     }
     saveAttendance(records);
     clearDraftFor(list, subKeys);
     const saved = records.filter((r) => r.status).length;
-    showToast(`${saved} attendance record${saved === 1 ? "" : "s"} saved for ${classById[clsId]?.name || clsId} (${subKeys.length} subject${subKeys.length === 1 ? "" : "s"})`);
+    showToast(`${saved} record${saved === 1 ? "" : "s"} saved`);
   };
 
-  /* every unsaved edit on the page, across all classes and subjects */
   const totalDraftEdits = useMemo(
     () =>
       Object.values(draft).reduce(
@@ -1603,30 +1581,27 @@ export default function Attendance() {
     [draft]
   );
 
-  /* one button saves every marked cell — all subjects, all students shown */
   const saveAll = () => {
     const subKeys = Array.from(new Set(roster.flatMap((s) => Object.keys(draft[s.id] || {}))));
     const records = draftRecords(roster, subKeys);
     if (!records.length) {
-      showToast("Nothing to save — mark some attendance first");
+      showToast("Nothing to save");
       return;
     }
     saveAttendance(records);
     clearDraftFor(roster, subKeys);
     const saved = records.filter((r) => r.status).length;
-    showToast(`${saved} attendance record${saved === 1 ? "" : "s"} saved across ${roster.length} student${roster.length === 1 ? "" : "s"}`);
+    showToast(`${saved} record${saved === 1 ? "" : "s"} saved`);
   };
 
   const discardAll = () => {
     setDraft({});
-    showToast("All unsaved attendance discarded");
+    showToast("Changes discarded");
   };
 
   const classDirty = (clsId, subject) =>
     roster.some((s) => s.className === clsId && draft[s.id]?.[subject] && Object.keys(draft[s.id][subject]).length > 0);
 
-  // every subject with unsaved edits for a class, even ones not currently
-  // being viewed — so switching subjects never hides forgotten drafts
   const dirtySubjectsOf = (clsId) => (subjectsOf[clsId] || []).filter((sub) => classDirty(clsId, sub.key));
 
   const addWeek = (clsId) => {
@@ -1643,7 +1618,7 @@ export default function Attendance() {
       return { ...prev, [clsId]: [...keys, key] };
     });
     setFocusKey(key);
-    showToast(`Week added to ${cls.name} (${weekFromKey(key).range})`);
+    showToast(`Week added`);
   };
 
   const removeWeek = (clsId, wkKey) => {
@@ -1651,7 +1626,7 @@ export default function Attendance() {
     const baseKeys = baseWeeks.map((w) => w.key);
     const curList = weekMap[clsId] ?? weekMap["*"] ?? baseKeys;
     if (curList.length <= 1) {
-      showToast("Cannot remove the last week of a sheet", "error");
+      showToast("Cannot remove the last week", "error");
       return;
     }
     setWeekMap((prev) => {
@@ -1662,11 +1637,9 @@ export default function Attendance() {
       const remaining = curList.filter((k) => k !== wkKey);
       if (remaining.length) setFocusKey(remaining[remaining.length - 1]);
     }
-    const w = weekFromKey(wkKey);
-    showToast(`Week ${w?.range || wkKey} removed from ${cls?.name || clsId}`);
+    showToast(`Week removed`);
   };
 
-  /* export picker helpers */
   const noSelected = dlSel && !dlAll && !classes.some((c) => dlChecked[c.id]);
   const dlSheets = () => {
     const list = dlAll ? classes : classes.filter((c) => dlChecked[c.id]);
@@ -1682,8 +1655,6 @@ export default function Attendance() {
         days: wk ? weekDays(wk.start) : [],
         daily: dailyOf,
       };
-      // one exported sheet per subject, so a class with 3–4 subjects a day
-      // exports as 3–4 separate tables instead of mixing their attendance
       (subjectsOf[c.id] || []).forEach((sub) => {
         sheets.push({ ...base, subjectKey: sub.key, subjectLabel: subjectLabelOf(sub) });
       });
@@ -1695,10 +1666,10 @@ export default function Attendance() {
     <div>
       <PageHeader
         title="Attendance"
-        subtitle="Pick a subject, a week and a marking tool, then click the cells — drag to mark a whole row or column. Nothing is saved until you press Save. Use View report to see which subject each student missed."
+        subtitle="Mark attendance by week and subject, then save. Use View report to see who missed what."
         actions={
           <div className="flex items-center gap-2">
-            <div className="flex rounded-xl border p-0.5" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
+            <div className="flex rounded-lg border p-0.5" style={{ borderColor: "#e2e8f0", background: "#f1f5f9" }}>
               {[
                 { k: "mark", label: "Mark" },
                 { k: "view", label: "View report" },
@@ -1706,9 +1677,8 @@ export default function Attendance() {
                 <button
                   key={t.k}
                   onClick={() => setMode(t.k)}
-                  className="h-9 rounded-lg px-3 text-sm font-semibold transition-colors"
-                  style={mode === t.k ? { background: "var(--primary)", color: "#fff" } : { color: "var(--text-2)" }}
-                  title={t.k === "mark" ? "Mark attendance for the week" : "See every student's attendance by subject"}
+                  className="h-9 rounded-lg px-4 text-sm font-semibold transition-all"
+                  style={mode === t.k ? { background: "#10b981", color: "#fff" } : { color: "#64748b" }}
                 >
                   {t.label}
                 </button>
@@ -1720,68 +1690,69 @@ export default function Attendance() {
                 setDlChecked(Object.fromEntries(visibleSel.map((id) => [id, true])));
                 setDlSel(true);
               }}
-              className="btn btn-outline h-10 px-4 text-sm gap-1.5"
-              title="Export the selected week for one or more classes to Excel or Word"
+              className="flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-medium transition-all hover:bg-slate-100"
+              style={{ borderColor: "#e2e8f0", color: "#1e293b" }}
+              title="Export attendance to Excel or Word"
             >
-              <FileDown size={15} /> Export
+              <FileDown size={14} /> Export
             </button>
           </div>
         }
       />
 
-      {/* controls */}
-      <div className="card p-4 mb-5 animate-fade-up">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-          <div className="flex flex-col gap-1.5 lg:w-[320px] shrink-0">
-            <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+      <div className="rounded-xl border p-4 mb-4 animate-fade-up" style={{ borderColor: "#e2e8f0", background: "#ffffff" }}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="flex flex-col gap-1.5 lg:w-72 shrink-0">
+            <label className="text-[11px] font-bold" style={{ color: "#94a3b8" }}>
               Classes
             </label>
             <ClassMultiSelect options={filteredOptions} value={sel} onChange={setSel} allCount={filteredOptions.length} />
           </div>
           <div className="flex flex-col gap-1.5 lg:w-72">
-            <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
-              Search class name
+            <label className="text-[11px] font-bold" style={{ color: "#94a3b8" }}>
+              Search class
             </label>
             <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#94a3b8" }} />
               <input
                 value={classQ}
                 onChange={(e) => setClassQ(e.target.value)}
-                className="input pl-9 pr-8 h-11 text-sm"
-                placeholder="IT09B1, Cyber…"
+                className="pl-9 pr-8 h-10 w-full rounded-lg border text-sm"
+                style={{ borderColor: "#e2e8f0" }}
+                placeholder="Search…"
               />
               {classQ && (
-                <button onClick={() => setClassQ("")} className="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost h-6 w-6 p-0 rounded-full" aria-label="Clear class search">
-                  <X size={13} />
+                <button onClick={() => setClassQ("")} className="absolute right-2 top-1/2 -translate-y-1/2" aria-label="Clear">
+                  <X size={14} style={{ color: "#94a3b8" }} />
                 </button>
               )}
             </div>
           </div>
           <div className="flex flex-col gap-1.5 lg:w-72">
-            <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+            <label className="text-[11px] font-bold" style={{ color: "#94a3b8" }}>
               Search students
             </label>
             <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#94a3b8" }} />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                className="input pl-9 pr-8 h-11 text-sm"
+                className="pl-9 pr-8 h-10 w-full rounded-lg border text-sm"
+                style={{ borderColor: "#e2e8f0" }}
                 placeholder="Name or ID…"
               />
               {q && (
-                <button onClick={() => setQ("")} className="absolute right-2 top-1/2 -translate-y-1/2 btn btn-ghost h-6 w-6 p-0 rounded-full" aria-label="Clear search">
-                  <X size={13} />
+                <button onClick={() => setQ("")} className="absolute right-2 top-1/2 -translate-y-1/2" aria-label="Clear">
+                  <X size={14} style={{ color: "#94a3b8" }} />
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* selected-class chips = the Excel header columns */}
         {sel.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-            <span className="text-[11px] font-bold uppercase tracking-wider mr-1" style={{ color: "var(--text-3)" }}>
+          <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-3" style={{ borderTop: "1px solid #e2e8f0" }}>
+            <span className="text-[10px] font-bold" style={{ color: "#94a3b8", marginRight: "0.5rem" }}>
               Sheets
             </span>
             {visibleSel.map((id) => {
@@ -1790,17 +1761,18 @@ export default function Attendance() {
               return (
                 <span
                   key={id}
-                  className="flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] max-w-full"
-                  style={{ borderColor: "var(--border)", background: "var(--surface-1)", color: "var(--text-2)" }}
+                  className="flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] max-w-full"
+                  style={{ borderColor: "#e2e8f0", background: "#f8fafc" }}
                 >
-                  <span className="truncate font-semibold" style={{ color: "var(--text)" }}>{c.name}</span>
+                  <span className="truncate font-semibold" style={{ color: "#1e293b" }}>
+                    {c.name}
+                  </span>
                   <button
                     onClick={() => setSel(sel.filter((x) => x !== id))}
-                    className="btn btn-ghost h-4 w-4 p-0 rounded-full -mr-0.5 shrink-0"
+                    className="flex h-4 w-4 items-center justify-center rounded hover:bg-slate-200"
                     title={`Remove ${c.name}`}
-                    aria-label={`Remove ${c.name}`}
                   >
-                    <X size={11} />
+                    <X size={10} />
                   </button>
                 </span>
               );
@@ -1811,103 +1783,96 @@ export default function Attendance() {
                 setClassQ("");
                 setQ("");
               }}
-              className="btn btn-ghost h-6 px-2.5 text-[11px] ml-auto"
-              title="Deselect every class — close all sheets"
-              style={{ color: "var(--danger)" }}
+              className="flex items-center gap-1.5 ml-auto text-[10px] font-semibold"
+              style={{ color: "#ef4444" }}
             >
-              <RotateCcw size={12} /> Clear all
+              <RotateCcw size={11} /> Clear all
             </button>
           </div>
         )}
       </div>
 
       {mode === "mark" ? (
-        /* ── mark mode: draft every subject first, then save once ── */
-        <div className="card overflow-hidden animate-fade-up" style={{ animationDelay: "80ms" }}>
+        <div className="rounded-xl border overflow-hidden animate-fade-up" style={{ borderColor: "#e2e8f0", background: "#ffffff" }}>
           {visibleSel.length === 0 ? (
             <div className="px-2">
               <EmptyState
                 icon={Users}
-                title={sel.length === 0 && !classQ && !q.trim() ? "Start a search" : "No classes match"}
-                subtitle={
-                  sel.length === 0 && !classQ && !q.trim()
-                    ? "No class is selected yet — start typing a class name or a student name above, or tick classes in the dropdown."
-                    : "No classes match your current search — try a different name."
-                }
+                title={sel.length === 0 ? "Start a search" : "No results"}
+                subtitle="No class selected — search above to get started."
+              />
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="px-2">
+              <EmptyState
+                icon={Search}
+                title="No students"
+                subtitle="Try a different search."
               />
             </div>
           ) : (
             <>
-              {groups.length === 0 ? (
-                <div className="px-2">
-                  <EmptyState
-                    icon={Search}
-                    title="No students match"
-                    subtitle="Try a different student name or ID, or add a new student with the row inside each class sheet."
+              <div className="flex flex-col gap-5 p-5">
+                {groups.map((g) => (
+                  <ClassGrid
+                    key={g.cls?.id || "g"}
+                    cls={g.cls}
+                    students={g.list}
+                    weeks={weeksOf[g.cls?.id] || []}
+                    focusKey={focusKey}
+                    onSelectWeek={setFocusKey}
+                    onAddWeek={() => addWeek(g.cls.id)}
+                    onRemoveWeek={(k) => removeWeek(g.cls.id, k)}
+                    subjects={subjectsOf[g.cls?.id] || []}
+                    subject={currentSubject(g.cls?.id)}
+                    onSelectSubject={(subj) => setSubjectOf((prev) => ({ ...prev, [g.cls.id]: subj }))}
+                    dailyOf={dailyOf}
+                    onPick={(s, date, status) => pickDay(s, date, currentSubject(g.cls.id), status)}
+                    onPickMany={(cells) => pickMany(cells, currentSubject(g.cls.id))}
+                    tool={tool}
+                    onToolChange={setTool}
+                    onReset={() => resetSheet(g.cls.id)}
+                    onSave={() => saveSheet(g.cls.id)}
+                    dirtySubjects={dirtySubjectsOf(g.cls?.id)}
+                    onStudentClick={setDayStudent}
                   />
-                </div>
-              ) : (
-                <div className="flex flex-col gap-6">
-                  {groups.map((g) => (
-                    <ClassGrid
-                      key={g.cls?.id || "g"}
-                      cls={g.cls}
-                      students={g.list}
-                      weeks={weeksOf[g.cls?.id] || []}
-                      focusKey={focusKey}
-                      onSelectWeek={setFocusKey}
-                      onAddWeek={() => addWeek(g.cls.id)}
-                      onRemoveWeek={(k) => removeWeek(g.cls.id, k)}
-                      subjects={subjectsOf[g.cls?.id] || []}
-                      subject={currentSubject(g.cls?.id)}
-                      onSelectSubject={(subj) => setSubjectOf((prev) => ({ ...prev, [g.cls.id]: subj }))}
-                      dailyOf={dailyOf}
-                      onPick={(s, date, status) => pickDay(s, date, currentSubject(g.cls.id), status)}
-                      onPickMany={(cells) => pickMany(cells, currentSubject(g.cls.id))}
-                      tool={tool}
-                      onToolChange={setTool}
-                      onReset={() => resetSheet(g.cls.id)}
-                      onSave={() => saveSheet(g.cls.id)}
-                      dirtySubjects={dirtySubjectsOf(g.cls?.id)}
-                      onStudentClick={setDayStudent}
-                    />
-                  ))}
-                </div>
-              )}
+                ))}
+              </div>
             </>
           )}
 
           {roster.length > 0 && (
             <>
-              <div className="px-5 py-4 border-t flex items-center gap-4" style={{ borderColor: "var(--border)" }}>
-                <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-3)" }}>
-                  <Percent size={14} /> Average attendance
-                  <b className="tabular-nums" style={{ color: avgRate ? rateTone(avgRate) : "var(--text-2)" }}>{avgRate}%</b>
+              <div className="px-5 py-3 border-t flex items-center gap-3" style={{ borderColor: "#e2e8f0", background: "#fafbfc" }}>
+                <div className="flex items-center gap-2 text-[11px]" style={{ color: "#94a3b8" }}>
+                  <Percent size={13} /> Average
+                  <b className="tabular-nums" style={{ color: avgRate ? rateTone(avgRate) : "#64748b" }}>
+                    {avgRate}%
+                  </b>
                 </div>
                 <div className="flex-1">
                   <ProgressBar value={avgRate} tone={avgRate >= 85 ? "success" : avgRate >= 70 ? "warning" : "danger"} />
                 </div>
               </div>
               {totalDraftEdits > 0 && (
-                <div className="px-5 py-3 border-t flex flex-wrap items-center gap-3" style={{ borderColor: "var(--border)", background: "var(--primary-soft)" }}>
-                  <span className="text-xs font-bold" style={{ color: "var(--primary-strong)" }}>
-                    {totalDraftEdits} unsaved mark{totalDraftEdits === 1 ? "" : "s"} — save once when you're done
+                <div className="px-5 py-3 border-t flex flex-wrap items-center gap-2" style={{ borderColor: "#e2e8f0", background: "#fef3c7" }}>
+                  <span className="text-[11px] font-semibold" style={{ color: "#92400e" }}>
+                    {totalDraftEdits} unsaved
                   </span>
                   <div className="flex items-center gap-2 ml-auto">
                     <button
                       onClick={discardAll}
-                      className="btn btn-ghost h-9 px-3 text-xs"
-                      style={{ color: "var(--danger)" }}
-                      title="Throw away every unsaved mark"
+                      className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:bg-red-100"
+                      style={{ color: "#dc2626" }}
                     >
-                      <RotateCcw size={13} /> Discard all
+                      <RotateCcw size={12} /> Discard
                     </button>
                     <button
                       onClick={saveAll}
-                      className="btn btn-primary h-9 px-4 text-xs"
-                      title="Save every marked subject for all students at once"
+                      className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white transition-all"
+                      style={{ background: "#10b981" }}
                     >
-                      <CheckCircle2 size={14} /> Save all attendance
+                      <CheckCircle2 size={12} /> Save all
                     </button>
                   </div>
                 </div>
@@ -1916,20 +1881,19 @@ export default function Attendance() {
           )}
         </div>
       ) : (
-        /* ── view report mode: all students × all subjects, who missed what ── */
-        <div className="card overflow-hidden animate-fade-up" style={{ animationDelay: "80ms" }}>
+        <div className="rounded-xl border overflow-hidden animate-fade-up" style={{ borderColor: "#e2e8f0", background: "#ffffff" }}>
           {visibleSel.length === 0 ? (
             <div className="px-2">
-              <EmptyState icon={Users} title="No classes selected" subtitle="Tick classes above to view their attendance by subject." />
+              <EmptyState icon={Users} title="No classes selected" subtitle="Select classes above to view reports." />
             </div>
           ) : groups.length === 0 ? (
             <div className="px-2">
-              <EmptyState icon={Search} title="No students match" subtitle="Try a different student name or ID." />
+              <EmptyState icon={Search} title="No students" subtitle="Try a different search." />
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-1.5 overflow-x-auto thin-scroll px-5 py-2 border-b" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-                <span className="shrink-0 mr-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+              <div className="flex items-center gap-1 overflow-x-auto thin-scroll px-5 py-2 border-b" style={{ borderColor: "#e2e8f0", background: "#fafbfc" }}>
+                <span className="shrink-0 mr-2 text-[9px] font-bold" style={{ color: "#94a3b8" }}>
                   Week
                 </span>
                 {viewWeeks.map((w, i) => (
@@ -1937,22 +1901,22 @@ export default function Attendance() {
                     key={w.key}
                     type="button"
                     onClick={() => setFocusKey(w.key)}
-                    className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold tabular-nums transition-colors"
-                    style={w.key === viewWeek?.key ? { background: "var(--primary)", color: "#fff" } : { background: "var(--surface-2)", color: "var(--text-2)" }}
+                    className="shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold tabular-nums transition-colors"
+                    style={w.key === viewWeek?.key ? { background: "#10b981", color: "#fff" } : { background: "#f1f5f9", color: "#64748b" }}
                   >
                     W{i + 1}
                   </button>
                 ))}
-                <span className="shrink-0 ml-4 mr-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+                <span className="shrink-0 ml-3 mr-1 text-[9px] font-bold" style={{ color: "#94a3b8" }}>
                   Day
                 </span>
                 <button
                   type="button"
                   onClick={() => setViewDay(null)}
-                  className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors"
-                  style={viewDay === null ? { background: "var(--accent)", color: "#fff" } : { background: "var(--surface-2)", color: "var(--text-2)" }}
+                  className="shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold transition-colors"
+                  style={viewDay === null ? { background: "#06b6d4", color: "#fff" } : { background: "#f1f5f9", color: "#64748b" }}
                 >
-                  Whole week
+                  Week
                 </button>
                 {viewDays.map((d) => {
                   const active = viewDay === d.date;
@@ -1962,18 +1926,16 @@ export default function Attendance() {
                       key={d.date}
                       type="button"
                       onClick={() => setViewDay(d.date)}
-                      className="shrink-0 flex flex-col items-start rounded-lg px-2 py-1 text-left transition-colors"
-                      title={`${d.name} · ${d.short}`}
-                      style={active ? { background: "var(--accent)", color: "#fff" } : { background: "var(--surface-2)", color: "var(--text-2)" }}
+                      className="shrink-0 flex flex-col items-center rounded-lg px-2 py-1 text-left transition-colors"
+                      style={active ? { background: "#06b6d4", color: "#fff" } : { background: "#f1f5f9", color: "#64748b" }}
                     >
-                      <span className="text-[11px] font-bold leading-tight">{dayShort}</span>
-                      <span className="text-[9px] leading-tight tabular-nums" style={{ opacity: 0.75 }}>{d.short}</span>
+                      <span className="text-[10px] font-bold leading-tight">{dayShort}</span>
                     </button>
                   );
                 })}
               </div>
 
-              <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-5 p-5">
                 {groups.map((g) => (
                   <ClassView
                     key={g.cls?.id || "g"}
@@ -1988,14 +1950,13 @@ export default function Attendance() {
                 ))}
               </div>
 
-              <div className="px-5 py-3 border-t flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]" style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
-                <span className="text-[10px] font-bold uppercase tracking-wider">Legend</span>
+              <div className="px-5 py-3 border-t flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]" style={{ borderColor: "#e2e8f0", color: "#94a3b8" }}>
+                <span className="font-bold">Legend</span>
                 {Object.entries(WEEK_STATUS).map(([k, m]) => (
-                  <span key={k} className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-sm" style={{ background: m.color }} /> {m.label}
+                  <span key={k} className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-sm" style={{ background: m.color }} /> {m.label}
                   </span>
                 ))}
-                <span className="ml-auto">Missed subjects = any subject with Absent or Permission.</span>
               </div>
             </>
           )}
@@ -2011,26 +1972,24 @@ export default function Attendance() {
         onClose={() => setDayStudent(null)}
       />
 
-      {/* export picker — mirrors Schedule's export */}
       {dlSel &&
         createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0" style={{ background: "rgba(0,0,0,0.45)" }} onClick={() => setDlSel(false)} />
-            <div className="relative card w-full max-w-2xl p-6 shadow-2xl animate-fade-up">
+            <div className="fixed inset-0" style={{ background: "rgba(0,0,0,0.4)" }} onClick={() => setDlSel(false)} />
+            <div className="relative rounded-2xl w-full max-w-2xl p-6 shadow-2xl animate-fade-up" style={{ background: "#ffffff" }}>
               <div className="flex items-center justify-between mb-1">
-                <h3 className="text-sm font-bold" style={{ color: "var(--text)" }}>
+                <h3 className="text-sm font-bold" style={{ color: "#1e293b" }}>
                   Export attendance
                 </h3>
-                <button onClick={() => setDlSel(false)} className="btn btn-ghost h-8 w-8 p-0 rounded-lg" title="Close">
-                  <X size={15} />
+                <button onClick={() => setDlSel(false)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-slate-100">
+                  <X size={14} />
                 </button>
               </div>
-              <p className="text-xs mb-4" style={{ color: "var(--text-3)" }}>
-                Pick which class sheet(s) to export, or export all of them. Then choose a file type.
+              <p className="text-xs mb-3" style={{ color: "#94a3b8" }}>
+                Pick classes and format
               </p>
 
-              {/* export all toggle */}
-              <label className="flex items-center gap-2 py-2 border-b" style={{ borderColor: "var(--border)" }}>
+              <label className="flex items-center gap-2 py-2 border-b" style={{ borderColor: "#e2e8f0" }}>
                 <input
                   type="checkbox"
                   checked={dlAll}
@@ -2039,15 +1998,14 @@ export default function Attendance() {
                     setDlAll(on);
                     if (on) setDlChecked({});
                   }}
-                  className="accent-[var(--primary)]"
+                  className="accent-emerald-500"
                 />
-                <span className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+                <span className="text-sm font-semibold" style={{ color: "#1e293b" }}>
                   Export all classes
                 </span>
               </label>
 
-              {/* class list */}
-              <div className="max-h-64 overflow-y-auto thin-scroll my-3 space-y-1">
+              <div className="max-h-56 overflow-y-auto thin-scroll my-3 space-y-0.5">
                 {classes.map((c) => {
                   const on = dlAll || dlChecked[c.id];
                   const nStudents = students.filter((s) => s.className === c.id && s.status !== "Graduate").length;
@@ -2055,61 +2013,60 @@ export default function Attendance() {
                   return (
                     <label
                       key={c.id}
-                      className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[var(--surface-2)]"
-                      style={{ color: "var(--text)" }}
+                      className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-50"
+                      style={{ color: "#1e293b" }}
                     >
                       <input
                         type="checkbox"
                         checked={!!on}
                         disabled={dlAll}
                         onChange={(e) => setDlChecked((x) => ({ ...x, [c.id]: e.target.checked }))}
-                        className="accent-[var(--primary)]"
+                        className="accent-emerald-500"
                       />
                       <span className="text-sm">{c.name}</span>
-                      <span className="ml-auto text-[11px]" style={{ color: "var(--text-3)" }}>
-                        {nStudents}s · W1–W{nWeeks} · {c.shift || "—"} · {c.year || "—"}
+                      <span className="ml-auto text-[10px]" style={{ color: "#94a3b8" }}>
+                        {nStudents}s · {nWeeks}w
                       </span>
                     </label>
                   );
                 })}
               </div>
 
-              {/* format buttons */}
-              <div className="flex flex-wrap gap-2 border-t pt-3" style={{ borderColor: "var(--border)" }}>
+              <div className="flex flex-wrap gap-2 border-t pt-3" style={{ borderColor: "#e2e8f0" }}>
                 <button
                   onClick={() => {
                     if (noSelected) {
-                      showToast("Pick at least one class to export");
+                      showToast("Pick at least one class");
                       return;
                     }
-                    const sheets = dlSheets();
-                    doExport(sheets, "excel");
-                    logAudit("export_attendance", `Exported ${sheets.length} sheet(s) as .xls`);
+                    doExport(dlSheets(), "excel");
+                    logAudit("export_attendance", `Exported to Excel`);
                     setDlSel(false);
                   }}
-                  className="btn btn-primary h-10 px-4 text-sm gap-1.5"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all"
+                  style={{ background: "#10b981" }}
                 >
-                  <FileSpreadsheet size={15} /> Excel (.xls)
+                  <FileSpreadsheet size={14} /> Excel
                 </button>
                 <button
                   onClick={() => {
                     if (noSelected) {
-                      showToast("Pick at least one class to export");
+                      showToast("Pick at least one class");
                       return;
                     }
-                    const sheets = dlSheets();
-                    doExport(sheets, "word");
-                    logAudit("export_attendance", `Exported ${sheets.length} sheet(s) as .doc`);
+                    doExport(dlSheets(), "word");
+                    logAudit("export_attendance", `Exported to Word`);
                     setDlSel(false);
                   }}
-                  className="btn btn-primary h-10 px-4 text-sm gap-1.5"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all"
+                  style={{ background: "#10b981" }}
                 >
-                  <FileText size={15} /> Word (.doc)
+                  <FileText size={14} /> Word
                 </button>
                 <button
                   onClick={() => {
                     if (noSelected) {
-                      showToast("Pick at least one class to export");
+                      showToast("Pick at least one class");
                       return;
                     }
                     const sheets = dlSheets();
@@ -2122,12 +2079,13 @@ export default function Attendance() {
                     w.document.close();
                     w.focus();
                     setTimeout(() => w.print(), 250);
-                    logAudit("export_attendance", `Exported ${sheets.length} sheet(s) for print / PDF`);
+                    logAudit("export_attendance", `Exported to PDF`);
                     setDlSel(false);
                   }}
-                  className="btn btn-primary h-10 px-4 text-sm gap-1.5"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all"
+                  style={{ background: "#10b981" }}
                 >
-                  <FileDown size={15} /> PDF
+                  <FileDown size={14} /> PDF
                 </button>
               </div>
             </div>

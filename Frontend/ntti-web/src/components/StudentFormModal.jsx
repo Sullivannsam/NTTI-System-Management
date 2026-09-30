@@ -6,12 +6,10 @@ import Avatar from "./Avatar";
 
 const makeForm = (classes, overrides = {}) => {
   const hasClass = overrides.className !== undefined && overrides.className !== "";
-  // a class given explicitly is looked up as-is; otherwise default to the major's first class
   const cls = hasClass
     ? classes.find((c) => c.id === overrides.className) || null
     : classesOfMajor(classes, overrides.major || MAJORS[0].id)[0] || classes[0] || null;
   const majorId = cls?.major || overrides.major || MAJORS[0].id;
-  // when the class exists it is the source of truth for major / field / shift
   const classFields = cls
     ? { major: cls.major, className: cls.id, field: cls.field || FIELDS_OF_STUDY[cls.major]?.[0] || "", shift: cls.shift }
     : {};
@@ -19,6 +17,7 @@ const makeForm = (classes, overrides = {}) => {
     firstName: "",
     lastName: "",
     khmerName: "",
+    studentId: "",
     username: "",
     photo: "",
     gender: "Male",
@@ -37,7 +36,6 @@ const makeForm = (classes, overrides = {}) => {
     enrollmentYear: new Date().getFullYear(),
     level: "S1Y1",
     ...overrides,
-    // a known class always wins for major / field / shift
     ...(cls ? classFields : {}),
   };
 };
@@ -55,6 +53,7 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
           firstName: editing.firstName,
           lastName: editing.lastName,
           khmerName: editing.khmerName || "",
+          studentId: editing.studentId || "",
           username: editing.username || "",
           photo: editing.photo || "",
           gender: editing.gender,
@@ -86,7 +85,6 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
     } else {
       setForm(makeForm(classes));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id, lockedClass]);
 
   const formClasses = useMemo(() => classesOfMajor(classes, form.major), [classes, form.major]);
@@ -102,10 +100,8 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
       ...f,
       major,
       className: firstClass?.id || "",
-      // follow the class when there is one, else the major's first field
       field: firstClass?.field || FIELDS_OF_STUDY[major]?.[0] || "",
       shift: firstClass?.shift || f.shift,
-      // keep the level inside the new programme's range
       level: nextLevels.includes(f.level) ? f.level : nextLevels[0],
     }));
   };
@@ -115,7 +111,6 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
     setForm((f) => ({
       ...f,
       className: e.target.value,
-      // the class decides major / field / shift
       major: cls?.major || f.major,
       field: cls?.field || f.field,
       shift: cls?.shift || f.shift,
@@ -129,7 +124,6 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        // downscale so the data URL stays small enough for localStorage
         const max = 400;
         const scale = Math.min(1, max / Math.max(img.width, img.height));
         const canvas = document.createElement("canvas");
@@ -194,165 +188,400 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
       subtitle={editing ? `${editing.firstName} ${editing.lastName}` : "Create a new enrollment record"}
       size="2xl"
       footer={
-        <>
-          <button onClick={onClose} className="btn btn-outline h-10 px-4 text-sm">Cancel</button>
-          <button type="submit" form="student-form" className="btn btn-primary h-10 px-5 text-sm">
+        <div className="flex gap-2 justify-end">
+          <button 
+            onClick={onClose} 
+            className="px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 hover:bg-slate-100 text-slate-700"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit" 
+            form="student-form" 
+            className="px-5 py-2 rounded-lg font-medium text-sm bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 transition-all duration-200 shadow-sm hover:shadow-md"
+          >
             {editing ? "Save changes" : "Add student"}
           </button>
-        </>
+        </div>
       }
     >
-      <form id="student-form" onSubmit={submit} className="flex flex-col gap-5 lg:flex-row">
-        {/* left: personal photo */}
-        <div
-          className="flex shrink-0 flex-col items-center gap-3 rounded-xl p-4 lg:w-48"
-          style={{ background: "var(--surface-2)" }}
-        >
-          <Avatar
-            name={`${form.firstName} ${form.lastName}`}
-            photo={form.photo || undefined}
-            size="xl"
-          />
-          <label className="btn btn-outline h-9 w-full justify-center px-3 text-sm cursor-pointer">
-            Upload photo
-            <input type="file" accept="image/*" onChange={onPhoto} className="hidden" />
-          </label>
-          {form.photo && (
-            <button
-              type="button"
-              onClick={() => setForm((f) => ({ ...f, photo: "" }))}
-              className="btn btn-ghost h-8 w-full justify-center px-3 text-sm !text-red-500"
-            >
-              Remove
-            </button>
-          )}
-          <p className="text-center text-[10px]" style={{ color: "var(--text-3)" }}>
-            JPG or PNG — auto-resized
-          </p>
-        </div>
+      <style>{`
+        .modern-input {
+          width: 100%;
+          padding: 0.5rem 0.75rem;
+          font-size: 0.875rem;
+          line-height: 1.4;
+          border: 1px solid #e2e8f0;
+          border-radius: 0.4rem;
+          background: #ffffff;
+          transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+          font-family: inherit;
+        }
+        
+        .modern-input:hover {
+          border-color: #cbd5e1;
+        }
+        
+        .modern-input:focus {
+          outline: none;
+          border-color: #10b981;
+          box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
+          background: #fafbfc;
+        }
+        
+        .modern-input:disabled {
+          background: #f8fafc;
+          border-color: #e2e8f0;
+          color: #94a3b8;
+          cursor: not-allowed;
+        }
 
-        {/* right: fields */}
-        <div className="grid flex-1 grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-4">
-          {/* name in Khmer (primary) */}
-          <div className="col-span-2 lg:col-span-4">
-            <label className="label">Name in Khmer</label>
-            <input
-              className="input text-lg h-11"
-              value={form.khmerName}
-              onChange={set("khmerName")}
-              placeholder="e.g. ជាប ចនារា"
-            />
+        .form-label {
+          display: block;
+          margin-bottom: 0.25rem;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #334155;
+          text-transform: none;
+          letter-spacing: 0;
+        }
+
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .form-section-title {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: #0f172a;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          margin-top: 0.875rem;
+          margin-bottom: 0.5rem;
+          padding-top: 0.625rem;
+          border-top: 1px solid #e2e8f0;
+        }
+
+        .form-section-title:first-child {
+          margin-top: 0;
+          padding-top: 0;
+          border-top: none;
+        }
+
+        .photo-card {
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          border: 1px solid #e2e8f0;
+          border-radius: 0.6rem;
+          padding: 1rem;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.75rem;
+        }
+
+        .upload-button {
+          width: 100%;
+          padding: 0.5rem 0.75rem;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #475569;
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 0.4rem;
+          cursor: pointer;
+          transition: all 200ms;
+        }
+
+        .upload-button:hover {
+          background: #f1f5f9;
+          border-color: #94a3b8;
+        }
+
+        .upload-button:active {
+          background: #e2e8f0;
+        }
+
+        .remove-button {
+          width: 100%;
+          padding: 0.5rem 0.75rem;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #ef4444;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          border-radius: 0.4rem;
+          cursor: pointer;
+          transition: all 200ms;
+        }
+
+        .remove-button:hover {
+          background: #fee2e2;
+          border-color: #fca5a5;
+        }
+
+        .form-hint {
+          font-size: 0.7rem;
+          color: #64748b;
+          margin-top: 0.15rem;
+        }
+      `}</style>
+
+      <form id="student-form" onSubmit={submit} className="flex flex-col gap-3 lg:gap-4">
+        <div className="flex flex-col lg:flex-row lg:gap-5">
+          {/* Left: Photo section */}
+          <div className="lg:w-48 shrink-0">
+            <div className="photo-card">
+              <Avatar
+                name={`${form.firstName} ${form.lastName}`}
+                photo={form.photo || undefined}
+                size="xl"
+              />
+              <label className="upload-button">
+                Upload photo
+                <input type="file" accept="image/*" onChange={onPhoto} className="hidden" />
+              </label>
+              {form.photo && (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, photo: "" }))}
+                  className="remove-button"
+                >
+                  Remove photo
+                </button>
+              )}
+              <p className="form-hint text-center">
+                JPG or PNG, max 400px
+              </p>
+            </div>
           </div>
 
-          <div>
-            <label className="label">First name (EN) *</label>
-            <input className="input" value={form.firstName} onChange={set("firstName")} placeholder="e.g. Chab" />
-          </div>
-          <div>
-            <label className="label">Last name (EN) *</label>
-            <input className="input" value={form.lastName} onChange={set("lastName")} placeholder="e.g. Channara" />
-          </div>
-          <div>
-            <label className="label">Gender</label>
-            <select className="input" value={form.gender} onChange={set("gender")}>
-              <option>Male</option>
-              <option>Female</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Date of birth</label>
-            <input type="date" className="input" value={form.dob} onChange={set("dob")} />
-          </div>
+          {/* Right: Form fields */}
+          <div className="flex-1">
+            <div className="space-y-3">
+              {/* Khmer name and Student ID */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="form-label">Khmer Name</label>
+                  <input
+                    className="modern-input text-sm py-1.5"
+                    value={form.khmerName}
+                    onChange={set("khmerName")}
+                    placeholder="ឧ. ជាប ចនារា"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Student ID</label>
+                  <input
+                    className="modern-input text-sm py-1.5"
+                    value={form.studentId}
+                    onChange={set("studentId")}
+                    placeholder={editing ? "Auto-assigned" : "Auto-generated"}
+                    disabled={editing}
+                  />
+                  {!editing && (
+                    <p className="form-hint">
+                      Auto-generated on save
+                    </p>
+                  )}
+                </div>
+              </div>
 
-          <div>
-            <label className="label">Place of birth</label>
-            <input className="input" value={form.birthPlace} onChange={set("birthPlace")} placeholder="Province / city" />
-          </div>
-          <div>
-            <label className="label">Phone</label>
-            <input className="input" value={form.phone} onChange={set("phone")} placeholder="+855 …" />
-          </div>
-          <div className="col-span-2">
-            <label className="label">Email</label>
-            <input type="email" className="input" value={form.email} onChange={set("email")} placeholder="name@ntti.edu.kh" />
-          </div>
+              {/* Personal info */}
+              <div className="form-section-title">Personal Information</div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="form-label">First name English *</label>
+                  <input 
+                    className="modern-input" 
+                    value={form.firstName} 
+                    onChange={set("firstName")} 
+                    placeholder="Chab" 
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Last name English *</label>
+                  <input 
+                    className="modern-input" 
+                    value={form.lastName} 
+                    onChange={set("lastName")} 
+                    placeholder="Channara" 
+                  />
+                </div>
+              </div>
 
-          <div>
-            <label className="label">Father's name</label>
-            <input className="input" value={form.fatherName} onChange={set("fatherName")} placeholder="e.g. Chab Sopheak" />
-          </div>
-          <div>
-            <label className="label">Mother's name</label>
-            <input className="input" value={form.motherName} onChange={set("motherName")} placeholder="e.g. Sok Chanthy" />
-          </div>
-          <div className="col-span-2">
-            <label className="label">Address</label>
-            <input className="input" value={form.address} onChange={set("address")} placeholder="Province / city" />
-          </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="form-label">Gender</label>
+                  <select className="modern-input" value={form.gender} onChange={set("gender")}>
+                    <option>Male</option>
+                    <option>Female</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Date of birth</label>
+                  <input type="date" className="modern-input" value={form.dob} onChange={set("dob")} />
+                </div>
+              </div>
 
-          <div>
-            <label className="label">Major *</label>
-            <select className="input" value={form.major} onChange={handleMajorSelect} disabled={classLocked}>
-              {MAJORS.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Class *</label>
-            <select className="input" value={form.className} onChange={handleClassSelect} disabled={classLocked} key={form.major}>
-              {formClasses.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Username</label>
-            <input className="input" value={form.username} onChange={set("username")} placeholder="e.g. chab.channara" />
-          </div>
-          <div>
-            <label className="label">Shift</label>
-            <select className="input" value={form.shift} onChange={set("shift")}>
-              {SHIFTS.map((sh) => (
-                <option key={sh} value={sh}>{sh}</option>
-              ))}
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className="label">Field of study</label>
-            <select className="input" value={form.field} onChange={set("field")} key={form.major}>
-              {(FIELDS_OF_STUDY[form.major] || []).map((f) => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Status</label>
-            <select className="input" value={form.status} onChange={set("status")}>
-              <option>Learning</option>
-              <option>Graduate</option>
-              <option>Undergraduate</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Enrollment year</label>
-            <select className="input" value={form.enrollmentYear} onChange={set("enrollmentYear")}>
-              {Array.from({ length: 9 }, (_, i) => new Date().getFullYear() - (8 - i)).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="form-label">Place of birth</label>
+                  <input 
+                    className="modern-input" 
+                    value={form.birthPlace} 
+                    onChange={set("birthPlace")} 
+                    placeholder="Province" 
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Phone</label>
+                  <input 
+                    className="modern-input" 
+                    value={form.phone} 
+                    onChange={set("phone")} 
+                    placeholder="+855 …" 
+                  />
+                </div>
+              </div>
 
-          <div className="col-span-2 lg:col-span-4">
-            <label className="label">Academic level</label>
-            <select className="input" value={form.level} onChange={set("level")}>
-              {levelsForMajor(form.major).map((lvl) => (
-                <option key={lvl} value={lvl}>{lvl} · Semester {lvl[1]} · Year {lvl[3]}</option>
-              ))}
-            </select>
-            <p className="text-[10px] mt-1" style={{ color: "var(--text-3)" }}>
-              Current position (1 semester = 15 weeks). Students advance with their class via "Next semester".
-            </p>
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input 
+                  type="email" 
+                  className="modern-input" 
+                  value={form.email} 
+                  onChange={set("email")} 
+                  placeholder="name@ntti.edu.kh" 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="form-group">
+                  <label className="form-label">Father's name</label>
+                  <input 
+                    className="modern-input" 
+                    value={form.fatherName} 
+                    onChange={set("fatherName")} 
+                    placeholder="Chab Sopheak" 
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Mother's name</label>
+                  <input 
+                    className="modern-input" 
+                    value={form.motherName} 
+                    onChange={set("motherName")} 
+                    placeholder="Sok Chanthy" 
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Address</label>
+                <input 
+                  className="modern-input" 
+                  value={form.address} 
+                  onChange={set("address")} 
+                  placeholder="Province / city" 
+                />
+              </div>
+
+              {/* Academic info */}
+              <div className="form-section-title">Academic Information</div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="form-label">Major *</label>
+                  <select 
+                    className="modern-input" 
+                    value={form.major} 
+                    onChange={handleMajorSelect} 
+                    disabled={classLocked}
+                  >
+                    {MAJORS.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Class *</label>
+                  <select 
+                    className="modern-input" 
+                    value={form.className} 
+                    onChange={handleClassSelect} 
+                    disabled={classLocked} 
+                    key={form.major}
+                  >
+                    {formClasses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="form-label">Field of study</label>
+                  <select className="modern-input" value={form.field} onChange={set("field")} key={form.major}>
+                    {(FIELDS_OF_STUDY[form.major] || []).map((f) => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Shift</label>
+                  <select className="modern-input" value={form.shift} onChange={set("shift")}>
+                    {SHIFTS.map((sh) => (
+                      <option key={sh} value={sh}>{sh}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <select className="modern-input" value={form.status} onChange={set("status")}>
+                    <option>Learning</option>
+                    <option>Graduate</option>
+                    <option>Undergraduate</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Enrollment year</label>
+                  <select className="modern-input" value={form.enrollmentYear} onChange={set("enrollmentYear")}>
+                    {Array.from({ length: 9 }, (_, i) => new Date().getFullYear() - (8 - i)).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Username</label>
+                <input 
+                  className="modern-input" 
+                  value={form.username} 
+                  onChange={set("username")} 
+                  placeholder="chab.channara" 
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Academic level</label>
+                <select className="modern-input" value={form.level} onChange={set("level")}>
+                  {levelsForMajor(form.major).map((lvl) => (
+                    <option key={lvl} value={lvl}>{lvl} · Semester {lvl[1]} · Year {lvl[3]}</option>
+                  ))}
+                </select>
+                <p className="form-hint">
+                  Current position (1 semester = 15 weeks). Students advance via "Next semester".
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </form>
