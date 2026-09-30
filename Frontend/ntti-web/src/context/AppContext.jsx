@@ -1,10 +1,13 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { SEED_STUDENTS, SEED_ATTENDANCE, SEED_WEEKLY, SEED_SCORES, SEED_SCHEDULE, CLASSES, ACADEMIC_LEVELS, levelMeta, todayISO, latinToKhmer, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
+import { SEED_STUDENTS, SEED_ATTENDANCE, SEED_WEEKLY, SEED_SCORES, SEED_SCHEDULE, CLASSES, ACADEMIC_LEVELS, levelMeta, todayISO, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
 import { cleanName, isRollLabel } from "../components/studentImportHelpers";
 
 const AppContext = createContext(null);
 
 const LS_STUDENTS = "ntti.students.v2";
+/* Pre-repair snapshot of LS_STUDENTS, written once. Not in the demo-reset
+   list on purpose: resetting the demo must not discard the user's backup. */
+const LS_STUDENTS_BACKUP = "ntti.students.v2.backup";
 const LS_ATTENDANCE = "ntti.attendance.v2";
 const LS_CLASSES = "ntti.classes.v1";
 const LS_WEEKLY = "ntti.weekly.v1";
@@ -132,12 +135,62 @@ function load(key, fallback) {
   }
 }
 
+const KHMER_SCRIPT = /[\u1780-\u17FF]/;
+
+/* Some records were saved with Khmer script sitting in the English name fields
+   and an empty khmerName. That happened when saving transliterated the English
+   name to invent a Khmer one: for a student with no English name the Khmer text
+   landed in lastName, and khmerName stayed blank. Those students then rendered
+   under the wrong field and could not be found by searching their real name.
+
+   Repair: Khmer text moves to khmerName, the English fields are cleared. Only
+   applied when khmerName is genuinely empty, so a record that already has a
+   Khmer name is never touched. Latin text already in the fields is preserved.
+   The untouched original is backed up once, under LS_STUDENTS_BACKUP, so this
+   is reversible. */
+function repairKhmerNameFields(s) {
+  const kh = cleanName(s.khmerName);
+  if (kh) return s; // already has a Khmer name — leave it completely alone
+  const first = cleanName(s.firstName);
+  const last = cleanName(s.lastName);
+  const khmerInFirst = KHMER_SCRIPT.test(first);
+  const khmerInLast = KHMER_SCRIPT.test(last);
+  if (!khmerInFirst && !khmerInLast) return s; // nothing misplaced
+  const latinFirst = khmerInFirst ? "" : first;
+  const latinLast = khmerInLast ? "" : last;
+  // A field that mixes both scripts keeps only the Latin part; the Khmer part
+  // is folded into khmerName below.
+  const movedKhmer = [khmerInFirst ? first : "", khmerInLast ? last : ""]
+    .join(" ")
+    .replace(/[A-Za-z][A-Za-z\s]*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    ...s,
+    firstName: latinFirst,
+    lastName: latinLast,
+    khmerName: movedKhmer,
+    khmerNameRepaired: true,
+  };
+}
+
 /** Migrate stored students: lifecycle statuses, enrollment year, academic level + history. */
 function loadStudents() {
   const stored = localStorage.getItem(LS_STUDENTS);
   if (!stored) return SEED_STUDENTS;
   try {
-    return JSON.parse(stored).map((s) => {
+    const list = JSON.parse(stored);
+    /* Back up once, before any repair, and only when there is something to fix. */
+    try {
+      const already = localStorage.getItem(LS_STUDENTS_BACKUP);
+      if (!already && list.some((s) => !cleanName(s.khmerName) && (KHMER_SCRIPT.test(String(s.firstName ?? "")) || KHMER_SCRIPT.test(String(s.lastName ?? ""))))) {
+        localStorage.setItem(LS_STUDENTS_BACKUP, stored);
+      }
+    } catch {
+      /* backup is best-effort; never block loading */
+    }
+    return list.map((s) => {
+      s = repairKhmerNameFields(s);
       const year =
         s.enrollmentYear ||
         (s.enrollmentDate ? Number(String(s.enrollmentDate).slice(0, 4)) : 0) ||
@@ -149,10 +202,12 @@ function loadStudents() {
         lastName: cleanName(s.lastName),
         /* cleanName drops the "Student" placeholder (Latin or Khmer script) that
            NTTI sheets put in the Khmer-name column, so imported students show
-           their real name instead of "សតុដេនត" everywhere. */
-        khmerName:
-          cleanName(s.khmerName) ||
-          (firstName && s.lastName ? latinToKhmer(`${cleanName(s.lastName)} ${firstName}`) : ""),
+           their real name instead of "សតុដេនត" everywhere. Only clean what is
+           stored -- do NOT synthesise a Khmer name from the Latin one. A blank
+           khmerName means the student has none, and filling it in here made
+           every later rename look unapplied, because the invented name took
+           priority over the real Latin name on screen. */
+        khmerName: cleanName(s.khmerName),
         level: s.level || (year ? `S1Y${Math.min(4, Math.max(1, new Date().getFullYear() - year))}` : "S1Y1"),
         /* drop roll-number artifacts (ល.រ, "\", "No"…) that older transcript
            imports stored as fake subjects — a "ល.រ · 1.00" row is the roll
