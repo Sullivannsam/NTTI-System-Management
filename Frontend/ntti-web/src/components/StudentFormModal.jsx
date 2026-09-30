@@ -371,7 +371,7 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
                     className="modern-input text-sm py-1.5"
                     value={form.khmerName}
                     onChange={set("khmerName")}
-                    placeholder="ឧ. ជាប ចនារា"
+                    placeholder="ឧ. ចាប ចាន់ណារ៉ា"
                   />
                 </div>
                 <div className="form-group">

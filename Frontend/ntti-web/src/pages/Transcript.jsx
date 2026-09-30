@@ -30,7 +30,7 @@ const SCHED_KEY = "ntti.schedule.v2";
 const INSTITUTION_KM = "វិទ្យាស្ថានជាតិបណ្តុះបណ្តាលបច្ចេកទេស";
 const INSTITUTION_EN = "National Technical Training Institute";
 
-/* ── official NTTI transcript layout (mirrors the “ex” sheet of the office file) ── */
+/* ── official NTTI transcript layout (mirrors the "ex" sheet of the office file) ── */
 const INSTITUTION_LINES = {
   country: "KINGDOM OF CAMBODIA",
   motto: "Nation Religion King",
@@ -74,6 +74,18 @@ const INK = "#0f172a";
 const MUTED = "#475569";
 const LINE = "#cbd5e1";
 const SOFT = "#f1f5f9";
+
+/* modern color palette */
+const COLORS = {
+  textPrimary: "#1e293b",
+  textSecondary: "#64748b",
+  textMuted: "#94a3b8",
+  bgDefault: "#f8fafc",
+  bgCard: "#ffffff",
+  border: "#e2e8f0",
+  accent: "#2563eb",
+  accentHover: "#1d4ed8",
+};
 
 function loadScores() {
   try {
@@ -177,25 +189,25 @@ function StudentSelect({ students, value, onChange, placeholder = "Select a stud
         ref={ref}
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
-        className="flex h-10 w-full max-w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-medium transition"
+        className="flex h-10 w-full max-w-full items-center justify-between gap-3 rounded-lg border px-3 text-sm font-medium transition"
         style={{
           minWidth: "min(210px, 100%)",
-          background: "var(--surface)",
-          borderColor: open ? "var(--primary)" : "var(--border)",
-          color: "var(--text)",
-          boxShadow: open ? "0 0 0 3px var(--ring)" : "none",
+          background: COLORS.bgCard,
+          borderColor: open ? COLORS.accent : COLORS.border,
+          color: COLORS.textPrimary,
+          boxShadow: open ? `0 0 0 2px rgba(37, 99, 235, 0.1)` : "none",
         }}
       >
         <span className="flex min-w-0 items-center gap-2">
-          <User2 className="h-4 w-4 shrink-0" style={{ color: "var(--primary-strong)" }} />
-          <span className="truncate">{current ? label(current) : placeholder}</span>
+          <User2 className="h-4 w-4 shrink-0" style={{ color: COLORS.accent }} />
+          <span className="truncate text-sm">{current ? label(current) : placeholder}</span>
         </span>
-        <ChevronDown className="h-4 w-4 shrink-0" style={{ color: "var(--text-3)" }} />
+        <ChevronDown className="h-4 w-4 shrink-0" style={{ color: COLORS.textMuted }} />
       </button>
 
       <DropdownPanel pos={pos} menuRef={menuRef} onClose={close} className="p-2">
         <div className="relative mb-1.5 shrink-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: COLORS.textMuted }} />
           <input
             autoFocus
             value={q}
@@ -205,29 +217,41 @@ function StudentSelect({ students, value, onChange, placeholder = "Select a stud
               if (e.key === "Escape") close();
             }}
             placeholder="Search student…"
-            className="w-full rounded-lg border py-2 pl-8 pr-3 text-sm outline-none transition-colors focus:border-[var(--primary)]"
-            style={{ background: "var(--surface-2)", borderColor: "var(--border)", color: "var(--text)" }}
+            className="w-full rounded-md border py-2 pl-8 pr-3 text-sm outline-none transition-colors"
+            style={{ 
+              background: COLORS.bgDefault,
+              borderColor: COLORS.border,
+              color: COLORS.textPrimary,
+            }}
+            onFocus={(e) => (e.target.style.borderColor = COLORS.accent)}
+            onBlur={(e) => (e.target.style.borderColor = COLORS.border)}
           />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto thin-scroll">
           {filtered.length === 0 ? (
-            <p className="px-3 py-3 text-xs" style={{ color: "var(--text-3)" }}>No student matches “{q}”</p>
+            <p className="px-3 py-3 text-xs" style={{ color: COLORS.textMuted }}>No student matches "{q}"</p>
           ) : (
             filtered.map((s) => (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => pick(s.id)}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--surface-2)]"
+                className="flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm transition-colors"
                 style={{
-                  color: s.id === value ? "var(--primary-strong)" : "var(--text)",
-                  fontWeight: s.id === value ? 700 : 500,
-                  background: s.id === value ? "var(--primary-soft)" : "transparent",
+                  color: s.id === value ? COLORS.accent : COLORS.textPrimary,
+                  fontWeight: s.id === value ? 600 : 500,
+                  background: s.id === value ? `rgba(37, 99, 235, 0.08)` : "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  if (s.id !== value) e.currentTarget.style.background = COLORS.bgDefault;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = s.id === value ? `rgba(37, 99, 235, 0.08)` : "transparent";
                 }}
               >
                 <span className="min-w-0">
                   <span className="block truncate">{label(s)}</span>
-                  <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>{s.studentId}</span>
+                  <span className="block truncate text-[11px]" style={{ color: COLORS.textMuted }}>{s.studentId}</span>
                 </span>
               </button>
             ))
@@ -541,7 +565,7 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
   merge(row, 5, 8);
   row++;
 
-  /* REMARKS + grade legend — like the web, “Phnom Penh, Date + Deputy Director”
+  /* REMARKS + grade legend — like the web, "Phnom Penh, Date + Deputy Director"
      sits on the RIGHT of the legend (legend = cols A–I, signature = cols J–M) */
   row++;
   set(row, 0, cell("REMARKS:", { font: { bold: true } }));
@@ -796,7 +820,7 @@ export default function Transcript() {
   );
 
   /* group scoped terms into YEAR blocks with Semester I (left) and Semester II (right),
-     so the document mirrors the official “ex” sheet exactly. */
+     so the document mirrors the official "ex" sheet exactly. */
   const yearBlocks = useMemo(() => {
     const byYear = {};
     terms.forEach((t) => {
@@ -963,14 +987,12 @@ export default function Transcript() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5 animate-fade-up">
+    <div className="mx-auto space-y-6" style={{ maxWidth: 1100, paddingTop: 24, paddingBottom: 48 }}>
       {/* print rules + watermark styling: hide chrome, keep the document */}
       <style>{`
         #transcript-doc { position: relative; }
         @media print {
           .no-print { display: none !important; }
-          /* kill ancestor transforms (fade-up keeps translateY(0)) so position:fixed
-             is relative to the printed page and repeats on every page */
           .animate-fade-up { animation: none !important; transform: none !important; opacity: 1 !important; }
           #transcript-doc { box-shadow: none !important; border: none !important; border-radius: 0 !important; margin: 0 !important; position: relative !important; overflow: visible !important; }
           #transcript-doc .transcript-term { page-break-inside: avoid; }
@@ -978,48 +1000,60 @@ export default function Transcript() {
       `}</style>
 
       <div className="no-print">
-        <PageHeader
-          title="Transcript"
-          subtitle="Pick a class and student, choose the term(s), then print or download the official record."
-          actions={
-            <>
-              <button
-                onClick={() => setImportOpen(true)}
-                className="btn btn-outline h-10 shrink-0 px-3.5 text-sm gap-1.5"
-                title="Import a score cheatsheet (Excel/CSV) into student transcripts — works for students without a class"
-              >
-                <Upload size={15} /> Import scores
-              </button>
-              <div className="min-w-0 flex-1 basis-[200px] sm:flex-none sm:basis-auto">
-                <ClassSelect
-                  value={classId}
-                  onChange={(id) => {
-                    setPicked(true);
-                    setClassId(id);
-                  }}
-                  placeholder="Select a class"
-                  minWidth={200}
-                  allowNone
-                  options={classes.map((c) => ({
-                    value: c.id,
-                    label: c.name,
-                    sub: c.field || "",
-                  }))}
-                />
-              </div>
-              <div className="min-w-0 flex-1 basis-[210px] sm:flex-none sm:basis-auto">
-                <StudentSelect
-                  students={roster}
-                  value={studentId}
-                  onChange={(id) => {
-                    setPicked(true);
-                    setStudentId(id);
-                  }}
-                />
-              </div>
-            </>
-          }
-        />
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold tracking-tight mb-2" style={{ color: COLORS.textPrimary }}>
+            Transcript
+          </h1>
+          <p className="text-base" style={{ color: COLORS.textSecondary }}>
+            Select a student and time period, then print or export their official academic record.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1 basis-[240px] sm:flex-none sm:basis-auto">
+              <ClassSelect
+                value={classId}
+                onChange={(id) => {
+                  setPicked(true);
+                  setClassId(id);
+                }}
+                placeholder="Select a class"
+                minWidth={200}
+                allowNone
+                options={classes.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                  sub: c.field || "",
+                }))}
+              />
+            </div>
+            <div className="min-w-0 flex-1 basis-[240px] sm:flex-none sm:basis-auto">
+              <StudentSelect
+                students={roster}
+                value={studentId}
+                onChange={(id) => {
+                  setPicked(true);
+                  setStudentId(id);
+                }}
+              />
+            </div>
+            <button
+              onClick={() => setImportOpen(true)}
+              className="h-10 px-4 text-sm font-medium rounded-lg border transition"
+              style={{
+                background: COLORS.bgCard,
+                borderColor: COLORS.border,
+                color: COLORS.textSecondary,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = COLORS.textMuted)}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = COLORS.border)}
+              title="Import a score cheatsheet (Excel/CSV) into student transcripts"
+            >
+              <Upload size={16} className="inline mr-2" /> Import
+            </button>
+          </div>
+        </div>
       </div>
 
       <TranscriptImportModal
@@ -1030,14 +1064,20 @@ export default function Transcript() {
       />
 
       {!student && (
-        <div className="card no-print">
+        <div style={{ borderRadius: 12, border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, padding: 48 }} className="no-print">
           <EmptyState
             icon={FileText}
             title="No student selected"
-            subtitle="Choose a class and a student above to build the transcript."
+            subtitle="Choose a class and student above to view or export their transcript."
             action={
-              <button onClick={() => navigate("/students")} className="btn btn-primary">
-                <Link2 className="h-4 w-4" /> Open Students
+              <button
+                onClick={() => navigate("/students")}
+                className="px-6 py-2.5 text-sm font-medium rounded-lg text-white transition"
+                style={{ background: COLORS.accent }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.accentHover)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.accent)}
+              >
+                <Link2 className="h-4 w-4 inline mr-2" /> Go to Students
               </button>
             }
           />
@@ -1047,24 +1087,33 @@ export default function Transcript() {
       {student && (
         <>
           {/* controls */}
-          <div className="card p-4 no-print">
-            <div className="flex flex-wrap items-center gap-3">
-              <button onClick={() => navigate(-1)} className="btn btn-ghost h-9 px-3 text-sm gap-1">
-                <ArrowLeft size={16} /> Back
+          <div style={{ borderRadius: 12, border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, padding: 20 }} className="no-print">
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <button
+                onClick={() => navigate(-1)}
+                className="h-9 px-3 text-sm font-medium rounded-lg border transition"
+                style={{
+                  background: COLORS.bgCard,
+                  borderColor: COLORS.border,
+                  color: COLORS.textSecondary,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.bgDefault)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.bgCard)}
+              >
+                <ArrowLeft size={16} className="inline mr-2" /> Back
               </button>
-              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
-                Include
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: COLORS.textMuted }}>
+                Showing
               </span>
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   onClick={() => setScope("all")}
-                  title={`Full programme · ${yearsInProgram} years`}
-                  className={clsx("rounded-lg border px-3 py-1.5 text-xs font-semibold transition")}
-                  style={
-                    scope === "all"
-                      ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" }
-                      : { background: "var(--surface)", color: "var(--text-2)", borderColor: "var(--border)" }
-                  }
+                  className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
+                  style={{
+                    background: scope === "all" ? COLORS.accent : COLORS.bgDefault,
+                    color: scope === "all" ? "#fff" : COLORS.textPrimary,
+                    borderColor: scope === "all" ? COLORS.accent : COLORS.border,
+                  }}
                 >
                   All semesters
                 </button>
@@ -1072,86 +1121,118 @@ export default function Transcript() {
                   <button
                     key={`y-${y}`}
                     onClick={() => setScope(`Y${y}`)}
-                    title={`Both semesters of Year ${y}`}
-                    className={clsx("rounded-lg border px-3 py-1.5 text-xs font-semibold transition")}
-                    style={
-                      scope === `Y${y}`
-                        ? { background: "var(--primary-strong)", color: "#fff", borderColor: "var(--primary-strong)" }
-                        : { background: "var(--surface)", color: "var(--text-2)", borderColor: "var(--border)" }
-                    }
+                    className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition"
+                    style={{
+                      background: scope === `Y${y}` ? COLORS.accent : COLORS.bgDefault,
+                      color: scope === `Y${y}` ? "#fff" : COLORS.textPrimary,
+                      borderColor: scope === `Y${y}` ? COLORS.accent : COLORS.border,
+                    }}
                   >
                     Year {y}
                   </button>
                 ))}
-                <span className="mx-0.5 h-5 w-px" style={{ background: "var(--border)" }} />
-                {allTerms.map((t) => (
-                  <button
-                    key={t.level}
-                    onClick={() => setScope(t.level)}
-                    title={`${t.semester} · ${t.year}`}
-                    className={clsx("rounded-lg border px-3 py-1.5 text-xs font-semibold transition")}
-                    style={
-                      scope === t.level
-                        ? { background: "var(--primary)", color: "#fff", borderColor: "var(--primary)" }
-                        : { background: "var(--surface)", color: "var(--text-2)", borderColor: "var(--border)" }
-                    }
-                  >
-                    {t.level}
-                  </button>
-                ))}
               </div>
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                {editMode && (
-                  <button
-                    onClick={() => setEditMode(false)}
-                    className="btn btn-ghost h-10 px-3 text-sm gap-1.5"
-                    title="Discard the draft and close edit mode"
-                  >
-                    <X size={16} /> Cancel
-                  </button>
-                )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {editMode && (
                 <button
-                  onClick={editMode ? saveTranscriptDraft : () => setEditMode(true)}
-                  className={`btn h-10 px-3.5 text-sm gap-1.5 ${editMode ? "btn-primary" : "btn-outline"}`}
-                  title={
-                    editMode
-                      ? "Save the typed practical / state exam details"
-                      : "Type the fields that need manual entry (practical exam, state exam)"
-                  }
+                  onClick={() => setEditMode(false)}
+                  className="h-10 px-3.5 text-sm font-medium rounded-lg border transition"
+                  style={{
+                    background: COLORS.bgCard,
+                    borderColor: COLORS.border,
+                    color: COLORS.textSecondary,
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.bgDefault)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.bgCard)}
                 >
-                  {editMode ? (
-                    <>
-                      <Check size={16} /> Save
-                    </>
-                  ) : (
-                    <>
-                      <Pencil size={16} /> Edit
-                    </>
-                  )}
+                  <X size={16} className="inline mr-2" /> Cancel
                 </button>
-                <button onClick={handlePrint} className="btn btn-outline h-10 px-4 text-sm gap-1.5">
-                  <Printer size={16} /> Print / PDF
-                </button>
-                <button onClick={() => handleDownload("word")} className="btn btn-outline h-10 px-4 text-sm gap-1.5">
-                  <FileDown size={16} /> Word
-                </button>
-                <button onClick={() => handleDownload("excel")} className="btn btn-primary h-10 px-4 text-sm gap-1.5">
-                  <FileSpreadsheet size={16} /> Excel
-                </button>
-              </div>
+              )}
+              <button
+                onClick={editMode ? saveTranscriptDraft : () => setEditMode(true)}
+                className="h-10 px-3.5 text-sm font-medium rounded-lg transition"
+                style={{
+                  background: editMode ? COLORS.accent : COLORS.bgCard,
+                  color: editMode ? "#fff" : COLORS.textSecondary,
+                  borderColor: editMode ? COLORS.accent : COLORS.border,
+                  border: editMode ? "none" : `1px solid ${COLORS.border}`,
+                }}
+                onMouseEnter={(e) => {
+                  if (!editMode) e.currentTarget.style.background = COLORS.bgDefault;
+                  else e.currentTarget.style.background = COLORS.accentHover;
+                }}
+                onMouseLeave={(e) => {
+                  if (!editMode) e.currentTarget.style.background = COLORS.bgCard;
+                  else e.currentTarget.style.background = COLORS.accent;
+                }}
+              >
+                {editMode ? (
+                  <>
+                    <Check size={16} className="inline mr-2" /> Save
+                  </>
+                ) : (
+                  <>
+                    <Pencil size={16} className="inline mr-2" /> Edit
+                  </>
+                )}
+              </button>
+
+              <div className="flex-1 sm:flex-none" />
+
+              <button
+                onClick={handlePrint}
+                className="h-10 px-4 text-sm font-medium rounded-lg border transition"
+                style={{
+                  background: COLORS.bgCard,
+                  borderColor: COLORS.border,
+                  color: COLORS.textSecondary,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.bgDefault)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.bgCard)}
+              >
+                <Printer size={16} className="inline mr-2" /> Print
+              </button>
+              <button
+                onClick={() => handleDownload("word")}
+                className="h-10 px-4 text-sm font-medium rounded-lg border transition"
+                style={{
+                  background: COLORS.bgCard,
+                  borderColor: COLORS.border,
+                  color: COLORS.textSecondary,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.bgDefault)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.bgCard)}
+              >
+                <FileDown size={16} className="inline mr-2" /> Word
+              </button>
+              <button
+                onClick={() => handleDownload("excel")}
+                className="h-10 px-4 text-sm font-medium rounded-lg text-white transition"
+                style={{ background: COLORS.accent }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.accentHover)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.accent)}
+              >
+                <FileSpreadsheet size={16} className="inline mr-2" /> Excel
+              </button>
             </div>
           </div>
 
           {/* ── the transcript document ── */}
           <div
             id="transcript-doc"
-            className="relative overflow-hidden rounded-2xl border p-6 sm:p-10"
-            style={{ background: "#ffffff", borderColor: LINE, color: INK }}
+            style={{
+              borderRadius: 12,
+              border: `1px solid ${COLORS.border}`,
+              background: "#ffffff",
+              padding: 40,
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
+            }}
           >
-            {/* letterhead — official KINGDOM OF CAMBODIA / NTTI “ex” cheatsheet */}
+            {/* letterhead */}
             <div className="pb-4 mb-4">
-              {/* top-right letterhead — pair centred on each other */}
-              <div className="flex justify-end">
+              <div className="flex justify-end mb-3">
                 <div className="w-fit text-center">
                   <p className="text-[14px] font-extrabold tracking-tight leading-snug" style={{ color: INK, ...SERIF }}>
                     {INSTITUTION_LINES.country}
@@ -1161,9 +1242,8 @@ export default function Transcript() {
                   </p>
                 </div>
               </div>
-              {/* top-left institute block — lines centred on each other */}
-              <div className="w-fit text-center mt-2">
-                <p className="text-[13px] font-extrabold mt-0.5 leading-tight" style={{ color: INK, ...SERIF }}>
+              <div className="w-fit text-center">
+                <p className="text-[13px] font-extrabold leading-tight" style={{ color: INK, ...SERIF }}>
                   {INSTITUTION_LINES.ministry}
                 </p>
                 <p className="text-[13px] font-bold mt-0.5" style={{ color: INK, ...SERIF }}>
@@ -1182,8 +1262,7 @@ export default function Transcript() {
               </h2>
             </div>
 
-            {/* student header block — mirrors official R7–R9: left = Student/DOB/Place,
-              right = Sex/Nationality/Date of Graduation */}
+            {/* student header block */}
             <table className="w-full text-[12px] mb-3" style={{ borderCollapse: "collapse", ...SERIF }}>
               <tbody>
                 <tr>
@@ -1212,7 +1291,7 @@ export default function Transcript() {
               </tbody>
             </table>
 
-            {/* completion statement — official R10, centred above the table */}
+            {/* completion statement */}
             <p className="text-[12px] mb-3 text-center" style={{ color: INK, ...SERIF }}>
               Has successfully completed Diploma of Technology in the field of{" "}
               <b>{cls?.field || majorName(student.major)}</b> in academic year{" "}
@@ -1221,7 +1300,7 @@ export default function Transcript() {
               </b>
             </p>
 
-            {/* ── YEAR | SEMESTER I | SEMESTER II cheatsheet table ── */}
+            {/* main table */}
             <style>{`
               #transcript-doc .ex-table { width: 100%; border-collapse: collapse; font-size: 11px; color: ${INK}; font-family: 'Times New Roman', Times, serif; }
               #transcript-doc .ex-table th,
@@ -1231,7 +1310,6 @@ export default function Transcript() {
               #transcript-doc .ex-table td.grade { text-align: center; font-weight: 700; }
               #transcript-doc .ex-table td.year { text-align: center; font-weight: 800; vertical-align: middle; background: ${SOFT}; }
               #transcript-doc .ex-table tbody.transcript-term { page-break-inside: avoid; }
-              #transcript-doc .ex-table tr.avg-row td { background: ${SOFT}; font-weight: 700; }
               #transcript-doc .ex-legend { border-collapse: collapse; font-size: 11px; color: ${INK}; font-family: 'Times New Roman', Times, serif; }
               #transcript-doc .ex-legend th,
               #transcript-doc .ex-legend td { border: 1px solid ${LINE}; padding: 2px 8px; text-align: center; }
@@ -1262,7 +1340,7 @@ export default function Transcript() {
                 const st1 = block.s1 ? statsOf(block.s1) : null;
                 const st2 = block.s2 ? statsOf(block.s2) : null;
                 const yearLabel = ordinal(Number(block.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
-                const uncompleted = !(st1?.count) && !(st2?.count); // a year with subjects but no grades yet
+                const uncompleted = !(st1?.count) && !(st2?.count);
                 if (uncompleted) {
                   return (
                     <tbody key={`y-${block.y}`} className="transcript-term">
@@ -1296,7 +1374,7 @@ export default function Transcript() {
                   </tbody>
                 );
               })}
-              {/* State Exam / Practical Exam — label text merged into its own right block */}
+              {/* State Exam / Practical Exam */}
               <tbody className="transcript-term">
                 <tr>
                   <td className="year" colSpan={5}>
@@ -1308,6 +1386,7 @@ export default function Transcript() {
                           onChange={(e) => setDraft((d) => ({ ...d, stateExam: e.target.value }))}
                           placeholder="Score / remark…"
                           className="input h-6 w-28 px-1.5 py-0.5 text-center text-[10px]"
+                          style={{ borderRadius: 4, border: `1px solid ${COLORS.border}` }}
                         />
                       </div>
                     ) : (
@@ -1326,12 +1405,14 @@ export default function Transcript() {
                           onChange={(e) => setDraft((d) => ({ ...d, practicalTitle: e.target.value }))}
                           placeholder="Project / thesis title"
                           className="input h-6 min-w-[150px] flex-1 px-1.5 py-0.5 text-[10px]"
+                          style={{ borderRadius: 4, border: `1px solid ${COLORS.border}` }}
                         />
                         <input
                           value={draft.practicalScore}
                           onChange={(e) => setDraft((d) => ({ ...d, practicalScore: e.target.value }))}
                           placeholder="Score"
                           className="input h-6 w-16 px-1.5 py-0.5 text-center text-[10px]"
+                          style={{ borderRadius: 4, border: `1px solid ${COLORS.border}` }}
                         />
                         <span className="min-w-[60px] text-center text-[11px] font-bold">
                           {draftScoreNum != null ? `Grade: ${letterOf(draftScoreNum)}` : "Grade: —"}
@@ -1352,12 +1433,12 @@ export default function Transcript() {
               </tbody>
             </table>
 
-            {/* REMARKS — official R49, sits ABOVE the grading table */}
+            {/* REMARKS */}
             <p className="text-[12px] mb-2" style={{ color: INK, ...SERIF }}>
               <b>REMARKS:</b>
             </p>
 
-            {/* grade-scale legend — official R50–56; “Phnom Penh, Date + Deputy Director” sits on its right (official R50–51) */}
+            {/* grade-scale legend */}
             <div className="flex flex-wrap items-start gap-4">
               <div className="min-w-0 flex-1">
                 <table className="ex-legend">
@@ -1389,7 +1470,7 @@ export default function Transcript() {
               </div>
             </div>
 
-            {/* ISO footer — official R70–72 */}
+            {/* ISO footer */}
             <div className="mt-5 pt-3 text-center text-[10px]" style={{ borderTop: `1px solid ${LINE}`, color: MUTED, ...SERIF }}>
               <p>{INSTITUTION_LINES.certNo}</p>
               <p className="mt-0.5">{INSTITUTION_LINES.address1}</p>
