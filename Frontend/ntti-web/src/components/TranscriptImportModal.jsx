@@ -3,6 +3,7 @@ import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, X, Search, Layers
 import Modal from "./Modal";
 import * as XLSX from "xlsx";
 import { ACADEMIC_LEVELS } from "../data/seed";
+import { cleanName, isRollLabel, splitLatin } from "./studentImportHelpers";
 
 /* ── NTTI cheatsheet knowledge ──────────────────────────────
    The "GLOBAL" score sheet has a title row, a header row, optional label
@@ -38,9 +39,14 @@ const clampScore = (n) => Math.max(0, Math.min(100, Math.round(n * 100) / 100));
 const classifyHeader = (h) => {
   const s = String(h ?? "").trim();
   if (!s) return null;
-  if (/លេខកូដ|student\s*id|student\s*code|លេខរៀង|ล\.រ|^\s*(no\.?|no|#|code|id|roll|number)\s*$/i.test(s)) return "sid";
+  // real ID/code columns — these are allowed to become a student ID
+  if (/លេខកូដ|លេខសំគាល់|student\s*id|student\s*code|^\s*(code|id)\s*$/i.test(s)) return "sid";
+  // position / roll number — never a student ID. Some files label the roll
+  // column with only a stray glyph ("\" or a lone quote) or with the Khmer
+  // abbreviation ល.រ — those are still the No/roll column, never a subject.
+  if (isRollLabel(s)) return "roll";
   if (/គោត្តនាម|ខ្មែរ|khmer/i.test(s)) return "khmer";
-  if (/អក្សរឡាតាំង|latin|ឡាតាំង/i.test(s)) return "latin";
+  if (/អក្សរឡាតាំង|latin|ឡាតាំង|ឈ្មោះអង់គ្លេស|english\s*name/i.test(s)) return "latin";
   if (/ថ្ងៃខែ|birth|dob|កំនើត|កំណើត/i.test(s)) return "dob";
   if (/ភេទ|gender|sex/i.test(s)) return "gender";
   if (/ទីកន្លែង|place/i.test(s)) return "place";
@@ -199,7 +205,8 @@ export default function TranscriptImportModal({ open, onClose, students, onImpor
     return out;
   }, [subjectCols, overrides]);
 
-  /* special columns — prefer the *last* ID-ish column (Code over No.) */
+  /* special columns — prefer the *last* real ID/Code column. Roll-number columns
+     are classified as "roll" and never used as identity. */
   const sidIdx = colRoles.lastIndexOf("sid");
   const khmerIdx = colRoles.indexOf("khmer");
   const latinIdx = colRoles.indexOf("latin");
@@ -242,35 +249,30 @@ export default function TranscriptImportModal({ open, onClose, students, onImpor
   const latinFull = (st) => norm(`${st.firstName} ${st.lastName}`);
 
   const matchRow = (row) => {
-    const kh = collapse(row[khmerIdx]);
-    const lat = collapse(row[latinIdx]);
+    const kh = cleanName(collapse(row[khmerIdx]));
+    const lat = cleanName(collapse(row[latinIdx]));
     const code = collapse(row[sidIdx]);
+    const dob = row[dobIdx] != null ? dobToISO(row[dobIdx]) : "";
     const candidates = [];
     students.forEach((st) => {
       let score = 0;
+      // name match — full-name compare only (never loose substrings: "MENGHONG" must not
+      // match "KHIENG MENGHONG" or a different student whose name merely contains it)
       if (kh && kh.toLowerCase() === khmerOf(st).toLowerCase()) score = 100;
       else if (lat) {
         const lf = latinFull(st);
         if (lf === norm(lat)) score = 95;
-        else if (lf === norm(`${row[latinIdx]?.toString().trim().split(/\s+/).reverse().join(" ")}`)) score = 90;
-        else if (
-          (lat.length >= 4 && lf.includes(norm(lat))) ||
-          (lf.length >= 4 && norm(lat).includes(lf))
-        )
-          score = 60;
+        else if (lf === norm(lat.split(/\s+/).reverse().join(" "))) score = 90; // surname-first sheets
       }
-      if (score >= 60) candidates.push({ st, score });
+      // same name + same date of birth = definitely the same person (breaks Khmer name ties)
+      if (score >= 90 && dob && st.dob && dob === st.dob) score = 200;
+      if (score >= 90) candidates.push({ st, score });
     });
+    // ID fallback only when the name never matched, and only on an exact ID / "-CODE" suffix
     if (!candidates.length && code) {
       students.forEach((st) => {
         const id = collapse(st.studentId);
-        if (
-          id &&
-          (id === code ||
-            id.endsWith(`-${code}`) ||
-            (code.length >= 3 && id.includes(code)))
-        )
-          candidates.push({ st, score: 50 });
+        if (id && (id === code || id.endsWith(`-${code}`))) candidates.push({ st, score: 60 });
       });
     }
     candidates.sort((a, b) => b.score - a.score);
@@ -285,10 +287,14 @@ export default function TranscriptImportModal({ open, onClose, students, onImpor
     let badStreak = 0;
     for (let r = headerRow + 1; r < rawRows.length; r++) {
       const row = rawRows[r] || [];
-      const kh = collapse(row[khmerIdx]);
-      const lat = collapse(row[latinIdx]);
+      const khRaw = collapse(row[khmerIdx]);
+      const latRaw = collapse(row[latinIdx]);
+      const kh = cleanName(khRaw);
+      const lat = cleanName(latRaw);
       const code = collapse(row[sidIdx]);
-      const hasIdentity = !!(kh || lat || code || isFinCell(row[0]) != null);
+      /* identity test uses the *raw* cells — a "សតុដេនត" placeholder still means
+         this is a student row, it just isn't the student's real name. */
+      const hasIdentity = !!(khRaw || latRaw || code || isFinCell(row[0]) != null);
       if (!hasIdentity) {
         if (started) {
           badStreak++;
@@ -344,14 +350,18 @@ export default function TranscriptImportModal({ open, onClose, students, onImpor
 
   const doImport = () => {
     const rows = withScores.map((p) => {
-      const parts = collapse(p.lat).split(/\s+/).filter(Boolean);
+      const kh = cleanName(p.kh);
+      const lat = cleanName(p.lat);
+      /* last token = family name; "Student"/សិស្ស/សតុដេនត placeholders are
+         stripped so they never appear on the transcript. */
+      const { firstName, lastName } = splitLatin(lat);
       return {
         matched: p.matched,
         identity: {
           studentId: p.code || "",
-          khmerName: p.kh,
-          firstName: parts.slice(0, -1).join(" ") || p.kh || "Student",
-          lastName: parts[parts.length - 1] || "",
+          khmerName: kh,
+          firstName: firstName || kh || "Student",
+          lastName: lastName || "",
           gender: p.gender,
           dob: p.dob,
           thesisTitle: p.thesisTitle || "",

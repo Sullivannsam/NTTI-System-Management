@@ -11,21 +11,24 @@ import {
   User2,
   Link2,
   Upload,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
 import { useDropPos, DropdownPanel } from "../components/Dropdown";
 import TranscriptImportModal from "../components/TranscriptImportModal";
 import { ACADEMIC_LEVELS, levelMeta, majorName, prettyDate, computeRate, todayISO, programYears, maxLevelForMajor } from "../data/seed";
+import { cleanName, isRollLabel } from "../components/studentImportHelpers";
 
 const SCORES_KEY = "ntti.scores.v1";
 const SCHED_KEY = "ntti.schedule.v2";
 const INSTITUTION_KM = "វិទ្យាស្ថានជាតិបណ្តុះបណ្តាលបច្ចេកទេស";
 const INSTITUTION_EN = "National Technical Training Institute";
-const LOGO_SRC = "/ntti-logo.png";
 
 /* ── official NTTI transcript layout (mirrors the “ex” sheet of the office file) ── */
 const INSTITUTION_LINES = {
@@ -40,14 +43,29 @@ const INSTITUTION_LINES = {
   address2: "Cambodia, Phone/Fax: (855)23 883039, website: www.ntti.edu.kh, E-mail:info@ntti.edu.kh",
 };
 
+/* The student's real graduation date (stamped on the student when they are
+   moved to Graduate), formatted like the official sheet's "February 9, 2026". */
+function graduationDate(student) {
+  const d = student?.graduationDate;
+  if (!d) return "—";
+  return new Date(d + "T00:00:00").toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/* Times New Roman is used for the letterhead's country / motto / ministry lines. */
+const SERIF = { fontFamily: "'Times New Roman', Times, serif" };
+
 /* official grading scale printed on the transcript */
 const NTTI_SCALE = [
-  { min: 85, max: 100, grade: "A", meaning: "Excellent", point: "4" },
-  { min: 80, max: 84, grade: "B+", meaning: "Very good", point: "3.5" },
-  { min: 70, max: 79, grade: "B", meaning: "Good", point: "3" },
-  { min: 65, max: 69, grade: "C+", meaning: "Fairly Good", point: "2.5" },
-  { min: 50, max: 64, grade: "C", meaning: "Fair", point: "2" },
-  { min: 0, max: 49, grade: "F", meaning: "Fail", point: "1.5" },
+  { min: 85, max: 100, grade: "A", meaning: "Excellent", point: "4.00" },
+  { min: 80, max: 84, grade: "B+", meaning: "Verygood", point: "3.50" },
+  { min: 70, max: 79, grade: "B", meaning: "Good", point: "3.00" },
+  { min: 65, max: 69, grade: "C+", meaning: "Fairly Good", point: "2.50" },
+  { min: 50, max: 64, grade: "C", meaning: "Fair", point: "2.00" },
+  { min: 0, max: 49, grade: "F", meaning: "Fail", point: "1.50" },
 ];
 const GRADE_POINTS = { A: 4, "B+": 3.5, B: 3, "C+": 2.5, C: 2, F: 1.5 };
 
@@ -229,6 +247,7 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
     ["Gender", student.gender || "—"],
     ["Date of birth", student.dob ? prettyDate(student.dob) : "—"],
     ["Enrolled", student.enrollmentYear ? `Cohort ${student.enrollmentYear}` : "—"],
+    ["Date of graduation", graduationDate(student)],
     ["Class", cls?.name || "—"],
     ["Field of study", cls?.field || majorName(student.major)],
     ["Shift", cls?.shift || "—"],
@@ -239,56 +258,116 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
   ].filter(([, v]) => v != null);
 
   const infoCells = info
-    .map(([k, v]) => `<td style="padding:4px 10px;border:1px solid #cbd5e1;color:#475569"><b>${esc(k)}</b></td><td style="padding:4px 10px;border:1px solid #cbd5e1;color:#0f172a">${esc(v)}</td>`)
+    .map(
+      ([k, v]) =>
+        `<td style="padding:4px 10px;border:1px solid #cbd5e1;color:#475569"><b>${esc(k)}</b></td><td style="padding:4px 10px;border:1px solid #cbd5e1;color:#0f172a">${esc(v)}</td>`
+    )
     .join("");
 
-  const termsHTML = terms
-    .map((t) => {
-      const st = statsOf(t);
-      const rows = rowsOf(t)
+  /* group terms into YEAR | SEMESTER I | SEMESTER II blocks (mirrors the on-screen yearBlocks) */
+  const byYear = {};
+  terms.forEach((t) => {
+    const y = String(t.level || "")[3];
+    if (!y) return;
+    (byYear[y] ||= {})[String(t.level).slice(0, 2)] = t; // "S1" / "S2"
+  });
+  const blocks = Object.entries(byYear)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([y, m]) => ({ y, s1: m.S1 || null, s2: m.S2 || null }));
+  const ordinal = (n) => {
+    const j = Number(n) % 100;
+    if (j >= 11 && j <= 13) return `${n} th`;
+    const r = j % 10;
+    return `${n}${r === 1 ? "st" : r === 2 ? "nd" : r === 3 ? "rd" : "th"}`;
+  };
+  const cell = "border:1px solid #cbd5e1;padding:4px 6px";
+  const subjectHTML = (r) =>
+    `<td style="${cell};text-align:left">${esc(r?.subject || "")}</td>` +
+    `<td style="${cell};text-align:center">${r?.hour == null ? "" : r.hour}</td>` +
+    `<td style="${cell};text-align:center">${r?.score == null ? "" : Number(r.score).toFixed(2)}</td>` +
+    `<td style="${cell};text-align:center;font-weight:700">${r?.grade || ""}</td>`;
+  const yearsHTML = blocks
+    .map((b) => {
+      const r1 = rowsOf(b.s1 || {});
+      const r2 = rowsOf(b.s2 || {});
+      const max = Math.max(r1.length, r2.length, 1);
+      const st1 = b.s1 ? statsOf(b.s1) : null;
+      const st2 = b.s2 ? statsOf(b.s2) : null;
+      const yearLabel = ordinal(Number(b.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
+      const uncompleted = !(st1?.count) && !(st2?.count); // a year with subjects but no grades yet
+      if (uncompleted) {
+        return (
+          `<tr><td style="${cell};text-align:center;font-weight:800;background:#f1f5f9">${yearLabel}</td>` +
+          `<td colspan="4" style="${cell};text-align:center;color:#64748b">Uncompleted</td>` +
+          `<td colspan="4" style="${cell};text-align:center;color:#64748b">Uncompleted</td></tr>`
+        );
+      }
+      const rows = Array.from({ length: max })
         .map(
-          (r, i) =>
-            `<tr><td style="padding:4px 10px;border:1px solid #cbd5e1;text-align:center">${i + 1}</td><td style="padding:4px 10px;border:1px solid #cbd5e1">${esc(r.subject)}</td><td style="padding:4px 10px;border:1px solid #cbd5e1;text-align:center">${r.score == null ? "—" : r.score.toFixed(2)}</td><td style="padding:4px 10px;border:1px solid #cbd5e1;text-align:center"><b>${r.grade || "—"}</b></td></tr>`
+          (_, i) =>
+            `<tr>${i === 0 ? `<td rowspan="${max}" style="${cell};text-align:center;font-weight:800;background:#f1f5f9">${yearLabel}</td>` : ""}` +
+            subjectHTML(r1[i]) +
+            subjectHTML(r2[i]) +
+            `</tr>`
         )
         .join("");
-      return `<h3 style="margin:16px 0 4px;color:#0f172a">${esc(t.level)} — ${esc(t.semester)} · ${esc(t.year)}${
-        t.archived ? "" : " (in progress)"
-      }</h3><table style="border-collapse:collapse;width:100%;font-size:12px"><tr style="background:#f1f5f9;color:#334155"><th style="padding:5px 10px;border:1px solid #cbd5e1">No</th><th style="padding:5px 10px;border:1px solid #cbd5e1;text-align:left">Subject</th><th style="padding:5px 10px;border:1px solid #cbd5e1">Score</th><th style="padding:5px 10px;border:1px solid #cbd5e1">Grade</th></tr>${rows}<tr style="background:#f1f5f9"><td colspan="2" style="padding:5px 10px;border:1px solid #cbd5e1;text-align:right"><b>Term average</b></td><td style="padding:5px 10px;border:1px solid #cbd5e1;text-align:center"><b>${
-        st.avg == null ? "—" : st.avg.toFixed(2)
-      }</b></td><td style="padding:5px 10px;border:1px solid #cbd5e1;text-align:center"><b>${st.grade || "—"}</b></td></tr></table>`;
+      return rows;
     })
     .join("");
 
-  const logoUrl = `${typeof window !== "undefined" ? window.location.origin : ""}${LOGO_SRC}`;
+  const practicalExam =
+    student.thesisScore != null && student.thesisScore !== ""
+      ? `${student.thesisTitle || "Thesis / Practical project"} · Score: ${Number(student.thesisScore).toFixed(2)} · Grade: ${letterOf(Number(student.thesisScore))}`
+      : "—";
+
+  const legendRows = NTTI_SCALE.map(
+    (g) =>
+      `<tr><td style="${cell};text-align:center">${g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`}</td>` +
+      `<td style="${cell};text-align:center;font-weight:700">${g.grade}</td>` +
+      `<td style="${cell};text-align:left">${g.meaning}</td>` +
+      `<td style="${cell};text-align:center">${g.point}</td></tr>`
+  ).join("");
+
   return `<html><head><meta charset="utf-8"><title>Academic transcript</title></head><body style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;max-width:820px">
-  <table style="width:100%;border-collapse:collapse;border-bottom:3px double #0f172a">
-    <tr>
-      <td style="width:74px;vertical-align:middle;padding-bottom:10px"><img src="${logoUrl}" alt="NTTI" width="64" height="64" /></td>
-      <td style="vertical-align:middle;padding-bottom:10px">
-        <h1 style="margin:0;font-size:20px">${esc(INSTITUTION_KM)}</h1>
-        <p style="margin:2px 0 0;font-size:14px;font-weight:600">${esc(INSTITUTION_EN)}</p>
-        <p style="margin:2px 0 0;color:#475569">Office of the Registrar · Official Academic Transcript</p>
-      </td>
-    </tr>
-  </table>
-  <p style="display:flex;justify-content:space-between;font-size:12px;color:#475569"><span>Transcript No: <b>${esc(refNo)}</b></span><span>Issued: <b>${esc(issued)}</b></span></p>
+  <div style="padding-bottom:10px;max-width:820px">
+    <div style="float:right;text-align:center;white-space:nowrap">
+      <h1 style="margin:0;font-size:14px;color:#0f172a;font-family:'Times New Roman',serif">${esc(INSTITUTION_LINES.country)}</h1>
+      <p style="margin:2px 0 0;font-size:14px;color:#0f172a;font-family:'Times New Roman',serif">${esc(INSTITUTION_LINES.motto)}</p>
+    </div>
+    <div style="float:left;text-align:center">
+      <p style="margin:0;font-size:13px;font-weight:800;color:#0f172a;font-family:'Times New Roman',serif">${esc(INSTITUTION_LINES.ministry)}</p>
+      <p style="margin:4px 0 0;font-size:13px;font-weight:700;color:#0f172a;font-family:'Times New Roman',serif">${esc(INSTITUTION_LINES.institute)}</p>
+      <p style="margin:2px 0 0;font-size:11px;color:#475569;font-family:'Times New Roman',serif">${esc(INSTITUTION_LINES.noLine)}</p>
+    </div>
+    <div style="clear:both"></div>
+  </div>
+  <h2 style="text-align:center;margin:14px 0 4px;font-size:16px;color:#0f172a;font-family:'Times New Roman',serif">OFFICIAL TRANSCRIPT</h2>
   <table style="border-collapse:collapse;width:100%;font-size:12px"><tr>${infoCells}</tr></table>
-  ${termsHTML}
-  <h3 style="margin:18px 0 4px;color:#0f172a">Cumulative summary</h3>
+  <p style="font-size:12px;margin:8px 0;color:#0f172a;text-align:center">Has successfully completed Diploma of Technology in the field of <b>${esc(cls?.field || majorName(student.major))}</b> in academic year <b>${student.enrollmentYear || "—"} - ${student.enrollmentYear ? Number(student.enrollmentYear) + (programYears(student.major) - 1) : "—"}</b></p>
   <table style="border-collapse:collapse;width:100%;font-size:12px">
-    <tr><td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Terms included</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${terms.length}</b></td>
-    <td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Subjects recorded</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${overall.count}</b></td></tr>
-    <tr><td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Overall average</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${overall.avg == null ? "—" : overall.avg.toFixed(2)}</b></td>
-    <td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">GPA (4.00)</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${overall.gpa == null ? "—" : overall.gpa.toFixed(2)}</b></td></tr>
-    <tr><td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Overall grade</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${overall.grade || "—"}</b></td>
-    <td style="padding:6px 10px;border:1px solid #cbd5e1;color:#475569">Attendance</td><td style="padding:6px 10px;border:1px solid #cbd5e1"><b>${att.rate}%</b> (${att.present} present · ${att.late} late · ${att.absent} absent · ${att.leave} leave)</td></tr>
+    <tr><th rowspan="2" style="${cell};background:#f1f5f9;width:56px">YEAR</th><th colspan="4" style="${cell};background:#f1f5f9">SEMESTER I</th><th colspan="4" style="${cell};background:#f1f5f9">SEMESTER II</th></tr>
+    <tr>${[0, 1].map(() => `<th style="${cell};background:#f1f5f9;text-align:left">Subjects</th><th style="${cell};background:#f1f5f9">HOUR</th><th style="${cell};background:#f1f5f9">Score (100/100)</th><th style="${cell};background:#f1f5f9">Grade</th>`).join("")}</tr>
+    ${yearsHTML}
+    <tr><td colspan="5" style="${cell};background:#f1f5f9;font-weight:800;text-align:center">State Exam${student.stateExam ? ` : ${esc(student.stateExam)}` : ""}</td><td colspan="4" style="${cell}"><b style="white-space:nowrap">Practical Exam :</b> ${esc(practicalExam)}</td></tr>
   </table>
-  <p style="margin-top:14px;font-size:11px;color:#475569">Result: <b>${overall.grade && overall.grade !== "F" ? "PASSED" : overall.grade === "F" ? "NOT PASSED" : "IN PROGRESS"}</b>. Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F &lt; 60.</p>
-  <table style="width:100%;margin-top:34px;font-size:12px;color:#475569"><tr>
-    <td style="text-align:center;padding-top:30px">_____________________________<br/>Registrar · Date</td>
-    <td style="text-align:center;padding-top:30px">_____________________________<br/>Director · Date</td>
-    <td style="text-align:center;padding-top:30px">( Official stamp )</td>
+  <p style="margin:10px 0 4px;font-size:12px;color:#0f172a"><b>REMARKS:</b></p>
+  <table style="width:100%"><tr>
+    <td style="vertical-align:top;padding-right:24px">
+      <table style="border-collapse:collapse;font-size:11px">
+        <tr><th style="${cell};background:#f1f5f9">Mark Obtained</th><th style="${cell};background:#f1f5f9">Grade</th><th style="${cell};background:#f1f5f9">Meaning</th><th style="${cell};background:#f1f5f9">Grade Point</th></tr>
+        ${legendRows}
+      </table>
+    </td>
+    <td style="vertical-align:top;text-align:center;font-size:12px;color:#475569">
+      <span style="font-size:10px">Phnom Penh, Date ..................</span><br/>
+      <div style="text-align:right">Deputy Director</div>
+    </td>
   </tr></table>
+  <div style="margin-top:18px;border-top:1px solid #cbd5e1;text-align:center;font-size:10px;color:#475569">
+    <p style="margin:6px 0 2px">${esc(INSTITUTION_LINES.certNo)}</p>
+    <p style="margin:2px 0">${esc(INSTITUTION_LINES.address1)}</p>
+    <p style="margin:2px 0">${esc(INSTITUTION_LINES.address2)}</p>
+  </div>
   <p style="margin-top:10px;font-size:10px;color:#94a3b8">Computer-generated transcript · verify against the Office of the Registrar.</p>
   </body></html>`;
 }
@@ -307,6 +386,223 @@ function downloadFile(html, filename, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ── real .xlsx export — a literal mirror of the on-screen #transcript-doc
+   table: same 9 columns (YEAR · Subjects/HOUR/Score/Grade × 2), same rows,
+   same grade legend, one font everywhere (Times New Roman, matching the
+   on-screen letterhead/title) so opening the file in Excel shows exactly
+   what the website shows — no different layout, no different font. ── */
+function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, att, refNo, issued }) {
+  const W = 9; // A..I — YEAR, Subjects/HOUR/Score/Grade ×2
+  const aoa = [];
+  const merges = [];
+  const FONT = "Times New Roman";
+  const set = (r, c, v) => {
+    aoa[r] = aoa[r] || [];
+    aoa[r][c] = v === undefined || v === null ? "" : v;
+  };
+  const thin = { style: "thin", color: { rgb: "9CA3AF" } };
+  const border = { top: thin, bottom: thin, left: thin, right: thin };
+  const st = (o = {}) => ({
+    border,
+    ...o,
+    font: { name: FONT, ...(o.font || {}) },
+  });
+  const cell = (v, o) => ({ t: "s", v: v ?? "", s: st(o) });
+  const H = (r, c, v, span = 1) => {
+    set(r, c, cell(v, { font: { bold: true }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
+    if (span > 1) merges.push({ s: { r, c }, e: { r, c: c + span - 1 } });
+  };
+  const merge = (r, c0, c1, r2 = r) => merges.push({ s: { r, c: c0 }, e: { r: r2, c: c1 } });
+
+  /* letterhead — same lines as the on-screen title block, centred the same way */
+  const L = (r, v, bold, sz) => {
+    set(r, 0, cell(v, { font: { bold, sz }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
+    merge(r, 0, W - 1);
+  };
+  L(0, INSTITUTION_LINES.country, true, 14);
+  L(1, INSTITUTION_LINES.motto, false, 14);
+  L(2, INSTITUTION_LINES.ministry, true, 13);
+  L(3, INSTITUTION_LINES.institute, true, 12);
+  L(4, INSTITUTION_LINES.noLine, false, 10);
+  L(5, "", false, 10);
+  L(6, "OFFICIAL TRANSCRIPT", true, 16);
+
+  /* student block — mirrors on-screen 2-column layout: left = Student/DOB/Place,
+     right = Sex/Nationality/Date of Graduation */
+  let row = 7;
+  const pair = (r, lLabel, lValue, sLabel, sValue) => {
+    set(r, 0, cell(`${lLabel} :`, { font: { bold: true }, alignment: { horizontal: "left" } }));
+    merge(r, 0, 1);
+    set(r, 2, cell(lValue ?? "—", { alignment: { horizontal: "left" } }));
+    merge(r, 2, 4);
+    set(r, 5, cell(`${sLabel} :`, { font: { bold: true }, alignment: { horizontal: "left" } }));
+    merge(r, 5, 6);
+    set(r, 7, cell(sValue ?? "—", { alignment: { horizontal: "left" } }));
+    merge(r, 7, 8);
+  };
+  pair(row, "Student", student.khmerName ? `${student.khmerName} · ${student.firstName} ${student.lastName}` : `${student.firstName} ${student.lastName}`, "Sex", student.gender || "—");
+  row++;
+  pair(row, "Date of Birth", student.dob ? prettyDate(student.dob) : "—", "Nationality", "Khmer");
+  row++;
+  pair(row, "Place of Birth", "—", "Date of Graduation", graduationDate(student));
+  row++;
+
+  /* completion statement — centred, same wording as on-screen */
+  const yearsInProgram = programYears(student.major);
+  set(row, 0, cell(
+    `Has successfully completed Diploma of Technology in the field of ${cls?.field || majorName(student.major)} in academic year ${student.enrollmentYear || "—"} - ${student.enrollmentYear ? Number(student.enrollmentYear) + (yearsInProgram - 1) : "—"}`,
+    { font: { bold: true }, alignment: { horizontal: "center", wrapText: true } }
+  ));
+  merge(row, 0, W - 1);
+  row += 2;
+
+  /* ----- main table header — same 9 columns as the on-screen .ex-table ----- */
+  const hdrR = row;
+  H(hdrR, 0, "YEAR");
+  H(hdrR, 1, "SEMESTER I", 4);
+  H(hdrR, 5, "SEMESTER II", 4);
+  merge(hdrR, 0, 0, hdrR + 1);
+  const sub = hdrR + 1;
+  H(sub, 1, "Subjects");
+  H(sub, 2, "HOUR");
+  H(sub, 3, "Score (100/100)");
+  H(sub, 4, "Grade");
+  H(sub, 5, "Subjects");
+  H(sub, 6, "HOUR");
+  H(sub, 7, "Score (100/100)");
+  H(sub, 8, "Grade");
+  row = sub + 1;
+
+  const yearCell = (v) => cell(v, { font: { bold: true }, alignment: { horizontal: "center", vertical: "center" } });
+  const subjCell = (v) => cell(v, { alignment: { horizontal: "left" } });
+  const numCell = (v) => cell(v == null ? "" : Number(v).toFixed(2), { alignment: { horizontal: "center" } });
+  const hourCell = (v) => (v == null ? cell("", { alignment: { horizontal: "center" } }) : { t: "n", v, s: st({ alignment: { horizontal: "center" } }) });
+  const gradeCell = (g) => cell(g || "", { font: { bold: true }, alignment: { horizontal: "center" } });
+
+  yearBlocks.forEach((block) => {
+    const r1 = rowsOf(block.s1 || {});
+    const r2 = rowsOf(block.s2 || {});
+    const max = Math.max(r1.length, r2.length, 1);
+    const st1 = block.s1 ? statsOf(block.s1) : null;
+    const st2 = block.s2 ? statsOf(block.s2) : null;
+    const yearLabel = ordinal(Number(block.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
+    const y0 = row;
+    const uncompleted = !(st1?.count) && !(st2?.count);
+
+    if (uncompleted) {
+      set(y0, 0, yearCell(yearLabel));
+      set(y0, 1, cell("Uncompleted", { alignment: { horizontal: "center", vertical: "center" } }));
+      merge(y0, 1, 4);
+      set(y0, 5, cell("Uncompleted", { alignment: { horizontal: "center", vertical: "center" } }));
+      merge(y0, 5, 8);
+      row += 1;
+      return;
+    }
+
+    set(y0, 0, yearCell(yearLabel));
+    if (max > 1) merge(y0, 0, 0, y0 + max - 1);
+    for (let i = 0; i < max; i++) {
+      const a = r1[i];
+      const b = r2[i];
+      set(row, 1, subjCell(a?.subject || ""));
+      set(row, 2, hourCell(a?.hour));
+      set(row, 3, numCell(a ? a.score : null));
+      set(row, 4, gradeCell(a?.grade));
+      set(row, 5, subjCell(b?.subject || ""));
+      set(row, 6, hourCell(b?.hour));
+      set(row, 7, numCell(b ? b.score : null));
+      set(row, 8, gradeCell(b?.grade));
+      row++;
+    }
+  });
+
+  /* State Exam / Practical Exam row — same as the on-screen table */
+  set(row, 0, cell(student.stateExam ? `State Exam : ${student.stateExam}` : "State Exam", {
+    font: { bold: true }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  }));
+  merge(row, 0, 4);
+  set(row, 5, cell(
+    student.thesisScore != null && student.thesisScore !== ""
+      ? `Practical Exam : ${student.thesisTitle || "Thesis / Practical project"} · Score: ${Number(student.thesisScore).toFixed(2)} · Grade: ${letterOf(Number(student.thesisScore))}`
+      : "Practical Exam : —",
+    { alignment: { horizontal: "left", vertical: "center", wrapText: true } }
+  ));
+  merge(row, 5, 8);
+  row++;
+
+  /* REMARKS + grade legend — like the web, “Phnom Penh, Date + Deputy Director”
+     sits on the RIGHT of the legend (legend = cols A–I, signature = cols J–M) */
+  row++;
+  set(row, 0, cell("REMARKS:", { font: { bold: true } }));
+  row++;
+  H(row, 0, "Mark Obtained", 2);
+  H(row, 2, "Grade", 2);
+  H(row, 4, "Meaning", 3);
+  H(row, 7, "Grade Point", 2);
+  const sig = 10; // column J
+  set(row, sig, cell("Phnom Penh, Date ..................", { alignment: { horizontal: "center" } }));
+  merge(row, sig, sig + 3);
+  row++;
+  NTTI_SCALE.forEach((g, i) => {
+    set(row, 0, cell(g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`, { alignment: { horizontal: "center" } }));
+    merge(row, 0, 1);
+    set(row, 2, cell(g.grade, { font: { bold: true }, alignment: { horizontal: "center" } }));
+    merge(row, 2, 3);
+    set(row, 4, cell(g.meaning, { alignment: { horizontal: "left" } }));
+    merge(row, 4, 6);
+    set(row, 7, cell(g.point, { alignment: { horizontal: "center" } }));
+    merge(row, 7, 8);
+    if (i === 0) {
+      set(row, sig, cell("Deputy Director", { font: { bold: true }, alignment: { horizontal: "right" } }));
+      merge(row, sig, sig + 3);
+    }
+    row++;
+  });
+  row += 2; // blank spacer before the footer
+
+  /* ISO footer — same as on-screen */
+  const foot = (v) => {
+    set(row, 0, cell(v, { alignment: { horizontal: "center", vertical: "center" } }));
+    merge(row, 0, W - 1);
+    row++;
+  };
+  foot(INSTITUTION_LINES.certNo);
+  foot(INSTITUTION_LINES.address1);
+  foot(INSTITUTION_LINES.address2);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!merges"] = merges;
+  ws["!cols"] = [
+    { wch: 8 },  // YEAR
+    { wch: 30 }, // Subjects (SEM I)
+    { wch: 8 },  // HOUR
+    { wch: 16 }, // Score
+    { wch: 8 },  // Grade
+    { wch: 30 }, // Subjects (SEM II)
+    { wch: 8 },  // HOUR
+    { wch: 16 }, // Score
+    { wch: 8 },  // Grade
+    { wch: 10 }, // J–M — signature block beside the legend
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Transcript");
+  return wb;
+}
+
 /* ── main page ───────────────────────────────────────────── */
 export default function Transcript() {
   const { students, classes, attendance, addStudent, updateStudent, logAudit, showToast } = useApp();
@@ -317,10 +613,17 @@ export default function Transcript() {
   const initialStudentId = Number(new URLSearchParams(window.location.search).get("student")) || null;
   const initialStudent = initialStudentId ? students.find((s) => s.id === initialStudentId) : null;
 
-  const [classId, setClassId] = useState(initialStudent?.className || classes[0]?.id || "");
+  const [classId, setClassId] = useState(initialStudent?.className || "");
   const [studentId, setStudentId] = useState(initialStudent?.id || null);
+  /* first opening starts "empty" (None class, no student); we only auto-select
+     the first student after the user picks a class themselves */
+  const [picked, setPicked] = useState(Boolean(initialStudent));
   const [scope, setScope] = useState("all");
   const [importOpen, setImportOpen] = useState(false);
+
+  /* edit mode: type the fields that need manual entry (practical exam, state exam) */
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState({ practicalTitle: "", practicalScore: "", stateExam: "" });
 
   // re-read latest scores/schedules when the page opens
   useEffect(() => {
@@ -347,12 +650,13 @@ export default function Transcript() {
     [students, classId]
   );
 
-  // keep the selected student inside the selected class
+  // keep the selected student inside the selected class (only after the user picks)
   useEffect(() => {
+    if (!picked) return;
     if (roster.length && !roster.some((s) => s.id === studentId)) setStudentId(roster[0].id);
     if (!roster.length) setStudentId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roster]);
+  }, [roster, picked]);
 
   // choosing a student from the picker also follows them to their class
   useEffect(() => {
@@ -368,38 +672,83 @@ export default function Transcript() {
     : classes.find((c) => c.id === classId) || null;
   const yearsInProgram = student ? programYears(student.major) : 4;
 
+  /* fill the edit drafts from the current student (also when re-entering edit mode) */
+  useEffect(() => {
+    if (!student) return;
+    setDraft({
+      practicalTitle: student.thesisTitle || "",
+      practicalScore: student.thesisScore != null && student.thesisScore !== "" ? String(student.thesisScore) : "",
+      stateExam: student.stateExam != null ? String(student.stateExam) : "",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [student?.id, editMode]);
+
+  const draftScoreNum = (() => {
+    const v = draft.practicalScore.trim();
+    return v !== "" && !Number.isNaN(Number(v)) ? Number(v) : null;
+  })();
+
+  const saveTranscriptDraft = () => {
+    if (!student) return;
+    const pTitle = draft.practicalTitle.trim();
+    const pScore = draft.practicalScore.trim();
+    const pScoreNum = pScore !== "" && !Number.isNaN(Number(pScore)) ? Number(pScore) : null;
+    const sExam = draft.stateExam.trim();
+    updateStudent(student.id, {
+      firstName: student.firstName,
+      lastName: student.lastName,
+      thesisTitle: pTitle || null,
+      thesisScore: pScoreNum,
+      stateExam: sExam || null,
+    });
+    logAudit("transcript_edit", `Edited practical/state exam details for "${student.firstName} ${student.lastName}"`);
+    setEditMode(false);
+    showToast("Transcript details saved");
+  };
+
   /* every recorded term: archived history + the live (current) term */
   const allTerms = useMemo(() => {
     if (!student) return [];
     const currentLevel = ACADEMIC_LEVELS.includes(student.level) ? student.level : "S1Y1";
     const list = [];
+    /* a stored "ល.រ" / "\" subject is the roll column, never a real class —
+       drop it here so transcripts, exports and averages stay clean */
+    const cleanEntry = (subjects, scores) => ({
+      subjects: (subjects || []).filter((x) => !isRollLabel(x)),
+      scores:
+        scores && typeof scores === "object"
+          ? Object.fromEntries(Object.entries(scores).filter(([k]) => !isRollLabel(k)))
+          : scores,
+    });
     (student.history || []).forEach((h) => {
       if (!h.level) return;
       const scores = h.scores && typeof h.scores === "object" ? h.scores : {};
       const subs =
         Array.isArray(h.subjects) && h.subjects.length ? h.subjects : Object.keys(scores);
+      const { subjects, scores: cleanScores } = cleanEntry(subs, scores);
       list.push({
         level: h.level,
         year: h.year || levelMeta(h.level).year,
         semester: h.semester || levelMeta(h.level).semester,
         className: h.className,
         archived: true,
-        subjects: subs,
-        scores,
+        subjects,
+        scores: cleanScores,
       });
     });
     if (student.status !== "Graduate") {
       const live = (scores[student.className] || {})[student.id] || {};
       const sched = scheduleFor(student.className);
       const subjects = sched ? sched.subjects.filter(Boolean) : Object.keys(live);
+      const { subjects: cleanSubjects, scores: cleanLive } = cleanEntry(subjects, live);
       list.push({
         level: currentLevel,
         year: levelMeta(currentLevel).year,
         semester: levelMeta(currentLevel).semester,
         className: student.className,
         archived: false,
-        subjects: Array.from(new Set(subjects)),
-        scores: live,
+        subjects: Array.from(new Set(cleanSubjects)),
+        scores: cleanLive,
       });
     }
     // one entry per level, chronological
@@ -493,7 +842,7 @@ export default function Transcript() {
   );
   const issued = prettyDate(todayISO());
 
-  const exportData = () => ({ student, cls, terms, overall, att, refNo, issued });
+  const exportData = () => ({ student, cls, terms, yearBlocks, ordinal, overall, att, refNo, issued });
 
   const handlePrint = () => {
     if (!student) return;
@@ -503,9 +852,17 @@ export default function Transcript() {
 
   const handleDownload = (type) => {
     if (!student) return;
-    const html = docHTML(exportData());
     const base = student.studentId || `${student.firstName}-${student.lastName}`;
-    downloadFile(html, `${base}-transcript.${type === "word" ? "doc" : "xls"}`, type);
+    if (type === "excel") {
+      const wb = buildTranscriptWorkbook(exportData());
+      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      downloadBlob(
+        new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `${base}-transcript.xlsx`
+      );
+    } else {
+      downloadFile(docHTML(exportData()), `${base}-transcript.doc`, "word");
+    }
     logAudit("export_transcript", `Exported ${type === "word" ? "Word" : "Excel"} transcript for "${student.firstName} ${student.lastName}" (${scopeLabel})`);
     showToast(`Transcript exported as ${type === "word" ? "Word" : "Excel"}`);
   };
@@ -566,10 +923,15 @@ export default function Transcript() {
         const i = row.identity || {};
         const lastLevel = entries[entries.length - 1]?.level || "S1Y1";
         const finished = entries.some((e) => e.level === maxLevelForMajor("it"));
+        /* never store "Student" / សិស្ស / សតុដេនត placeholders — cleanName
+           strips them so transcripts show the student's real name. */
+        const fname = cleanName(i.firstName);
+        const lname = cleanName(i.lastName);
+        const khname = cleanName(i.khmerName);
         addStudent({
-          firstName: i.firstName || i.khmerName || "Student",
-          lastName: i.lastName || "",
-          khmerName: i.khmerName || "",
+          firstName: fname || khname || "Student",
+          lastName: lname || "",
+          khmerName: khname || "",
           studentId: i.studentId || `NTTI-${String(nextId).padStart(3, "0")}`,
           gender: i.gender || "",
           dob: i.dob || "",
@@ -585,10 +947,13 @@ export default function Transcript() {
       }
     });
     setImportOpen(false);
-    if (createdIds.length) {
-      setStudentId(createdIds[0]);
-      const fresh = students.find((s) => s.id === createdIds[0]);
-      if (fresh && fresh.className) setClassId(fresh.className);
+    /* show the imported data immediately: jump to the first student this import
+       touched (a newly created one first, otherwise the first matched one) —
+       otherwise the page stays on "No student selected" after an all-update import */
+    const firstId = createdIds[0] ?? rows.find((r) => r.matched)?.matched?.id ?? null;
+    if (firstId) {
+      setPicked(true);
+      setStudentId(firstId);
     }
     logAudit(
       "import_transcript",
@@ -602,23 +967,6 @@ export default function Transcript() {
       {/* print rules + watermark styling: hide chrome, keep the document */}
       <style>{`
         #transcript-doc { position: relative; }
-        #transcript-doc > *:not(.transcript-watermark) { position: relative; z-index: 1; }
-        .transcript-watermark {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 66%;
-          max-width: 560px;
-          height: auto;
-          transform: translate(-50%, -50%);
-          opacity: 0.16;
-          filter: blur(4px);
-          pointer-events: none;
-          user-select: none;
-          z-index: 0;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
         @media print {
           .no-print { display: none !important; }
           /* kill ancestor transforms (fade-up keeps translateY(0)) so position:fixed
@@ -626,18 +974,6 @@ export default function Transcript() {
           .animate-fade-up { animation: none !important; transform: none !important; opacity: 1 !important; }
           #transcript-doc { box-shadow: none !important; border: none !important; border-radius: 0 !important; margin: 0 !important; position: relative !important; overflow: visible !important; }
           #transcript-doc .transcript-term { page-break-inside: avoid; }
-          /* fixed => the blurred logo is centred on EVERY printed page */
-          .transcript-watermark {
-            position: fixed !important;
-            top: 50% !important;
-            left: 50% !important;
-            width: 62% !important;
-            max-width: 520px !important;
-            transform: translate(-50%, -50%) !important;
-            z-index: 0 !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
         }
       `}</style>
 
@@ -657,9 +993,13 @@ export default function Transcript() {
               <div className="min-w-0 flex-1 basis-[200px] sm:flex-none sm:basis-auto">
                 <ClassSelect
                   value={classId}
-                  onChange={setClassId}
+                  onChange={(id) => {
+                    setPicked(true);
+                    setClassId(id);
+                  }}
                   placeholder="Select a class"
                   minWidth={200}
+                  allowNone
                   options={classes.map((c) => ({
                     value: c.id,
                     label: c.name,
@@ -668,7 +1008,14 @@ export default function Transcript() {
                 />
               </div>
               <div className="min-w-0 flex-1 basis-[210px] sm:flex-none sm:basis-auto">
-                <StudentSelect students={roster} value={studentId} onChange={setStudentId} />
+                <StudentSelect
+                  students={roster}
+                  value={studentId}
+                  onChange={(id) => {
+                    setPicked(true);
+                    setStudentId(id);
+                  }}
+                />
               </div>
             </>
           }
@@ -754,6 +1101,34 @@ export default function Transcript() {
                 ))}
               </div>
               <div className="ml-auto flex flex-wrap items-center gap-2">
+                {editMode && (
+                  <button
+                    onClick={() => setEditMode(false)}
+                    className="btn btn-ghost h-10 px-3 text-sm gap-1.5"
+                    title="Discard the draft and close edit mode"
+                  >
+                    <X size={16} /> Cancel
+                  </button>
+                )}
+                <button
+                  onClick={editMode ? saveTranscriptDraft : () => setEditMode(true)}
+                  className={`btn h-10 px-3.5 text-sm gap-1.5 ${editMode ? "btn-primary" : "btn-outline"}`}
+                  title={
+                    editMode
+                      ? "Save the typed practical / state exam details"
+                      : "Type the fields that need manual entry (practical exam, state exam)"
+                  }
+                >
+                  {editMode ? (
+                    <>
+                      <Check size={16} /> Save
+                    </>
+                  ) : (
+                    <>
+                      <Pencil size={16} /> Edit
+                    </>
+                  )}
+                </button>
                 <button onClick={handlePrint} className="btn btn-outline h-10 px-4 text-sm gap-1.5">
                   <Printer size={16} /> Print / PDF
                 </button>
@@ -773,217 +1148,255 @@ export default function Transcript() {
             className="relative overflow-hidden rounded-2xl border p-6 sm:p-10"
             style={{ background: "#ffffff", borderColor: LINE, color: INK }}
           >
-            {/* faint blurred logo behind the whole document */}
-            <img src={LOGO_SRC} alt="" aria-hidden="true" className="transcript-watermark" />
-
-            {/* letterhead — logo top-left, Khmer name, English name under it */}
-            <div className="flex items-start gap-4 pb-4 mb-4" style={{ borderBottom: `3px double ${INK}` }}>
-              <img src={LOGO_SRC} alt="NTTI" className="h-16 w-16 shrink-0 object-contain" />
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight" style={{ color: INK }}>
-                  {INSTITUTION_KM}
-                </h1>
-                <p className="text-sm font-semibold mt-0.5" style={{ color: INK }}>
-                  {INSTITUTION_EN}
+            {/* letterhead — official KINGDOM OF CAMBODIA / NTTI “ex” cheatsheet */}
+            <div className="pb-4 mb-4">
+              {/* top-right letterhead — pair centred on each other */}
+              <div className="flex justify-end">
+                <div className="w-fit text-center">
+                  <p className="text-[14px] font-extrabold tracking-tight leading-snug" style={{ color: INK, ...SERIF }}>
+                    {INSTITUTION_LINES.country}
+                  </p>
+                  <p className="text-[14px] font-semibold mt-0.5" style={{ color: INK, ...SERIF }}>
+                    {INSTITUTION_LINES.motto}
+                  </p>
+                </div>
+              </div>
+              {/* top-left institute block — lines centred on each other */}
+              <div className="w-fit text-center mt-2">
+                <p className="text-[13px] font-extrabold mt-0.5 leading-tight" style={{ color: INK, ...SERIF }}>
+                  {INSTITUTION_LINES.ministry}
                 </p>
-                <p className="text-xs mt-1" style={{ color: MUTED }}>
-                  Office of the Registrar · Official Academic Transcript
+                <p className="text-[13px] font-bold mt-0.5" style={{ color: INK, ...SERIF }}>
+                  {INSTITUTION_LINES.institute}
+                </p>
+                <p className="text-[10px] mt-1 tabular-nums" style={{ color: MUTED, ...SERIF }}>
+                  {INSTITUTION_LINES.noLine}
                 </p>
               </div>
             </div>
 
-            {/* meta */}
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[11px]" style={{ color: MUTED }}>
-              <span>
-                Transcript No: <b style={{ color: INK }}>{refNo}</b>
-              </span>
-              <span>
-                Issued: <b style={{ color: INK }}>{issued}</b>
-              </span>
-              <span style={{ ...gradeTone(overall.grade), borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>
-                {terms.length > 1 ? "Cumulative" : "Single semester"} · {overall.grade && overall.grade !== "F" ? "PASSED" : overall.grade === "F" ? "NOT PASSED" : "IN PROGRESS"}
-              </span>
+            {/* title */}
+            <div className="text-center mb-3">
+              <h2 className="text-base font-extrabold" style={{ color: INK, ...SERIF, fontSize: 16 }}>
+                OFFICIAL TRANSCRIPT
+              </h2>
             </div>
 
-            {/* student info */}
-            <table className="w-full text-[12px] mb-2" style={{ borderCollapse: "collapse" }}>
+            {/* student header block — mirrors official R7–R9: left = Student/DOB/Place,
+              right = Sex/Nationality/Date of Graduation */}
+            <table className="w-full text-[12px] mb-3" style={{ borderCollapse: "collapse", ...SERIF }}>
               <tbody>
-                {[
-                  ["Student ID", student.studentId],
-                  ["Khmer name", student.khmerName || "—"],
-                  ["English name", `${student.firstName} ${student.lastName}`],
-                  ["Gender", student.gender || "—"],
-                  ["Date of birth", student.dob ? prettyDate(student.dob) : "—"],
-                  ["Enrolled", student.enrollmentYear ? `Cohort ${student.enrollmentYear}` : "—"],
-                  ["Class", cls?.name || "—"],
-                  ["Field of study", cls?.field || majorName(student.major)],
-                  ["Shift", cls?.shift || "—"],
-                  ["Degree", cls?.degree || "—"],
-                  ["Programme", `${majorName(student.major)} · ${yearsInProgram} years`],
-                  ["Thesis", student.thesisTitle ? `${student.thesisTitle}${student.thesisScore != null ? ` · ${student.thesisScore}%` : ""}` : student.thesisScore != null ? `${student.thesisScore}%` : null],
-                  ["Exit exam", student.exitExam != null ? `${student.exitExam}%` : null],
-                ]
-                  .filter(([, v]) => v != null)
-                  .reduce((pairs, row, i) => {
-                    if (i % 2 === 0) pairs.push([row]);
-                    else pairs[pairs.length - 1].push(row);
-                    return pairs;
-                  }, [])
-                  .map((pair, i) => (
-                    <tr key={i}>
-                      {pair.map(([k, v], j) => (
-                        <React.Fragment key={j}>
-                          <td className="px-2.5 py-1.5 w-[16%]" style={{ border: `1px solid ${LINE}`, color: MUTED, background: SOFT }}>
-                            {k}
-                          </td>
-                          <td className="px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, color: INK, fontWeight: 600 }}>
-                            {v}
-                          </td>
-                        </React.Fragment>
-                      ))}
-                    </tr>
-                  ))}
+                <tr>
+                  <td style={{ padding: "2px 0", color: MUTED, width: 118, whiteSpace: "nowrap" }}>Student :</td>
+                  <td style={{ padding: "2px 8px 2px 0", color: INK, fontWeight: 700, whiteSpace: "nowrap" }}>
+                    {student.khmerName ? `${student.khmerName} · ` : ""}
+                    {student.firstName} {student.lastName}
+                  </td>
+                  <td style={{ padding: "2px 0", color: MUTED, width: 150, whiteSpace: "nowrap" }}>Sex :</td>
+                  <td style={{ padding: "2px 0", color: INK, whiteSpace: "nowrap" }}>{student.gender || "—"}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "2px 0", color: MUTED, whiteSpace: "nowrap" }}>Date of Birth :</td>
+                  <td style={{ padding: "2px 8px 2px 0", color: INK, whiteSpace: "nowrap" }}>{student.dob ? prettyDate(student.dob) : "—"}</td>
+                  <td style={{ padding: "2px 0", color: MUTED, width: 150, whiteSpace: "nowrap" }}>Nationality :</td>
+                  <td style={{ padding: "2px 0", color: INK, whiteSpace: "nowrap" }}>Khmer</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "2px 0", color: MUTED, whiteSpace: "nowrap" }}>Place of Birth :</td>
+                  <td style={{ padding: "2px 8px 2px 0", color: INK, whiteSpace: "nowrap" }}>—</td>
+                  <td style={{ padding: "2px 0", color: MUTED, width: 150, whiteSpace: "nowrap" }}>Date of Graduation :</td>
+                  <td style={{ padding: "2px 0", color: INK, whiteSpace: "nowrap" }}>
+                    {graduationDate(student)}
+                  </td>
+                </tr>
               </tbody>
             </table>
 
-            {/* terms */}
-            {terms.length === 0 && (
-              <p className="text-sm py-6 text-center" style={{ color: MUTED }}>
-                No semesters recorded yet.
-              </p>
-            )}
+            {/* completion statement — official R10, centred above the table */}
+            <p className="text-[12px] mb-3 text-center" style={{ color: INK, ...SERIF }}>
+              Has successfully completed Diploma of Technology in the field of{" "}
+              <b>{cls?.field || majorName(student.major)}</b> in academic year{" "}
+              <b>
+                {student.enrollmentYear || "—"} - {student.enrollmentYear ? Number(student.enrollmentYear) + (yearsInProgram - 1) : "—"}
+              </b>
+            </p>
 
-            {terms.map((t) => {
-              const st = statsOf(t);
-              const rows = rowsOf(t);
-              return (
-                <div key={t.level} className="transcript-term mt-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-                    <p className="text-sm font-extrabold" style={{ color: INK }}>
-                      {t.level} — {t.semester} · {t.year}
-                      {!t.archived && <span className="ml-2 text-[10px] font-semibold" style={{ color: MUTED }}>(in progress)</span>}
-                    </p>
-                    <p className="text-[11px]" style={{ color: MUTED }}>
-                      Term average{" "}
-                      <b style={{ color: INK }}>{st.avg == null ? "—" : st.avg.toFixed(2)}</b>{" "}
-                      {st.grade && (
-                        <span className="ml-1 rounded px-1.5 py-0.5 font-bold" style={{ ...gradeTone(st.grade) }}>
-                          {st.grade}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <table className="w-full text-[12px]" style={{ borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ background: SOFT, color: "#334155" }}>
-                        <th className="px-2.5 py-1.5 w-10" style={{ border: `1px solid ${LINE}` }}>No</th>
-                        <th className="px-2.5 py-1.5 text-left" style={{ border: `1px solid ${LINE}` }}>Subject</th>
-                        <th className="px-2.5 py-1.5 w-24" style={{ border: `1px solid ${LINE}` }}>Score</th>
-                        <th className="px-2.5 py-1.5 w-20" style={{ border: `1px solid ${LINE}` }}>Grade</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="px-2.5 py-2 text-center" style={{ border: `1px solid ${LINE}`, color: MUTED }}>
-                            No subjects recorded for this semester.
-                          </td>
-                        </tr>
-                      ) : (
-                        rows.map((r, i) => (
-                          <tr key={i}>
-                            <td className="px-2.5 py-1.5 text-center" style={{ border: `1px solid ${LINE}`, color: MUTED }}>{i + 1}</td>
-                            <td className="px-2.5 py-1.5" style={{ border: `1px solid ${LINE}`, color: INK }}>{r.subject}</td>
-                            <td className="px-2.5 py-1.5 text-center tabular-nums" style={{ border: `1px solid ${LINE}`, color: r.score == null ? MUTED : INK, fontWeight: 700 }}>
-                              {r.score == null ? "—" : r.score.toFixed(2)}
-                            </td>
-                            <td className="px-2.5 py-1.5 text-center" style={{ border: `1px solid ${LINE}`, color: r.grade ? INK : MUTED, fontWeight: 700 }}>
-                              {r.grade || "—"}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                      <tr style={{ background: SOFT }}>
-                        <td colSpan={2} className="px-2.5 py-1.5 text-right font-bold" style={{ border: `1px solid ${LINE}`, color: INK }}>Term average</td>
-                        <td className="px-2.5 py-1.5 text-center font-extrabold tabular-nums" style={{ border: `1px solid ${LINE}`, color: INK }}>
-                          {st.avg == null ? "—" : st.avg.toFixed(2)}
-                        </td>
-                        <td className="px-2.5 py-1.5 text-center font-extrabold" style={{ border: `1px solid ${LINE}`, color: INK }}>{st.grade || "—"}</td>
+            {/* ── YEAR | SEMESTER I | SEMESTER II cheatsheet table ── */}
+            <style>{`
+              #transcript-doc .ex-table { width: 100%; border-collapse: collapse; font-size: 11px; color: ${INK}; font-family: 'Times New Roman', Times, serif; }
+              #transcript-doc .ex-table th,
+              #transcript-doc .ex-table td { border: 1px solid ${LINE}; padding: 3px 5px; vertical-align: middle; }
+              #transcript-doc .ex-table th { background: ${SOFT}; font-weight: 800; text-align: center; }
+              #transcript-doc .ex-table td.num { text-align: center; }
+              #transcript-doc .ex-table td.grade { text-align: center; font-weight: 700; }
+              #transcript-doc .ex-table td.year { text-align: center; font-weight: 800; vertical-align: middle; background: ${SOFT}; }
+              #transcript-doc .ex-table tbody.transcript-term { page-break-inside: avoid; }
+              #transcript-doc .ex-table tr.avg-row td { background: ${SOFT}; font-weight: 700; }
+              #transcript-doc .ex-legend { border-collapse: collapse; font-size: 11px; color: ${INK}; font-family: 'Times New Roman', Times, serif; }
+              #transcript-doc .ex-legend th,
+              #transcript-doc .ex-legend td { border: 1px solid ${LINE}; padding: 2px 8px; text-align: center; }
+            `}</style>
+
+            <table className="ex-table" style={{ marginBottom: 14 }}>
+              <thead>
+                <tr>
+                  <th rowSpan={2} style={{ width: 56 }}>YEAR</th>
+                  <th colSpan={4} style={{ color: INK }}>SEMESTER I</th>
+                  <th colSpan={4} style={{ color: INK }}>SEMESTER II</th>
+                </tr>
+                <tr>
+                  {[0, 1].map((side) => (
+                    <React.Fragment key={side}>
+                      <th style={{ textAlign: "left" }}>Subjects</th>
+                      <th>HOUR</th>
+                      <th>Score (100/100)</th>
+                      <th>Grade</th>
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </thead>
+              {yearBlocks.map((block) => {
+                const r1 = rowsOf(block.s1 || {});
+                const r2 = rowsOf(block.s2 || {});
+                const max = Math.max(r1.length, r2.length, 1);
+                const st1 = block.s1 ? statsOf(block.s1) : null;
+                const st2 = block.s2 ? statsOf(block.s2) : null;
+                const yearLabel = ordinal(Number(block.y)).replace(/(\d+)(st|nd|rd|th)/, "$1 $2");
+                const uncompleted = !(st1?.count) && !(st2?.count); // a year with subjects but no grades yet
+                if (uncompleted) {
+                  return (
+                    <tbody key={`y-${block.y}`} className="transcript-term">
+                      <tr>
+                        <td className="year">{yearLabel}</td>
+                        <td colSpan={4} style={{ textAlign: "center", color: MUTED }}>Uncompleted</td>
+                        <td colSpan={4} style={{ textAlign: "center", color: MUTED }}>Uncompleted</td>
                       </tr>
                     </tbody>
-                  </table>
-                </div>
-              );
-            })}
-
-            {/* cumulative summary + attendance */}
-            <div className="grid gap-4 sm:grid-cols-2 mt-6">
-              <div className="rounded-xl p-4" style={{ border: `1px solid ${LINE}`, background: "#fbfdff" }}>
-                <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: MUTED }}>
-                  Cumulative summary
-                </p>
-                <div className="space-y-1.5 text-[12px]">
-                  {[
-                    ["Terms included", terms.length],
-                    ["Subjects recorded", overall.count],
-                    ["Overall average", overall.avg == null ? "—" : overall.avg.toFixed(2)],
-                    ["GPA (4.00)", overall.gpa == null ? "—" : overall.gpa.toFixed(2)],
-                  ].map(([k, v]) => (
-                    <div key={k} className="flex items-center justify-between">
-                      <span style={{ color: MUTED }}>{k}</span>
-                      <b style={{ color: INK }} className="tabular-nums">{v}</b>
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between pt-1.5" style={{ borderTop: `1px dashed ${LINE}` }}>
-                    <span style={{ color: MUTED }}>Overall grade</span>
-                    {overall.grade ? (
-                      <span className="rounded px-2 py-0.5 text-[12px] font-extrabold" style={gradeTone(overall.grade)}>
-                        {overall.grade}
-                      </span>
+                  );
+                }
+                return (
+                  <tbody key={`y-${block.y}`} className="transcript-term">
+                    {Array.from({ length: max }).map((_, i) => (
+                      <tr key={`${block.y}-${i}`}>
+                        {i === 0 && (
+                          <td className="year" rowSpan={max}>
+                            {yearLabel}
+                          </td>
+                        )}
+                        <td style={{ textAlign: "left" }}>{r1[i]?.subject ?? ""}</td>
+                        <td className="num">{r1[i]?.hour ?? ""}</td>
+                        <td className="num">{r1[i]?.score != null ? Number(r1[i].score).toFixed(2) : ""}</td>
+                        <td className="grade">{r1[i]?.grade ?? ""}</td>
+                        <td style={{ textAlign: "left" }}>{r2[i]?.subject ?? ""}</td>
+                        <td className="num">{r2[i]?.hour ?? ""}</td>
+                        <td className="num">{r2[i]?.score != null ? Number(r2[i].score).toFixed(2) : ""}</td>
+                        <td className="grade">{r2[i]?.grade ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                );
+              })}
+              {/* State Exam / Practical Exam — label text merged into its own right block */}
+              <tbody className="transcript-term">
+                <tr>
+                  <td className="year" colSpan={5}>
+                    {editMode ? (
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        <b style={{ whiteSpace: "nowrap" }}>State Exam :</b>
+                        <input
+                          value={draft.stateExam}
+                          onChange={(e) => setDraft((d) => ({ ...d, stateExam: e.target.value }))}
+                          placeholder="Score / remark…"
+                          className="input h-6 w-28 px-1.5 py-0.5 text-center text-[10px]"
+                        />
+                      </div>
                     ) : (
-                      <b style={{ color: MUTED }}>—</b>
+                      <>
+                        State Exam
+                        {student.stateExam ? ` : ${student.stateExam}` : ""}
+                      </>
                     )}
-                  </div>
-                </div>
-              </div>
+                  </td>
+                  <td colSpan={4} style={{ textAlign: "left" }}>
+                    {editMode ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <b style={{ whiteSpace: "nowrap" }}>Practical Exam :</b>
+                        <input
+                          value={draft.practicalTitle}
+                          onChange={(e) => setDraft((d) => ({ ...d, practicalTitle: e.target.value }))}
+                          placeholder="Project / thesis title"
+                          className="input h-6 min-w-[150px] flex-1 px-1.5 py-0.5 text-[10px]"
+                        />
+                        <input
+                          value={draft.practicalScore}
+                          onChange={(e) => setDraft((d) => ({ ...d, practicalScore: e.target.value }))}
+                          placeholder="Score"
+                          className="input h-6 w-16 px-1.5 py-0.5 text-center text-[10px]"
+                        />
+                        <span className="min-w-[60px] text-center text-[11px] font-bold">
+                          {draftScoreNum != null ? `Grade: ${letterOf(draftScoreNum)}` : "Grade: —"}
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <b style={{ whiteSpace: "nowrap" }}>Practical Exam :</b>
+                        <span style={{ marginLeft: 4 }}>
+                          {student.thesisScore != null && student.thesisScore !== ""
+                            ? `${student.thesisTitle || "Thesis / Practical project"} · Score: ${Number(student.thesisScore).toFixed(2)} · Grade: ${letterOf(Number(student.thesisScore))}`
+                            : "—"}
+                        </span>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-              <div className="rounded-xl p-4" style={{ border: `1px solid ${LINE}`, background: "#fbfdff" }}>
-                <p className="text-[11px] font-bold uppercase tracking-wide mb-2" style={{ color: MUTED }}>
-                  Attendance summary
+            {/* REMARKS — official R49, sits ABOVE the grading table */}
+            <p className="text-[12px] mb-2" style={{ color: INK, ...SERIF }}>
+              <b>REMARKS:</b>
+            </p>
+
+            {/* grade-scale legend — official R50–56; “Phnom Penh, Date + Deputy Director” sits on its right (official R50–51) */}
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="min-w-0 flex-1">
+                <table className="ex-legend">
+                  <thead>
+                    <tr>
+                      <th style={{ color: INK }}>Mark Obtained</th>
+                      <th style={{ color: INK }}>Grade</th>
+                      <th style={{ color: INK }}>Meaning</th>
+                      <th style={{ color: INK }}>Grade Point</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {NTTI_SCALE.map((g) => (
+                      <tr key={g.grade}>
+                        <td>{g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`}</td>
+                        <td style={{ fontWeight: 700 }}>{g.grade}</td>
+                        <td style={{ textAlign: "left" }}>{g.meaning}</td>
+                        <td>{g.point}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="shrink-0 text-center text-[11px]" style={{ color: INK, ...SERIF }}>
+                <p className="whitespace-nowrap text-[10px]" style={{ color: MUTED }}>
+                  Phnom Penh, Date ..................
                 </p>
-                <div className="flex items-end justify-between mb-2">
-                  <span className="text-3xl font-extrabold tabular-nums" style={{ color: INK }}>
-                    {att.rate}%
-                  </span>
-                  <span className="text-[11px]" style={{ color: MUTED }}>{att.total} school days</span>
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center text-[11px]">
-                  {[
-                    ["Present", att.present, "#047857"],
-                    ["Late", att.late, "#b45309"],
-                    ["Absent", att.absent, "#b91c1c"],
-                    ["Leave", att.leave, "#1d4ed8"],
-                  ].map(([k, v, c]) => (
-                    <div key={k} className="rounded-lg py-1.5" style={{ background: SOFT }}>
-                      <p className="font-extrabold tabular-nums" style={{ color: c }}>{v}</p>
-                      <p style={{ color: MUTED }}>{k}</p>
-                    </div>
-                  ))}
-                </div>
+                <p className="mt-2 text-right font-semibold">Deputy Director</p>
               </div>
             </div>
 
-            {/* signatures */}
-            <div className="grid grid-cols-3 gap-4 mt-12 text-center text-[11px]" style={{ color: MUTED }}>
-              {["Registrar", "Director", "Official stamp"].map((role) => (
-                <div key={role}>
-                  <div className="mx-auto mb-1.5 w-full" style={{ borderBottom: `1px solid ${INK}`, height: 34 }} />
-                  <p>{role === "Official stamp" ? "( Official stamp )" : `${role} · Date`}</p>
-                </div>
-              ))}
+            {/* ISO footer — official R70–72 */}
+            <div className="mt-5 pt-3 text-center text-[10px]" style={{ borderTop: `1px solid ${LINE}`, color: MUTED, ...SERIF }}>
+              <p>{INSTITUTION_LINES.certNo}</p>
+              <p className="mt-0.5">{INSTITUTION_LINES.address1}</p>
+              <p>{INSTITUTION_LINES.address2}</p>
             </div>
 
-            <p className="mt-6 text-[10px] text-center" style={{ color: "#94a3b8" }}>
+            <p className="mt-6 text-[10px] text-center" style={{ color: "#94a3b8", ...SERIF }}>
               Computer-generated transcript · verify against the Office of the Registrar.
             </p>
           </div>

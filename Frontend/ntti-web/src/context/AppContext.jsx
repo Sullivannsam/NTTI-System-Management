@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { SEED_STUDENTS, SEED_ATTENDANCE, SEED_WEEKLY, SEED_SCORES, SEED_SCHEDULE, CLASSES, ACADEMIC_LEVELS, levelMeta, todayISO, latinToKhmer, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
+import { cleanName, isRollLabel } from "../components/studentImportHelpers";
 
 const AppContext = createContext(null);
 
@@ -15,6 +16,7 @@ const LS_AUTH = "ntti.auth";
 const LS_SCORES = "ntti.scores.v1";
 const LS_SCHED = "ntti.schedule.v2";
 const LS_SEL = "ntti.scores.selected.v1";
+const LS_SCORES_LAYOUT = "ntti.scores.layout.v1";
 const LS_BB = "ntti.billboard.selected.v1";
 const LS_SEED = "ntti.seed.v1";
 
@@ -140,13 +142,31 @@ function loadStudents() {
         s.enrollmentYear ||
         (s.enrollmentDate ? Number(String(s.enrollmentDate).slice(0, 4)) : 0) ||
         Number(String(s.studentId || "").match(/NTTI-(\d{4})-/)?.[1] || 0);
+      const firstName = /^student$/i.test(String(s.firstName ?? "").trim()) ? "" : cleanName(s.firstName);
       return {
         ...s,
+        firstName,
+        lastName: cleanName(s.lastName),
+        /* cleanName drops the "Student" placeholder (Latin or Khmer script) that
+           NTTI sheets put in the Khmer-name column, so imported students show
+           their real name instead of "សតុដេនត" everywhere. */
         khmerName:
-          s.khmerName ||
-          (s.firstName && s.lastName ? latinToKhmer(`${s.lastName} ${s.firstName}`) : ""),
+          cleanName(s.khmerName) ||
+          (firstName && s.lastName ? latinToKhmer(`${cleanName(s.lastName)} ${firstName}`) : ""),
         level: s.level || (year ? `S1Y${Math.min(4, Math.max(1, new Date().getFullYear() - year))}` : "S1Y1"),
-        history: s.history || [],
+        /* drop roll-number artifacts (ល.រ, "\", "No"…) that older transcript
+           imports stored as fake subjects — a "ល.រ · 1.00" row is the roll
+           column, not a real class. */
+        history: (s.history || [])
+          .map((h) => {
+            const subjects = (h.subjects || []).filter((x) => !isRollLabel(x));
+            const scores =
+              h.scores && typeof h.scores === "object"
+                ? Object.fromEntries(Object.entries(h.scores).filter(([k]) => !isRollLabel(k)))
+                : h.scores;
+            return { ...h, subjects, scores };
+          })
+          .filter((h) => (h.subjects || []).length || (h.scores && Object.keys(h.scores).length)),
         status:
           s.status === "Active"
             ? "Learning"
@@ -307,7 +327,13 @@ export function AppProvider({ children }) {
         if (!cls) return s;
         const classLevel = classLevelOf(cls);
         if (cls.completed) {
-          if (s.status === "Graduate" && s.level === classLevel) return s;
+          if (s.status === "Graduate" && s.level === classLevel) {
+            // backfill the real graduation date from the class's last finished term
+            const lastEnd = (cls.terms || []).reduce((m, t) => (t.endedOn && t.endedOn > m ? t.endedOn : m), "");
+            if (s.graduationDate || !lastEnd) return s;
+            changed = true;
+            return { ...s, graduationDate: lastEnd };
+          }
           changed = true;
           return { ...s, level: classLevel, status: "Graduate" };
         }
@@ -500,6 +526,24 @@ export function AppProvider({ children }) {
     [logAudit]
   );
 
+  /** Bulk-create students from the Excel import — one audit entry for the whole batch. */
+  const addStudentsBatch = useCallback(
+    (dataList) => {
+      if (!dataList || !dataList.length) return 0;
+      setStudents((prev) => {
+        let maxId = Math.max(0, ...prev.map((s) => s.id));
+        const next = dataList.map((d) => ({ id: ++maxId, ...d }));
+        return [...next, ...prev];
+      });
+      logAudit(
+        "import_students_excel",
+        `Imported ${dataList.length} student${dataList.length === 1 ? "" : "s"} from Excel`
+      );
+      return dataList.length;
+    },
+    [logAudit]
+  );
+
   const updateStudent = useCallback(
     (id, data) => {
       setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, ...data } : s)));
@@ -621,6 +665,64 @@ export function AppProvider({ children }) {
       logAudit("create_class", `Created class "${data.name}"`);
     },
     [logAudit]
+  );
+
+  /** Delete a class permanently: remove it, unassign its students (their
+      records and history are kept), detach its schedule link, and clear its
+      score sheet + column layout. */
+  const deleteClass = useCallback(
+    (id) => {
+      const cls = classes.find((c) => c.id === id);
+      if (!cls) return;
+      setClasses((prev) => prev.filter((c) => c.id !== id));
+      // keep the students — just move them out of the class
+      setStudents((prev) => prev.map((s) => (s.className === id ? { ...s, className: "" } : s)));
+      // detach any schedule entry bound to this class (stays in the file, unlinked)
+      try {
+        const schedRaw = readLS(LS_SCHED, { schedules: [], activeId: null });
+        const schedList = Array.isArray(schedRaw?.schedules) ? schedRaw.schedules : [];
+        const sched = scheduleForClass(schedList, cls);
+        if (sched) {
+          localStorage.setItem(
+            LS_SCHED,
+            JSON.stringify({
+              ...schedRaw,
+              schedules: schedList.map((s) => (s === sched ? { ...s, classId: null, className: "" } : s)),
+            })
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+      // clear the class's score sheet and merged-header layout
+      try {
+        const allScores = readLS(LS_SCORES, {});
+        if (allScores[id] !== undefined) {
+          delete allScores[id];
+          localStorage.setItem(LS_SCORES, JSON.stringify(allScores));
+        }
+      } catch {
+        /* ignore */
+      }
+      try {
+        const layouts = readLS(LS_SCORES_LAYOUT, {});
+        if (layouts && typeof layouts === "object" && layouts[id] !== undefined) {
+          delete layouts[id];
+          localStorage.setItem(LS_SCORES_LAYOUT, JSON.stringify(layouts));
+        }
+      } catch {
+        /* ignore */
+      }
+      // if the Scores page had this class selected, forget it
+      try {
+        const sel = readLS(LS_SEL, null);
+        if (sel && sel.id === id) localStorage.removeItem(LS_SEL);
+      } catch {
+        /* ignore */
+      }
+      logAudit("delete_class", `Deleted class "${cls.name}"`);
+    },
+    [classes, logAudit]
   );
 
   /** Upsert weekly attendance records: [{ week, studentId, status }]; status "" removes the record. */
@@ -870,7 +972,7 @@ export function AppProvider({ children }) {
               attendance: attendanceSummary(s.id),
             },
           ];
-          if (!next) return { ...s, level: curLevel, status: "Graduate", history };
+          if (!next) return { ...s, level: curLevel, status: "Graduate", history, graduationDate: s.graduationDate || endedOn };
           return { ...s, level: next, status: "Learning", history };
         })
       );
@@ -897,8 +999,10 @@ export function AppProvider({ children }) {
       currentAdmin,
       addClass,
       updateClass,
+      deleteClass,
       saveWeekly,
       addStudent,
+      addStudentsBatch,
       updateStudent,
       deleteStudent,
       importStudents,
@@ -916,7 +1020,7 @@ export function AppProvider({ children }) {
       theme,
       toggleTheme,
     }),
-    [students, attendance, classes, weekly, admins, audit, currentAdmin, addClass, updateClass, saveWeekly, addStudent, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
+    [students, attendance, classes, weekly, admins, audit, currentAdmin, addClass, updateClass, deleteClass, saveWeekly, addStudent, addStudentsBatch, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

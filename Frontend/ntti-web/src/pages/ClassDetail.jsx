@@ -19,6 +19,8 @@ import {
 import PageHeader, { EmptyState, ProgressBar } from "../components/Page";
 import Modal from "../components/Modal";
 import StudentFormModal from "../components/StudentFormModal";
+import StudentImportModal from "../components/StudentImportModal";
+import ImportStudentChooser from "../components/ImportStudentChooser";
 import TermRecordModal from "../components/TermRecordModal";
 import NextSemesterModal from "../components/NextSemesterModal";
 import { useApp } from "../context/AppContext";
@@ -41,7 +43,7 @@ const WEEK_STATUS = {
 export default function ClassDetail() {
   const { classId } = useParams();
   const navigate = useNavigate();
-  const { students, classes, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, showToast } = useApp();
+  const { students, classes, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, addStudentsBatch, showToast } = useApp();
 
   const cls = classes.find((c) => c.id === classId);
 
@@ -56,6 +58,8 @@ export default function ClassDetail() {
   const [importQuery, setImportQuery] = useState("");
   const [importSel, setImportSel] = useState([]);
   const [importScope, setImportScope] = useState("prev");
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [excelOpen, setExcelOpen] = useState(false);
 
   const roster = useMemo(() => {
     return students
@@ -126,6 +130,32 @@ export default function ClassDetail() {
     return { total: all.length, present, avg };
   }, [students, attendance, classId]);
 
+  /* "Import students" chooser → Excel file directly into this class */
+  const onExcelImport = (rows, stats = {}) => {
+    if (rows?.length) addStudentsBatch(rows);
+    if (stats.linkIds?.length) importStudents(cls?.id, stats.linkIds);
+    setExcelOpen(false);
+    const total = (rows?.length || 0) + (stats.linkIds?.length || 0);
+    showToast(
+      total
+        ? `${total} student${total === 1 ? "" : "s"} added to ${cls?.name} from Excel`
+        : "No new students to import"
+    );
+  };
+
+  const openSelectImport = () => {
+    setImportMenuOpen(false);
+    setImportSel([]);
+    setImportQuery("");
+    setImportScope("all");
+    setImportOpen(true);
+  };
+
+  const openExcelImport = () => {
+    setImportMenuOpen(false);
+    setExcelOpen(true);
+  };
+
   if (!cls) {
     return (
       <div>
@@ -190,6 +220,9 @@ export default function ClassDetail() {
           <div className="flex flex-wrap items-center gap-3">
             <button onClick={() => setAddOpen(true)} className="btn btn-primary h-10 px-4 text-sm">
               <UsersRound size={16} /> Add student
+            </button>
+            <button onClick={() => setImportMenuOpen(true)} className="btn btn-outline h-10 px-4 text-sm">
+              <UserPlus size={16} /> Import students
             </button>
             {canImport && (
               <button
@@ -542,7 +575,11 @@ export default function ClassDetail() {
         onClose={() => setImportOpen(false)}
         size="lg"
         title="Import students"
-        subtitle={`Import ${prevLevelCode || "previous"} students into ${cls.name} (now ${currentLevel} · ${cls.year} ${cls.semester})`}
+        subtitle={
+          importScope === "all" || !prevLevelCode
+            ? `Pick students to add to ${cls.name} (${currentLevel} · ${cls.year} ${cls.semester})`
+            : `Import ${prevLevelCode} students into ${cls.name} (now ${currentLevel})`
+        }
         footer={
           <>
             <button onClick={() => setImportOpen(false)} className="btn btn-outline h-10 px-4 text-sm">
@@ -664,6 +701,23 @@ export default function ClassDetail() {
           )}
         </div>
       </Modal>
+
+      {/* "Import students" chooser — Excel file or pick from the registry */}
+      <ImportStudentChooser
+        open={importMenuOpen}
+        onClose={() => setImportMenuOpen(false)}
+        onExcel={openExcelImport}
+        onSelect={openSelectImport}
+        className={cls.name}
+      />
+      <StudentImportModal
+        open={excelOpen}
+        onClose={() => setExcelOpen(false)}
+        classes={classes}
+        existing={students}
+        lockedClass={cls}
+        onImport={onExcelImport}
+      />
     </div>
   );
 }
