@@ -68,6 +68,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    overflow-x: clip;
     transition: background 0.35s ease, color 0.35s ease;
   }
 
@@ -303,9 +304,9 @@
 
   .bg-mesh {
     background:
-      radial-gradient(at 20% 20%, rgba(99, 102, 241, 0.16) 0px, transparent 45%),
-      radial-gradient(at 80% 10%, rgba(139, 92, 246, 0.14) 0px, transparent 40%),
-      radial-gradient(at 40% 90%, rgba(59, 130, 246, 0.1) 0px, transparent 45%);
+      linear-gradient(180deg, rgba(99, 102, 241, 0.05), rgba(99, 102, 241, 0) 34%),
+      radial-gradient(120% 70% at 100% 0%, rgba(139, 92, 246, 0.09) 0%, transparent 55%),
+      linear-gradient(180deg, #fafbfe 0%, #f3f5fb 100%);
   }
 
   .glass-card {

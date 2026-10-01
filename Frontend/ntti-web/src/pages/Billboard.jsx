@@ -255,18 +255,8 @@ export default function Billboard() {
 
   return (
     <div className="max-w-[1500px] mx-auto space-y-5 animate-fade-up">
-      <div className="mb-6 flex flex-wrap items-end gap-x-5 gap-y-3 animate-fade-up">
-        <ClassSelect
-          value={classId}
-          onChange={setClassId}
-          placeholder="Select a class"
-          options={billboardClasses.map((c) => ({
-            value: c.id,
-            label: c.name,
-            sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
-          }))}
-        />
-        <div className="min-w-0">
+      <div className="mb-6 space-y-3 animate-fade-up">
+        <div>
           <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
             Billboard
           </h1>
@@ -274,20 +264,32 @@ export default function Billboard() {
             Students ranked by average score — the highest score is on top.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setDlAll(false);
-            setDlChecked({});
-            setDlOpen(true);
-          }}
-          disabled={billboardClasses.length === 0}
-          className="ml-auto flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          style={{ background: "var(--primary)" }}
-          title="Export the billboard ranking for chosen classes — pick classes like the Attendance export"
-        >
-          <FileDown size={14} /> Export
-        </button>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <ClassSelect
+            value={classId}
+            onChange={setClassId}
+            placeholder="Select a class"
+            options={billboardClasses.map((c) => ({
+              value: c.id,
+              label: c.name,
+              sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
+            }))}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setDlAll(false);
+              setDlChecked({});
+              setDlOpen(true);
+            }}
+            disabled={billboardClasses.length === 0}
+            className="flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ background: "var(--primary)" }}
+            title="Export the billboard ranking for chosen classes — pick classes like the Attendance export"
+          >
+            <FileDown size={14} /> Export
+          </button>
+        </div>
       </div>
 
       {billboardClasses.length === 0 && (

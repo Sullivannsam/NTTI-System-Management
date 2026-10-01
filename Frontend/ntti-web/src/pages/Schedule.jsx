@@ -919,7 +919,7 @@ export default function Schedule() {
         </div>
 
         <div className="overflow-x-auto thin-scroll">
-          <table className="table-w">
+          <table className="table-w grid-table sheet-grid">
             <thead>
               <tr>
                 <th className="sticky left-0 z-10" style={{ background: "var(--surface)" }}>
@@ -927,7 +927,7 @@ export default function Schedule() {
                 </th>
                 {data.subjects.map((s, i) => (
                   <th key={i} className="p-1 align-bottom">
-                    <div className="flex items-center gap-0.5">
+                    <div className="flex items-center justify-center gap-0.5">
                       <input
                         value={s}
                         onChange={(e) => setSubjectName(i, e.target.value)}
@@ -973,7 +973,7 @@ export default function Schedule() {
                     const cell = data.cells[k] || { day: "", time: "" };
                     return (
                       <td key={c} className="p-1 text-center">
-                        <span className="flex w-full items-stretch gap-0.5">
+                        <span className="flex w-full items-stretch justify-center gap-0.5">
                           <HalfSelect
                             label="Day"
                             value={cell.day || ""}

@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
 import Classes from "./pages/Classes";
+import Draft from "./pages/Draft";
 import ClassDetail from "./pages/ClassDetail";
 import MajorDetail from "./pages/MajorDetail";
 import StudentDetail from "./pages/StudentDetail";
@@ -38,6 +39,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/students" element={<Students />} />
             <Route path="/classes" element={<Classes />} />
+            <Route path="/draft" element={<Draft />} />
             <Route path="/majors/:majorId" element={<MajorDetail />} />
             <Route path="/classes/:classId" element={<ClassDetail />} />
             <Route path="/students/:id" element={<StudentDetail />} />

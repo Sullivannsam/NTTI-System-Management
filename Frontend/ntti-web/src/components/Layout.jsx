@@ -24,6 +24,7 @@ import {
   ClipboardList,
   Trophy,
   FileText,
+  Archive,
 } from "lucide-react";
 import clsx from "clsx";
 import { useApp } from "../context/AppContext";
@@ -41,6 +42,7 @@ const NAV = [
   { to: "/transcript", label: "Transcript", icon: FileText },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/admin", label: "Admin", icon: ShieldCheck },
+  { to: "/draft", label: "Draft", icon: Archive },
 ];
 
 function Brand() {
@@ -62,7 +64,7 @@ function Brand() {
 }
 
 function Sidebar({ open, onClose, collapsed }) {
-  const { students, theme, toggleTheme, showToast, logout, currentAdmin } = useApp();
+  const { students, drafts, theme, toggleTheme, showToast, logout, currentAdmin } = useApp();
   const navigate = useNavigate();
   const active = students.filter((s) => s.status !== "Graduate").length;
 
@@ -120,6 +122,15 @@ function Sidebar({ open, onClose, collapsed }) {
               <span className="nav-dot" />
               <Icon size={19} strokeWidth={2} />
               <span className="flex-1">{label}</span>
+              {to === "/draft" && drafts.length > 0 && (
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+                  style={{ background: "var(--surface-2)", color: "var(--danger)" }}
+                  title={`${drafts.length} classe${drafts.length === 1 ? "" : "s"} in Draft`}
+                >
+                  {drafts.length}
+                </span>
+              )}
             </NavLink>
           ))}
 

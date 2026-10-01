@@ -40,10 +40,34 @@ export const splitLatin = (full) => {
   return { firstName: parts.slice(0, -1).join(" ") || lastName, lastName };
 };
 
-/* Excel serial / text / date → yyyy-mm-dd */
+/* Excel serial / text / date → yyyy-mm-dd. Also reads the official rosters'
+   Khmer dates: Khmer numerals + Khmer month names ("២៧ សីហា ២០០៦"). */
+const KHMER_DIGITS = { "០": 0, "១": 1, "២": 2, "៣": 3, "៤": 4, "៥": 5, "៦": 6, "៧": 7, "៨": 8, "៩": 9 };
+const KHMER_MONTHS = [
+  [/មករា/, 0],
+  [/កុម្ភៈ/, 1],
+  [/មីនា/, 2],
+  [/មេសា/, 3],
+  [/ឧសភា/, 4],
+  [/មិថុនា/, 5],
+  [/កក្កដា/, 6],
+  [/សីហា/, 7],
+  [/កញ្ញា/, 8],
+  [/តុលា/, 9],
+  [/វិច្ឆិកា/, 10],
+  [/ធ្នូ/, 11],
+];
+const latinDigitsOf = (s) => String(s).replace(/[០-៩]/g, (d) => KHMER_DIGITS[d]);
 export const dobToISO = (v) => {
-  const s = collapse(v);
-  if (!s) return "";
+  const raw = collapse(v);
+  if (!raw) return "";
+  const s = latinDigitsOf(raw);
+  for (const [re, m] of KHMER_MONTHS) {
+    const mm = s.match(new RegExp(`^(\\d{1,2})\\s*${re.source}\\s*(\\d{4})\\s*$`, "i"));
+    if (mm) {
+      return `${mm[2]}-${String(m + 1).padStart(2, "0")}-${String(Number(mm[1])).padStart(2, "0")}`;
+    }
+  }
   const n = Number(s);
   if (Number.isFinite(n) && n > 10000 && n < 80000) {
     const d = new Date(Math.round((n - 25569) * 86400 * 1000));
@@ -173,9 +197,9 @@ export function classifyHeader(h) {
   const t = collapse(h).toLowerCase();
   if (!t) return null;
   const re = (p) => new RegExp(p, "i").test(t);
-  if (re("student\\s*id|student\\s*code|លេខកូដ|ល។កូដ|លេខសម្គាល់|nº|n°|^\\s*(no\\.?|no|#|code|id|roll|ref|stt|seq)\\s*$")) return "sid";
+  if (re("student\\s*id|student\\s*code|លេខកូដ|ល។កូដ|ល\\.កូដ|អត្តលេខ|លេខសម្គាល់|nº|n°|^\\s*(no\\.?|no|#|code|id|roll|ref|stt|seq)\\s*$")) return "sid";
   if (re("username|user\\s*name|ឈ្មោះអ្នកប្រើ|អ្នកប្រើប្រាស់")) return "username";
-  if (re("គោត្តនាម-នាម|គោត្តនាម.*នាម|នាម.*គោត្តនាម")) return "latin"; // cheatsheet full-name (Latin) column
+  if (re("គោត្តនាម-នាម|គោត្តនាម.*នាម|នាម.*គោត្តនាម")) return "khmer"; // official rosters: full Khmer name
   if (re("first\\s*name|given\\s*name|នាមខ្លួន|ឈ្មោះដើម")) return "first";
   if (re("last\\s*name|surname|family\\s*name|គោត្តនាម|ឈ្មោះត្រកូល")) return "last";
   if (re("khmer|ខ្មែរ")) return "khmer";
@@ -191,25 +215,34 @@ export function classifyHeader(h) {
   if (re("shift|វេន")) return "shift";
   if (re("enrollment\\s*year|ឆ្នាំចូល|ឆ្នាំសិក្សា|ឆ្នាំ")) return "year";
   if (re("status|ស្ថានភាព")) return "status";
-  if (re("latin|ឡាតាំង|អក្សរឡាតាំង|english|full\\s*name|ឈ្មោះអង់គ្លេស|ឈ្មោះឡាតាំង|គោត្តនាម-នាម")) return "latin";
+  if (re("latin|ឡាតាំង|អក្សរឡាតាំង|english|full\\s*name|ឈ្មោះអង់គ្លេស|ឈ្មោះឡាតាំង")) return "latin";
   if (re("ឈ្មោះ|name")) return "latin"; // plain "name" / "ឈ្មោះ" → English name
   return null;
 }
 
-/* first row that carries a recognisable identity column */
+/* first row that carries a recognisable identity column — the real header
+   row is the one with the MOST recognised columns, not merely the first row
+   with any match: official rosters often put metadata lines above it (e.g.
+   "…វេនយប់" matches the Shift column, title lines match "ឆ្នាំសិក្សា"…) */
 export function detectHeaderRow(rows) {
+  let best = -1;
+  let bestScore = -1;
   let widest = -1;
   let widestCells = 0;
-  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+  for (let r = 0; r < Math.min(rows.length, 12); r++) {
     const cells = (rows[r] || []).filter((c) => c != null && collapse(c) !== "");
     if (cells.length < 2) continue;
-    if (cells.some((c) => classifyHeader(c))) return r;
+    const score = cells.filter((c) => classifyHeader(c)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = r;
+    }
     if (cells.length > widestCells) {
       widestCells = cells.length;
       widest = r;
     }
   }
-  return widest >= 0 ? widest : 0;
+  return bestScore >= 2 ? best : widest >= 0 ? widest : 0;
 }
 
 /* sheet with the most recognizable columns → default pick */

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { FileSpreadsheet } from "lucide-react";
 import Modal from "./Modal";
 import { useApp } from "../context/AppContext";
 import { MAJORS, SHIFTS, YEARS, SEMESTERS, DEGREES, FIELDS_OF_STUDY } from "../data/seed";
@@ -24,7 +25,7 @@ const makeInitial = (ed) =>
         degree: DEGREES[0],
       };
 
-export default function ClassFormModal({ open, onClose, editing = null }) {
+export default function ClassFormModal({ open, onClose, editing = null, onCreated = null }) {
   const { addClass, updateClass, showToast } = useApp();
   const [form, setForm] = useState(makeInitial(editing));
 
@@ -40,13 +41,12 @@ export default function ClassFormModal({ open, onClose, editing = null }) {
     setForm((f) => ({ ...f, major, field: FIELDS_OF_STUDY[major]?.[0] || "" }));
   };
 
-  const submit = (e) => {
-    e.preventDefault();
+  const buildPayload = () => {
     if (!form.name.trim()) {
       showToast("Class name is required", "error");
-      return;
+      return null;
     }
-    const payload = {
+    return {
       name: form.name.trim(),
       major: form.major,
       field: form.field,
@@ -55,14 +55,29 @@ export default function ClassFormModal({ open, onClose, editing = null }) {
       semester: form.semester,
       degree: form.degree,
     };
+  };
+
+  /* importAfter → create the class, then hand the new class id to the parent
+     (Classes page) so it can open the Excel import locked to that class */
+  const doCreate = (importAfter) => {
+    const payload = buildPayload();
+    if (!payload) return;
+    let id;
     if (editing) {
       updateClass(editing.id, payload);
+      id = editing.id;
       showToast(`Class "${payload.name}" updated`);
     } else {
-      addClass(payload);
+      id = addClass(payload);
       showToast(`Class "${payload.name}" created`);
     }
     onClose();
+    if (importAfter && id && onCreated) onCreated(id, payload);
+  };
+
+  const submit = (e) => {
+    e.preventDefault();
+    doCreate(false);
   };
 
   return (
@@ -75,18 +90,28 @@ export default function ClassFormModal({ open, onClose, editing = null }) {
           ? "Update the class details — changes apply everywhere it's used."
           : "Create a class — it appears in the Classes table, in class pickers and on the Attendance page."
       }
-      size="md"
+      size="xl"
       footer={
-        <div className="flex gap-2 justify-end">
-          <button 
-            onClick={onClose} 
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button
+            onClick={onClose}
             className="px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 hover:bg-slate-100 text-slate-700"
           >
             Cancel
           </button>
-          <button 
-            type="submit" 
-            form="class-form" 
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => doCreate(true)}
+              className="px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 transition-all duration-200 shadow-sm hover:shadow-md"
+              title="Create this class, then import its student list from Excel"
+            >
+              <FileSpreadsheet size={15} /> Import students from Excel
+            </button>
+          )}
+          <button
+            type="submit"
+            form="class-form"
             className="px-5 py-2 rounded-lg font-medium text-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-sm hover:shadow-md"
           >
             {editing ? "Save changes" : "Create class"}
@@ -180,7 +205,7 @@ export default function ClassFormModal({ open, onClose, editing = null }) {
         </div>
 
         {/* Row 1: Field of Study & Major */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="form-group">
             <label className="form-label">Field of study *</label>
             <select className="modern-input" value={form.field} onChange={set("field")}>
@@ -200,7 +225,7 @@ export default function ClassFormModal({ open, onClose, editing = null }) {
         </div>
 
         {/* Row 2: Degree & Year */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="form-group">
             <label className="form-label">Degree</label>
             <select className="modern-input" value={form.degree} onChange={set("degree")}>
@@ -232,7 +257,7 @@ export default function ClassFormModal({ open, onClose, editing = null }) {
         {/* Row 4: Shift buttons */}
         <div className="form-group">
           <label className="form-label">Shift</label>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             {SHIFTS.map((sh) => (
               <button
                 key={sh}

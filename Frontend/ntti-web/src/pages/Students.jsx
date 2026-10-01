@@ -48,7 +48,7 @@ export default function Students() {
     if (!s) return;
     const who = displayName(s) || englishName(s) || s.studentId;
     deleteStudent(s.id);
-    showToast(`Deleted ${who}`);
+    showToast(`${who} moved to Draft`);
   };
 
   const list = useMemo(() => {
@@ -107,7 +107,7 @@ export default function Students() {
   const confirmDeleteMany = () => {
     const ids = Array.from(selected);
     ids.forEach((id) => deleteStudent(id));
-    showToast(`Deleted ${ids.length} student${ids.length === 1 ? "" : "s"}`);
+    showToast(`Moved ${ids.length} student${ids.length === 1 ? "" : "s"} to Draft`);
     setBulkDelete(false);
     exitSelect();
   };
@@ -128,7 +128,7 @@ export default function Students() {
     <div className="card p-4 mb-5 animate-fade-up">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         {/* search */}
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1 max-w-md">
           <Search
             size={16}
             className="absolute left-3 top-1/2 -translate-y-1/2"
@@ -143,7 +143,7 @@ export default function Students() {
         </div>
 
         {/* filters */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <select
             className="input h-10 w-auto text-sm py-2 max-w-[180px]"
             value={classFilter}
@@ -205,7 +205,11 @@ export default function Students() {
             >
               <Trash2 size={16} /> {selecting ? "Cancel selection" : "Select & delete"}
             </button>
-            <button onClick={() => setImportOpen(true)} className="btn btn-soft h-10 px-4 text-sm">
+            <button
+              onClick={() => setImportOpen(true)}
+              className="btn h-10 px-4 text-sm bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 shadow-sm"
+              title="Import students from an Excel / CSV list"
+            >
               <Upload size={16} /> Import Excel
             </button>
             <button onClick={() => setAddOpen(true)} className="btn btn-primary h-10 px-4 text-sm">
@@ -244,7 +248,7 @@ export default function Students() {
               disabled={selected.size === 0}
               className="btn h-8 px-3 text-xs"
               style={{ background: "var(--danger)", color: "#fff" }}
-              title="Permanently delete the selected students"
+              title="Move the selected students to Draft"
             >
               <Trash2 size={14} /> Delete {selected.size > 0 ? `${selected.size} ` : ""}student{selected.size === 1 ? "" : "s"}
             </button>
@@ -271,7 +275,10 @@ export default function Students() {
           }
           action={
             !query && classFilter === "all" && statusFilter === "all" ? (
-              <button onClick={() => setImportOpen(true)} className="btn btn-primary px-4 text-sm h-10">
+              <button
+                onClick={() => setImportOpen(true)}
+                className="btn px-4 text-sm h-10 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 shadow-sm"
+              >
                 <Upload size={16} /> Import from Excel
               </button>
             ) : undefined
@@ -589,8 +596,8 @@ export default function Students() {
           bulkDelete ? (
             <>
               <b style={{ color: "var(--text)" }}>{selected.size}</b> student
-              {selected.size === 1 ? "" : "s"} will be permanently removed from the system,
-              together with their attendance and weekly records. This cannot be undone.
+              {selected.size === 1 ? "" : "s"} will be moved to the <b>Draft</b> page — nothing is lost.
+              Restore them anytime from the left menu, or delete them forever there.
               {selected.size > 0 && (
                 <span className="mt-2 block text-xs leading-relaxed" style={{ color: "var(--text-2)" }}>
                   {students
@@ -608,8 +615,8 @@ export default function Students() {
                 <b style={{ color: "var(--text)" }}>
                   {displayName(deleteTarget) || englishName(deleteTarget) || deleteTarget.studentId}
                 </b>{" "}
-                will be permanently removed from the system, together with their attendance and
-                weekly records. This cannot be undone.
+                will be moved to the <b>Draft</b> page — nothing is lost, and they can be restored
+                anytime from the left menu.
               </>
             )
           )

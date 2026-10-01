@@ -36,10 +36,11 @@ const ACCENT = {
 };
 
 export default function Classes() {
-  const { classes, students, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, addStudentsBatch, showToast } = useApp();
+  const { classes, students, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, addStudentsBatch, deleteClass, showToast } = useApp();
 
   const [view, setView] = useState("list"); // "list" | "detail"
   const [selId, setSelId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null); // class pending soft-delete → Draft
 
   const [classQuery, setClassQuery] = useState("");
   const [studentQuery, setStudentQuery] = useState("");
@@ -367,6 +368,27 @@ export default function Classes() {
                     <Flag size={15} />
                   </span>
                 )}
+                {/* delete this class */}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTarget(c);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setDeleteTarget(c);
+                    }
+                  }}
+                  title={`Move ${c.name} to Draft`}
+                  className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--surface-2)]"
+                  style={{ color: "var(--danger)" }}
+                >
+                  <Trash2 size={15} />
+                </span>
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -417,10 +439,10 @@ export default function Classes() {
 
       {/* class header */}
       <div className="card overflow-hidden">
-        <div className="h-16" style={{ background: accent }}>
+        <div className="h-14" style={{ background: accent }}>
           <div className="h-full w-full" style={{ backgroundImage: "radial-gradient(circle at 25% 40%, rgba(255,255,255,.18) 1px, transparent 1px)", backgroundSize: "22px 22px" }} />
         </div>
-        <div className="p-5 -mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="p-5 -mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-3.5 min-w-0">
             <span className="hidden sm:flex h-[52px] w-[52px] items-center justify-center rounded-2xl text-white shadow-soft shrink-0 ring-4" style={{ background: accent, "--tw-ring-color": "var(--surface)" }}>
               <BookOpen size={22} />
@@ -431,9 +453,19 @@ export default function Classes() {
                 <Badge tone="active">{majorName(sel.major)}</Badge>
                 {sel.field && <Badge tone="neutral">{sel.field}</Badge>}
               </div>
-              <p className="text-xs mt-1" style={{ color: "var(--text-3)" }}>
-                {countOf(sel.id)} students · {sel.year} · {sel.semester} · {sel.shift} shift ({shiftRange(sel.shift)}) · {sel.degree}
-              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs" style={{ color: "var(--text-3)" }}>
+                <span className="font-semibold tabular-nums" style={{ color: "var(--text-2)" }}>{countOf(sel.id)} students</span>
+                <span className="opacity-60">·</span>
+                <span>{sel.year}</span>
+                <span className="opacity-60">·</span>
+                <span>{sel.semester}</span>
+                <span className="opacity-60">·</span>
+                <span>{sel.shift} shift</span>
+                <span className="opacity-60">·</span>
+                <span className="whitespace-nowrap">{shiftRange(sel.shift)}</span>
+                <span className="opacity-60">·</span>
+                <span className="px-1.5 py-0.5 rounded-full bg-[var(--surface-2)]" style={{ color: "var(--text-2)" }}>{sel.degree}</span>
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -526,8 +558,10 @@ export default function Classes() {
             }
           />
         ) : (
-          <div className="overflow-x-auto thin-scroll">
-            <table className="table-w" style={{ minWidth: 860 }}>
+          <>
+            {/* desktop table */}
+            <div className="hidden md:block overflow-x-auto thin-scroll">
+              <table className="table-w" style={{ minWidth: 860 }}>
               <thead>
                 <tr>
                   <th style={{ minWidth: 200 }}>Student</th>
@@ -588,7 +622,43 @@ export default function Classes() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+
+            {/* compact cards on small screens */}
+            <div className="md:hidden divide-y" style={{ borderColor: "var(--border)" }}>
+              {roster.map((s) => (
+                <div key={s.id} className="flex items-center gap-3 p-4">
+                  <StudentAvatar student={s} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--text)" }}>
+                        {s.khmerName || `${s.firstName} ${s.lastName}`}
+                      </p>
+                      <Badge tone={statusTone(s.status)}>{s.status}</Badge>
+                    </div>
+                    <p className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
+                      {s.studentId || "—"} · {s.username || "—"}
+                    </p>
+                    <p className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-3)" }}>
+                      {majorName(s.major || sel.major)}
+                      {s.field || sel.field ? ` · ${s.field || sel.field}` : ""} · {s.shift || sel.shift || "—"}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Link to={`/students/${s.id}`} className="btn btn-ghost h-8 w-8 p-0 rounded-lg" title="Open profile">
+                      <ExternalLink size={14} />
+                    </Link>
+                    <button onClick={() => setEditStudent(s)} className="btn btn-ghost h-8 w-8 p-0 rounded-lg" title="Edit student">
+                      <Pencil size={14} />
+                    </button>
+                    <button onClick={() => setDeleting(s)} className="btn btn-ghost h-8 w-8 p-0 rounded-lg" title="Remove student" style={{ color: "var(--danger)" }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -675,7 +745,15 @@ export default function Classes() {
       {view === "detail" && sel ? detailView : listView}
 
       {/* modals */}
-      <ClassFormModal open={addClassOpen} onClose={() => setAddClassOpen(false)} />
+      <ClassFormModal
+        open={addClassOpen}
+        onClose={() => setAddClassOpen(false)}
+        onCreated={(id) => {
+          setSelId(id);
+          setView("detail");
+          setExcelOpen(true);
+        }}
+      />
       <ClassFormModal open={!!editClass} onClose={() => setEditClass(null)} editing={editClass} />
       <StudentFormModal
         open={addStudentOpen || !!editStudent}
@@ -701,9 +779,9 @@ export default function Classes() {
               }}
               className="btn h-10 px-4 text-sm"
               style={{ color: "var(--danger)" }}
-              title="Delete the student permanently"
+              title="Move the student to Draft — nothing is lost"
             >
-              <Trash2 size={15} /> Delete permanently
+              <Trash2 size={15} /> Move to Draft
             </button>
             <button
               onClick={() => {
@@ -724,7 +802,44 @@ export default function Classes() {
             <b style={{ color: "var(--text)" }}>{prevLevelCode || currentLevel}</b> with no class, so you can import them again.
           </p>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>
-            <b>Delete permanently</b> erases the student and all of their attendance. This cannot be undone.
+            <b>Move to Draft</b> takes the student to the Draft page in the left menu — nothing is lost and
+            they can be restored anytime. Only the Draft page can delete a student forever.
+          </p>
+        </div>
+      </Modal>
+
+      {/* move class to draft */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete class"
+        subtitle={deleteTarget ? `${deleteTarget.name} → Draft` : ""}
+        footer={
+          <>
+            <button onClick={() => setDeleteTarget(null)} className="btn btn-outline h-10 px-4 text-sm">Cancel</button>
+            <button
+              onClick={() => {
+                if (deleteTarget) {
+                  deleteClass(deleteTarget.id);
+                  showToast(`Class "${deleteTarget.name}" moved to Draft`);
+                }
+                setDeleteTarget(null);
+              }}
+              className="btn h-10 px-4 text-sm"
+              style={{ background: "var(--danger)", color: "#fff" }}
+            >
+              <Trash2 size={15} /> Move to Draft
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-2 text-sm" style={{ color: "var(--text-2)" }}>
+          <p>
+            <b style={{ color: "var(--text)" }}>{deleteTarget?.name}</b> moves to the <b>Draft</b> page in the left menu.
+          </p>
+          <p className="text-xs" style={{ color: "var(--text-3)" }}>
+            Nothing is lost — students, term records, schedule and scores stay exactly as they are. You can
+            restore it anytime from the <b>Draft</b> page in the left menu, or delete it forever from there.
           </p>
         </div>
       </Modal>

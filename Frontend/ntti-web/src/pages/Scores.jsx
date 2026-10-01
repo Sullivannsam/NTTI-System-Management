@@ -1163,6 +1163,7 @@ export default function Scores() {
     <div className="max-w-[1500px] mx-auto space-y-5 animate-fade-up">
       <PageHeader
         title="Scores"
+        actionsLeft
         subtitle="Pick a class for a live score sheet, or keep None and import a cheatsheet — its columns and group headers become the subjects exactly as written in the file."
         actions={
           <>

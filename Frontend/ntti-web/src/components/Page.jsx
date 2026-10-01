@@ -1,6 +1,23 @@
 import React from "react";
 
-export default function PageHeader({ title, subtitle, actions }) {
+export default function PageHeader({ title, subtitle, actions, actionsLeft }) {
+  if (actionsLeft) {
+    return (
+      <div className="mb-6 space-y-4 animate-fade-up">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="mt-1 text-sm" style={{ color: "var(--text-3)" }}>
+              {subtitle}
+            </p>
+          )}
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-3">{actions}</div>}
+      </div>
+    );
+  }
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4 animate-fade-up">
       <div>

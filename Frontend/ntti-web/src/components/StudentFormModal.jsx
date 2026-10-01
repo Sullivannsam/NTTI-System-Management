@@ -201,6 +201,7 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
       title={editing ? editing.khmerName || `${editing.firstName} ${editing.lastName}` : "Add new student"}
       subtitle={editing ? `${editing.firstName} ${editing.lastName}` : "Create a new enrollment record"}
       size="2xl"
+      fluidBody
       footer={
         <div className="flex gap-2 justify-end">
           <button 
@@ -272,13 +273,16 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
           color: #0f172a;
           text-transform: uppercase;
           letter-spacing: 0.05em;
-          margin-top: 0.875rem;
-          margin-bottom: 0.5rem;
-          padding-top: 0.625rem;
-          border-top: 1px solid #e2e8f0;
+          margin-bottom: 0.875rem;
+          padding-top: 1.25rem;
+          border-top: 1.5px solid #1e293b;
         }
 
-        .form-section-title:first-child {
+        .space-y-3 .form-section-title {
+          margin-top: 2.5rem;
+        }
+
+        .space-y-3 .form-section-title:first-child {
           margin-top: 0;
           padding-top: 0;
           border-top: none;
@@ -342,10 +346,10 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
         }
       `}</style>
 
-      <form id="student-form" onSubmit={submit} className="flex flex-col gap-3 lg:gap-4">
-        <div className="flex flex-col lg:flex-row lg:gap-5">
-          {/* Left: Photo section */}
-          <div className="lg:w-48 shrink-0">
+      <form id="student-form" onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row lg:gap-5">
+          {/* Left: profile column — photo + identity, stays put on wide screens */}
+          <div className="min-h-0 shrink-0 space-y-3 lg:w-72 lg:overflow-y-auto thin-scroll lg:pr-1">
             <div className="photo-card">
               <Avatar
                 name={`${form.firstName} ${form.lastName}`}
@@ -369,39 +373,37 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
                 JPG or PNG, max 400px
               </p>
             </div>
+
+            {/* Khmer name and Student ID — profile identity */}
+            <div className="form-group">
+              <label className="form-label">Khmer Name</label>
+              <input
+                className="modern-input text-sm py-1.5"
+                value={form.khmerName}
+                onChange={set("khmerName")}
+                placeholder="ឧ. ចាប ចាន់ណារ៉ា"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Student ID</label>
+              <input
+                className="modern-input text-sm py-1.5"
+                value={form.studentId}
+                onChange={set("studentId")}
+                placeholder={editing ? "Auto-assigned" : "Auto-generated"}
+                disabled={editing}
+              />
+              {!editing && (
+                <p className="form-hint">
+                  Auto-generated on save
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Right: Form fields */}
-          <div className="flex-1">
+          {/* Right: information fields (scroll only this side) */}
+          <div className="min-h-0 flex-1 overflow-y-auto thin-scroll pr-1">
             <div className="space-y-3">
-              {/* Khmer name and Student ID */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="form-group">
-                  <label className="form-label">Khmer Name</label>
-                  <input
-                    className="modern-input text-sm py-1.5"
-                    value={form.khmerName}
-                    onChange={set("khmerName")}
-                    placeholder="ឧ. ចាប ចាន់ណារ៉ា"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Student ID</label>
-                  <input
-                    className="modern-input text-sm py-1.5"
-                    value={form.studentId}
-                    onChange={set("studentId")}
-                    placeholder={editing ? "Auto-assigned" : "Auto-generated"}
-                    disabled={editing}
-                  />
-                  {!editing && (
-                    <p className="form-hint">
-                      Auto-generated on save
-                    </p>
-                  )}
-                </div>
-              </div>
-
               {/* Personal info */}
               <div className="form-section-title">Personal Information</div>
               

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import clsx from "clsx";
 
-export default function Modal({ open, onClose, title, subtitle, children, size = "md", footer }) {
+export default function Modal({ open, onClose, title, subtitle, children, size = "md", footer, fluidBody }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -57,7 +57,7 @@ export default function Modal({ open, onClose, title, subtitle, children, size =
             <X size={18} />
           </button>
         </div>
-        <div className="px-6 py-5 overflow-y-auto thin-scroll">{children}</div>
+        <div className={clsx("px-6 py-5 thin-scroll", fluidBody ? "min-h-0 flex-1 flex flex-col" : "overflow-y-auto")}>{children}</div>
         {footer && (
           <div className="px-6 py-4 flex items-center gap-3 justify-end border-t" style={{ borderColor: "var(--border)" }}>
             {footer}

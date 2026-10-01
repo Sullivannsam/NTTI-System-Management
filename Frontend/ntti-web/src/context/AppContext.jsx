@@ -10,6 +10,7 @@ const LS_STUDENTS = "ntti.students.v2";
 const LS_STUDENTS_BACKUP = "ntti.students.v2.backup";
 const LS_ATTENDANCE = "ntti.attendance.v2";
 const LS_CLASSES = "ntti.classes.v1";
+const LS_CLASS_DRAFTS = "ntti.classes.drafts.v1";
 const LS_WEEKLY = "ntti.weekly.v1";
 const LS_THEME = "ntti.theme";
 const LS_ADMINS = "ntti.admins.v1";
@@ -327,6 +328,9 @@ export function AppProvider({ children }) {
   const [students, setStudents] = useState(loadStudents);
   const [attendance, setAttendance] = useState(() => load(LS_ATTENDANCE, SEED_ATTENDANCE));
   const [classes, setClasses] = useState(loadClasses);
+  /* Soft-deleted classes park here (the Classes page Draft tab) until they are
+     restored to the live list or purged forever. Persisted separately. */
+  const [drafts, setDrafts] = useState(() => readLS(LS_CLASS_DRAFTS, []));
   const [weekly, setWeekly] = useState(() => load(LS_WEEKLY, SEED_WEEKLY));
   const [toasts, setToasts] = useState([]);
   const [theme, setTheme] = useState(() => load(LS_THEME, "light"));
@@ -413,6 +417,10 @@ export function AppProvider({ children }) {
   useEffect(() => {
     localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
   }, [classes]);
+
+  useEffect(() => {
+    localStorage.setItem(LS_CLASS_DRAFTS, JSON.stringify(drafts));
+  }, [drafts]);
 
   /* keep every student's major / field / shift aligned with their class —
      the class is the source of truth, so adding a student or editing the
@@ -640,13 +648,19 @@ export function AppProvider({ children }) {
     [logAudit]
   );
 
+  /** Soft-delete a student: park them in the Draft panel (source "student")
+      with attendance and history untouched, so restore brings them back
+      whole — including the class they belonged to. */
   const deleteStudent = useCallback(
     (id) => {
       const target = students.find((s) => s.id === id);
+      if (!target) return;
       setStudents((prev) => prev.filter((s) => s.id !== id));
-      setAttendance((prev) => prev.filter((a) => a.studentId !== id));
-      setWeekly((prev) => prev.filter((r) => r.studentId !== id));
-      logAudit("delete_student", target ? `Deleted student "${target.firstName} ${target.lastName}"` : `Deleted student #${id}`);
+      setDrafts((prev) => [
+        { ...target, source: "student", deletedAt: new Date().toISOString().slice(0, 10) },
+        ...prev,
+      ]);
+      logAudit("delete_student", `Moved student "${target.firstName} ${target.lastName}" to Draft`);
     },
     [students, logAudit]
   );
@@ -757,21 +771,72 @@ export function AppProvider({ children }) {
     [logAudit]
   );
 
-  /** Delete a class permanently: remove it, unassign its students (their
-      records and history are kept), detach its schedule link, and clear its
-      score sheet + column layout. */
+  /** Soft-delete a class: pull it off the live list and park it in the Draft
+      panel. Students, term records, schedule and score sheets are all left
+      exactly as they were, so restoreClass() brings the class back whole. */
   const deleteClass = useCallback(
     (id) => {
       const cls = classes.find((c) => c.id === id);
       if (!cls) return;
       setClasses((prev) => prev.filter((c) => c.id !== id));
-      // keep the students — just move them out of the class
-      setStudents((prev) => prev.map((s) => (s.className === id ? { ...s, className: "" } : s)));
+      setDrafts((prev) => [{ ...cls, source: "class", deletedAt: new Date().toISOString().slice(0, 10) }, ...prev]);
+      logAudit("delete_class", `Moved class "${cls.name}" to Draft`);
+    },
+    [classes, logAudit]
+  );
+
+  /** Move a class or student back from the Draft panel to the live list.
+      Each draft keeps its original id + source, so it returns exactly where
+      it existed before (classes → Classes list, students → Students registry). */
+  const restoreFromDraft = useCallback(
+    (id) => {
+      const item = drafts.find((d) => d.id === id);
+      if (!item) return;
+      const { source, deletedAt, ...back } = item;
+      setDrafts((prev) => prev.filter((d) => d.id !== id));
+      if (source === "student") {
+        setStudents((prev) => [back, ...prev]);
+        logAudit("restore_student", `Restored student "${back.firstName} ${back.lastName}" from Draft`);
+      } else {
+        setClasses((prev) => [back, ...prev]);
+        logAudit("restore_class", `Restored class "${back.name}" from Draft`);
+      }
+    },
+    [drafts, logAudit]
+  );
+
+  /** Permanently remove a draft — cannot be undone. Classes: unassign their
+      students (records and history are kept), detach the schedule link, and
+      clear the score sheet + column layout. Pass { removeStudents: [ids] }
+      to also permanently erase the selected students of the class together
+      with it. Students: erase them and their attendance/weekly records. */
+  const purgeFromDraft = useCallback(
+    (id, opts = {}) => {
+      const item = drafts.find((d) => d.id === id);
+      if (!item) return;
+      setDrafts((prev) => prev.filter((d) => d.id !== id));
+      if (item.source === "student") {
+        setAttendance((prev) => prev.filter((a) => a.studentId !== item.id));
+        setWeekly((prev) => prev.filter((r) => r.studentId !== item.id));
+        logAudit("purge_student", `Permanently deleted student "${item.firstName} ${item.lastName}"`);
+        return;
+      }
+      const removeIds = new Set(Array.isArray(opts.removeStudents) ? opts.removeStudents : []);
+      // students that stay are moved out of the class; selected ones are erased
+      setStudents((prev) =>
+        prev
+          .map((s) => (s.className === id && !removeIds.has(s.id) ? { ...s, className: "" } : s))
+          .filter((s) => !removeIds.has(s.id))
+      );
+      if (removeIds.size) {
+        setAttendance((prev) => prev.filter((a) => !removeIds.has(a.studentId)));
+        setWeekly((prev) => prev.filter((r) => !removeIds.has(r.studentId)));
+      }
       // detach any schedule entry bound to this class (stays in the file, unlinked)
       try {
         const schedRaw = readLS(LS_SCHED, { schedules: [], activeId: null });
         const schedList = Array.isArray(schedRaw?.schedules) ? schedRaw.schedules : [];
-        const sched = scheduleForClass(schedList, cls);
+        const sched = scheduleForClass(schedList, item);
         if (sched) {
           localStorage.setItem(
             LS_SCHED,
@@ -810,9 +875,14 @@ export function AppProvider({ children }) {
       } catch {
         /* ignore */
       }
-      logAudit("delete_class", `Deleted class "${cls.name}"`);
+      logAudit(
+        "purge_class",
+        removeIds.size
+          ? `Permanently deleted class "${item.name}" + ${removeIds.size} student${removeIds.size === 1 ? "" : "s"}`
+          : `Permanently deleted class "${item.name}" (students kept)`
+      );
     },
-    [classes, logAudit]
+    [drafts, logAudit]
   );
 
   /** Upsert weekly attendance records: [{ week, studentId, status }]; status "" removes the record. */
@@ -1090,6 +1160,9 @@ export function AppProvider({ children }) {
       addClass,
       updateClass,
       deleteClass,
+      restoreFromDraft,
+      purgeFromDraft,
+      drafts,
       saveWeekly,
       addStudent,
       addStudentsBatch,
@@ -1110,7 +1183,7 @@ export function AppProvider({ children }) {
       theme,
       toggleTheme,
     }),
-    [students, attendance, classes, weekly, admins, audit, currentAdmin, addClass, updateClass, deleteClass, saveWeekly, addStudent, addStudentsBatch, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
+    [students, attendance, classes, drafts, weekly, admins, audit, currentAdmin, addClass, updateClass, deleteClass, restoreFromDraft, purgeFromDraft, saveWeekly, addStudent, addStudentsBatch, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

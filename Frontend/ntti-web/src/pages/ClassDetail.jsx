@@ -542,9 +542,9 @@ export default function ClassDetail() {
               }}
               className="btn h-10 px-4 text-sm"
               style={{ color: "var(--danger)" }}
-              title="Delete the student permanently"
+              title="Move the student to Draft — nothing is lost"
             >
-              <Trash2 size={15} /> Delete permanently
+              <Trash2 size={15} /> Move to Draft
             </button>
             <button
               onClick={() => {
@@ -565,7 +565,8 @@ export default function ClassDetail() {
             <b style={{ color: "var(--text)" }}>{prevLevelCode || currentLevel}</b> with no class, so you can import them again.
           </p>
           <p className="text-xs" style={{ color: "var(--text-3)" }}>
-            <b>Delete permanently</b> erases the student and all of their attendance. This cannot be undone.
+            <b>Move to Draft</b> takes the student to the Draft page in the left menu — nothing is lost and
+            they can be restored anytime. Only the Draft page can delete a student forever.
           </p>
         </div>
       </Modal>
