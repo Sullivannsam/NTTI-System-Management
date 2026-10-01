@@ -575,14 +575,10 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
   merge(row, 11, 19);
   row++;
 
-<<<<<<< HEAD
-  /* REMARKS + grade legend — like the web, "Phnom Penh, Date + Deputy Director"
-     sits on the RIGHT of the legend (legend = cols A–I, signature = cols J–M) */
-=======
-  /* REMARKS + grade legend — official R49–R56; signature on the right.
-     Everything in this table is 9pt with wrapText so the legend renders
-     compactly and the rows expand instead of clipping the text. */
->>>>>>> e5a88eeeda5e95e92ae03ed0286432b8e07df674
+/* REMARKS + grade legend — like the web, "Phnom Penh, Date + Deputy Director"
+     sits on the RIGHT of the legend (legend = cols A–I, signature = cols J–M).
+     Official R49–R56; the legend text is 9pt with wrapText so the rows expand
+     instead of clipping. */
   row++;
   set(row, 1, cell("REMARKS:", { font: { bold: true, sz: 9 }, alignment: { horizontal: "left" } }));
   merge(row, 1, 4);
