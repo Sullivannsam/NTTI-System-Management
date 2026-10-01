@@ -3,8 +3,9 @@ import { Columns3, Merge, Pin, PinOff, Split, Undo2 } from "lucide-react";
 import { orderedGroups, groupSpan } from "./scoreSheetModel";
 
 /* Click-to-rename header label (group or subject column). Blank values show a
-   dashed "+ name" chip so you can always see where to type a group name. */
-function EditableLabel({ value, onSave }) {
+   dashed "+ name" chip so you can always see where to type a group name. In
+   read-only mode it is plain text — clicking does nothing. */
+function EditableLabel({ value, onSave, readOnly }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const ref = useRef(null);
@@ -38,6 +39,19 @@ function EditableLabel({ value, onSave }) {
     );
   }
   const empty = !String(value ?? "").trim();
+  if (readOnly) {
+    return (
+      <span
+        className={`mx-auto block max-w-[150px] truncate px-1.5 py-0.5 text-center text-[11px] font-bold uppercase tracking-wide ${
+          empty ? "border border-dashed" : ""
+        }`}
+        style={{ color: empty ? "var(--text-3)" : "var(--text-2)" }}
+        title="Press Edit to rename this column"
+      >
+        {empty ? "+ name" : value}
+      </span>
+    );
+  }
   return (
     <button
       onClick={(e) => {
@@ -67,6 +81,7 @@ export default function ScoreSheet({
   groups = null,
   frozen,
   setFrozen,
+  readOnly = false,
   getValue,
   setValue,
   onBlur,
@@ -232,14 +247,21 @@ export default function ScoreSheet({
           </>
         ) : (
           <>
-            {columns.length > 1 && (
+            {!readOnly && columns.length > 1 && (
               <button onClick={() => setMergeMode(true)} className="btn btn-ghost h-8 px-3 text-xs gap-1.5">
                 <Columns3 size={13} /> Merge headers
               </button>
             )}
-            <span className="hidden sm:inline text-[11px]" style={{ color: "var(--text-3)" }}>
-              Click a header to rename it · select columns to group them under a merged heading
-            </span>
+            {!readOnly && (
+              <span className="hidden sm:inline text-[11px]" style={{ color: "var(--text-3)" }}>
+                Click a header to rename it · select columns to group them under a merged heading
+              </span>
+            )}
+            {readOnly && (
+              <span className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                Sheet is read-only — press <b style={{ color: "var(--text-2)" }}>Edit</b> to rename or merge headers
+              </span>
+            )}
           </>
         )}
         <div className="ml-auto flex items-center gap-2">
@@ -273,14 +295,16 @@ export default function ScoreSheet({
                       style={{ ...thStyle({ padding: "0.4rem 0.5rem" }), minWidth: span * 108 }}
                     >
                       <div className="flex items-center justify-center gap-1">
-                        <EditableLabel value={g.name} onSave={(v) => onRenameGroup(g.id, v)} />
-                        <button
-                          onClick={() => onSplit(columns.filter((c) => c.group === g.id).map((c) => c.key))}
-                          className="btn btn-ghost h-5 w-5 p-0 rounded opacity-0 group-hover:opacity-100"
-                          title="Split this group so every column gets its own header"
-                        >
-                          <Split size={11} />
-                        </button>
+                        <EditableLabel value={g.name} onSave={(v) => onRenameGroup(g.id, v)} readOnly={readOnly} />
+                        {!readOnly && (
+                          <button
+                            onClick={() => onSplit(columns.filter((c) => c.group === g.id).map((c) => c.key))}
+                            className="btn btn-ghost h-5 w-5 p-0 rounded opacity-0 group-hover:opacity-100"
+                            title="Split this group so every column gets its own header"
+                          >
+                            <Split size={11} />
+                          </button>
+                        )}
                       </div>
                     </th>
                   );
@@ -323,7 +347,7 @@ export default function ScoreSheet({
                         title={selected.has(c.key) ? "Unselect" : "Select for merge"}
                       />
                     )}
-                    <EditableLabel value={c.label} onSave={(v) => onRenameColumn(c.key, v)} />
+                    <EditableLabel value={c.label} onSave={(v) => onRenameColumn(c.key, v)} readOnly={readOnly} />
                   </div>
                 </th>
               ))}
@@ -376,14 +400,24 @@ export default function ScoreSheet({
                             type="text"
                             inputMode="decimal"
                             maxLength={6}
+                            readOnly={readOnly}
                             value={getValue(r.key, c.key)}
                             onChange={(e) => setValue(r.key, c.key, e.target.value)}
                             onKeyDown={(e) => onCellKeyDown(e, cellKey)}
-                            onFocus={(e) => e.target.select()}
-                            onBlur={() => onBlur && onBlur(r.key, c.key)}
+                            onFocus={(e) => {
+                              if (!readOnly) e.target.select();
+                            }}
+                            onBlur={() => {
+                              if (!readOnly) onBlur && onBlur(r.key, c.key);
+                            }}
                             placeholder="–"
-                            className="w-full bg-transparent border-b-2 border-transparent py-1.5 text-center text-[13px] font-bold outline-none transition-colors hover:border-[var(--border)] focus:border-[var(--primary)]"
-                            style={{ color: "var(--text)" }}
+                            className={`w-full bg-transparent py-1.5 text-center text-[13px] font-bold outline-none transition-colors ${
+                              readOnly
+                                ? "cursor-default"
+                                : "border-b-2 border-transparent hover:border-[var(--border)] focus:border-[var(--primary)]"
+                            }`}
+                            title={readOnly ? "Press Edit to type scores" : undefined}
+                            style={{ color: readOnly ? "var(--text-2)" : "var(--text)" }}
                           />
                         </div>
                       </td>

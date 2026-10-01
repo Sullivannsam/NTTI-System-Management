@@ -86,9 +86,67 @@ export const yearOf = (v) => {
   return Number.isFinite(n) && n >= 2000 && n <= 2100 ? n : 0;
 };
 
+/* ── student ID scheme ─────────────────────────────────────
+   NTTI auto-generates IDs in two formats:
+     • IT bachelor  → "27-IT-000001"   (prefix IT)
+     • IT associate → "27-ITD-000001"  (prefix ITD, associate degree = Diploma)
+   where "27" is the 2-digit academic-year batch (the academic year 2026–27 is
+   batch "27", i.e. the ENDING year of the academic year of enrollment, so a
+   student enrolling in 2026 gets "27", in 2025 gets "26"…).
+   Only IT bachelor/diploma students use the new scheme — every other major
+   and every other degree keeps the legacy "NTTI-<year>-<serial>" format. */
+export const degreeIs = (degree) => {
+  const d = String(degree || "").trim().toLowerCase();
+  return {
+    bachelor: d === "bachelor" || d === "bachelor degree",
+    diploma: d === "diploma" || d === "associate" || d === "associate degree",
+  };
+};
+
+/** 2-digit academic-year batch code, or null when the year is unknown. */
+export const batchCodeOf = (enrollmentYear) => {
+  const y = Number(enrollmentYear);
+  if (!Number.isFinite(y) || y < 2000 || y > 2100) return null;
+  return String((y + 1) % 100).padStart(2, "0");
+};
+
+/** "27-IT" / "27-ITD" prefix for an IT bachelor/diploma student, else null
+    (meaning the student keeps the legacy NTTI-… id). */
+export const itProgramCode = (major, degree, enrollmentYear) => {
+  if (String(major || "").toLowerCase() !== "it") return null;
+  const d = degreeIs(degree);
+  if (!d.bachelor && !d.diploma) return null;
+  const batch = batchCodeOf(enrollmentYear);
+  if (!batch) return null;
+  return `${batch}-${d.bachelor ? "IT" : "ITD"}`;
+};
+
+/** Next auto-incrementing student id. `usedIds` must be the set of normalized
+    ids already in the store — serials scan it so they stay unique across every
+    import/class — and `seq` is the shared legacy counter (used only by the
+    NTTI-… fallback). Adds the generated id to `usedIds`. */
+export function nextStudentId({ major, degree, year, usedIds, seq }) {
+  const code = itProgramCode(major, degree, year);
+  if (code) {
+    let serial = 1;
+    let sid;
+    do {
+      sid = `${code}-${String(serial++).padStart(6, "0")}`;
+    } while (usedIds.has(norm(sid)));
+    usedIds.add(norm(sid));
+    return sid;
+  }
+  let sid;
+  do {
+    sid = `NTTI-${year}-${String(seq.v++).padStart(4, "0")}`;
+  } while (usedIds.has(norm(sid)));
+  usedIds.add(norm(sid));
+  return sid;
+}
+
 /* column roles a file column can play */
 export const ROLES = [
-  { key: "sid", label: "Student ID", ex: "NTTI-2026-0001" },
+  { key: "sid", label: "Student ID", ex: "27-IT-000001 (bachelor) · 27-ITD-000001 (associate)" },
   { key: "khmer", label: "Khmer name", ex: "ជាប ចនារា" },
   { key: "latin", label: "English name", ex: "Chab Channara" },
   { key: "first", label: "First name (EN)", ex: "Chab" },
@@ -193,7 +251,7 @@ export const TEMPLATE_HEADERS = [
 ];
 
 export const TEMPLATE_SAMPLE = [
-  "NTTI-2026-0001",
+  "27-IT-000001",
   "ជាប ចនារា",
   "Chab Channara",
   "Male",
@@ -334,10 +392,7 @@ export function buildStudent(p, classes, defaultClassId, defaultYear, usedSids, 
 
   let sid = p.sid;
   if (!sid) {
-    do {
-      sid = `NTTI-${year}-${String(seq.v++).padStart(4, "0")}`;
-    } while (usedSids.has(norm(sid)));
-    usedSids.add(norm(sid));
+    sid = nextStudentId({ major, degree: cls?.degree, year, usedIds: usedSids, seq });
   }
 
   return {

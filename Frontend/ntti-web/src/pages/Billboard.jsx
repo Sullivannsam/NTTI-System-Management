@@ -1,14 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Trophy, ClipboardList, Link2, FileText } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Trophy, ClipboardList, Link2, FileText, FileSpreadsheet, FileDown, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import clsx from "clsx";
 import { useApp } from "../context/AppContext";
-import PageHeader, { EmptyState } from "../components/Page";
+import { EmptyState } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
 
 const SCORES_KEY = "ntti.scores.v1";
 const SCHED_KEY = "ntti.schedule.v2";
 const SEL_KEY = "ntti.billboard.selected.v1";
+const LAYOUT_KEY = "ntti.scores.layout.v1";
 
 function loadScores() {
   try {
@@ -28,6 +30,83 @@ function loadSchedules() {
   }
 }
 
+/* per-class score sheet layouts (same shape the Scores page writes) — used to
+   resolve a schedule subject to the actual column key the score lives under. */
+function loadLayouts() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY));
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/* ranked billboard tables for the chosen classes, as an HTML document that opens
+   in Excel/Word (or prints to PDF) — mirrors the Attendance export. */
+function billboardExportHTML(sheets) {
+  return `<html><head><meta charset="utf-8"><title>Billboard</title></head><body>${sheets
+    .map(({ cls, subjects, rows }) => {
+      const meta = (label, val) => `<p style="margin:1px 0;font-size:12px"><b>${esc(label)}:</b> ${esc(val)}</p>`;
+      const th = (inner, align = "left") => `<th style="background:#f1f1f1;padding:6px 8px;text-align:${align}">${inner}</th>`;
+      const td = (inner, align = "left") => `<td style="padding:5px 8px;text-align:${align}">${inner}</td>`;
+      const thead =
+        `<tr>` +
+        th("Rank", "center") +
+        th("Student") +
+        th("ID", "center") +
+        subjects.map((s) => th(esc(s), "center")).join("") +
+        th("Average", "center") +
+        th("Grade", "center") +
+        `</tr>`;
+      const body = rows.length
+        ? rows
+            .map((row) => {
+              const g = gradeOf(row.avg);
+              const latin = [row.student.firstName, row.student.lastName].filter(Boolean).join(" ");
+              return (
+                `<tr>` +
+                td(row.rank, "center") +
+                td(esc(row.student.khmerName || latin)) +
+                td(esc(row.student.studentId || ""), "center") +
+                row.cells.map((v) => td(v === "" ? "–" : esc(v), "center")).join("") +
+                td(row.avg.toFixed(2), "center") +
+                td(g ? g.g : "–", "center") +
+                `</tr>`
+              );
+            })
+            .join("")
+        : `<tr><td colspan="${subjects.length + 5}" align="center" style="padding:10px;color:#64748b">No scores yet for this class</td></tr>`;
+      const clsAvg = rows.length ? (rows.reduce((a, r) => a + r.avg, 0) / rows.length).toFixed(2) : "—";
+      return (
+        `<h3 style="margin:22px 0 4px">${esc(cls.name)} — billboard</h3>` +
+        meta("Class avg", clsAvg) +
+        meta("Field", cls.field || "—") +
+        meta("Shift", cls.shift || "—") +
+        meta("Year", cls.year || "—") +
+        meta("Semester", cls.semester || "—") +
+        meta("Subjects", subjects.join(", ")) +
+        `<table border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse;white-space:nowrap">${thead}${body}</table>`
+      );
+    })
+    .join("")}</body></html>`;
+}
+
+function downloadSheet(html, type, name) {
+  const blob = new Blob(["\ufeff", html], {
+    type: type === "word" ? "application/msword" : "application/vnd.ms-excel",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 const gradeOf = (avg) => {
   if (avg == null) return null;
   if (avg >= 90) return { g: "A", tone: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" };
@@ -37,27 +116,25 @@ const gradeOf = (avg) => {
   return { g: "F", tone: "bg-red-500/15 text-red-600 border-red-500/30" };
 };
 
-/* medal colors for the top three ranks */
-const RANK_GRAD = {
-  1: "linear-gradient(135deg,#f59e0b,#fbbf24)",
-  2: "linear-gradient(135deg,#94a3b8,#cbd5e1)",
-  3: "linear-gradient(135deg,#b45309,#f59e0b)",
-};
-
 const initialsOf = (s) =>
   `${String(s.firstName || "?")[0] || ""}${String(s.lastName || "")[0] || ""}`.toUpperCase();
 
 export default function Billboard() {
-  const { students, classes } = useApp();
+  const { students, classes, showToast, logAudit } = useApp();
   const [scores, setScores] = useState(loadScores);
   const [schedules, setSchedules] = useState(loadSchedules);
+  const [layouts, setLayouts] = useState(loadLayouts);
   const [classId, setClassId] = useState(() => localStorage.getItem(SEL_KEY) || "");
+  const [dlOpen, setDlOpen] = useState(false);
+  const [dlAll, setDlAll] = useState(false);
+  const [dlChecked, setDlChecked] = useState({});
 
-  // re-read latest scores/schedules when the page opens
+  // re-read latest scores/schedules/layouts when the page opens
   useEffect(() => {
     const t = setTimeout(() => {
       setScores(loadScores());
       setSchedules(loadSchedules());
+      setLayouts(loadLayouts());
     }, 60);
     return () => clearTimeout(t);
   }, []);
@@ -94,22 +171,46 @@ export default function Billboard() {
   const sched = cls ? scheduleFor(cls) : null;
   const subjects = sched ? sched.subjects.filter(Boolean) : [];
 
-  const rawOf = (studentId, subject) => {
-    const v = ((scores[classId] || {})[studentId] || {})[subject];
-    return v === undefined || v === null || v === "" ? "" : v;
+  /* A score cell lives under the score sheet's COLUMN KEY, which only equals the
+     schedule subject name for plain sheets. Imported or renamed sheets store the
+     value under the layout's key — so map the subject to that key first. */
+  const colKeyOf = (cid, subject) => {
+    const want = String(subject ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!want) return subject;
+    const cols = layouts?.[cid]?.columns || [];
+    const norm = (x) => String(x ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    const hit =
+      cols.find((c) => norm(c.label) === want) ||
+      cols.find((c) => norm(c.key) === want) ||
+      cols.find((c) => {
+        const cc = norm(c.label);
+        return cc.includes(want) || want.includes(cc);
+      });
+    return hit ? hit.key : subject;
   };
 
-  const rows = useMemo(() => {
-    if (!cls) return [];
+  const scoreFor = (cid, studentId, subject) => {
+    const cell = (scores[cid] || {})[studentId] || {};
+    const k = colKeyOf(cid, subject);
+    const v = cell[k];
+    if (v !== undefined && v !== null && v !== "") return v;
+    return cell[subject] ?? "";
+  };
+
+  /* ranking for any class — used for the live table and the export picker */
+  const computeBillboard = (cid) => {
+    const c = classes.find((x) => x.id === cid);
+    if (!c) return { subjects: [], rows: [] };
+    const subs = (scheduleFor(c)?.subjects || []).filter(Boolean);
     const roster = students
-      .filter((s) => s.className === cls.id && s.status !== "Graduate")
+      .filter((s) => s.className === c.id && s.status !== "Graduate")
       .sort((a, b) =>
         String(a.studentId || "").localeCompare(String(b.studentId || ""), undefined, { numeric: true })
       );
     const scored = [];
     for (const s of roster) {
-      const vals = subjects
-        .map((sub) => rawOf(s.id, sub))
+      const vals = subs
+        .map((sub) => scoreFor(c.id, s.id, sub))
         .filter((v) => v !== "")
         .map((v) => Number(v))
         .filter((n) => !isNaN(n));
@@ -122,14 +223,30 @@ export default function Billboard() {
     // competition ranking (ties share a rank)
     let prevAvg = null;
     let prevRank = 0;
-    return scored.map((row, i) => {
+    const rows = scored.map((row, i) => {
       const rank = prevAvg !== null && Math.abs(row.avg - prevAvg) < 1e-9 ? prevRank : i + 1;
       prevAvg = row.avg;
       prevRank = rank;
       return { ...row, rank };
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cls, students, subjects, scores]);
+    return { subjects: subs, rows };
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => computeBillboard(classId).rows, [classId, classes, students, scores, schedules, layouts]);
+
+  const exportSheets = () => {
+    const picked = dlAll ? billboardClasses : billboardClasses.filter((c) => dlChecked[c.id]);
+    return picked.map((c) => {
+      const { subjects: subs, rows: rs } = computeBillboard(c.id);
+      return {
+        cls: c,
+        subjects: subs,
+        rows: rs.map((row) => ({ ...row, cells: subs.map((s) => scoreFor(c.id, row.student.id, s)) })),
+      };
+    });
+  };
+  const noExportSel = dlOpen && !dlAll && !billboardClasses.some((c) => dlChecked[c.id]);
 
   const classAvg = useMemo(
     () => (rows.length ? rows.reduce((a, r) => a + r.avg, 0) / rows.length : null),
@@ -138,22 +255,40 @@ export default function Billboard() {
 
   return (
     <div className="max-w-[1500px] mx-auto space-y-5 animate-fade-up">
-      <PageHeader
-        title="Billboard"
-        subtitle="Students ranked by average score — the highest score is on top."
-        actions={
-          <ClassSelect
-            value={classId}
-            onChange={setClassId}
-            placeholder="Select a class"
-            options={billboardClasses.map((c) => ({
-              value: c.id,
-              label: c.name,
-              sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
-            }))}
-          />
-        }
-      />
+      <div className="mb-6 flex flex-wrap items-end gap-x-5 gap-y-3 animate-fade-up">
+        <ClassSelect
+          value={classId}
+          onChange={setClassId}
+          placeholder="Select a class"
+          options={billboardClasses.map((c) => ({
+            value: c.id,
+            label: c.name,
+            sub: `${(scheduleFor(c)?.subjects || []).filter(Boolean).length} subjects`,
+          }))}
+        />
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
+            Billboard
+          </h1>
+          <p className="mt-1 text-sm" style={{ color: "var(--text-3)" }}>
+            Students ranked by average score — the highest score is on top.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setDlAll(false);
+            setDlChecked({});
+            setDlOpen(true);
+          }}
+          disabled={billboardClasses.length === 0}
+          className="ml-auto flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          style={{ background: "var(--primary)" }}
+          title="Export the billboard ranking for chosen classes — pick classes like the Attendance export"
+        >
+          <FileDown size={14} /> Export
+        </button>
+      </div>
 
       {billboardClasses.length === 0 && (
         <div className="card">
@@ -240,6 +375,7 @@ export default function Billboard() {
                   <th className="sticky left-16 z-10 min-w-[190px] px-3 py-3.5" style={{ background: "var(--surface)" }}>
                     Student
                   </th>
+                  <th className="px-3 py-3.5 text-center whitespace-nowrap" style={{ minWidth: 120 }}>ID</th>
                   {subjects.map((sub, i) => (
                     <th
                       key={i}
@@ -258,34 +394,44 @@ export default function Billboard() {
               <tbody>
                 {rows.map((row) => {
                   const gr = gradeOf(row.avg);
-                  const grad = RANK_GRAD[row.rank];
+                  const latinName = [row.student.firstName, row.student.lastName].filter(Boolean).join(" ");
                   return (
                     <tr key={row.student.id} className="border-t transition-colors hover:bg-[var(--surface-2)]" style={{ borderColor: "var(--border)" }}>
                       <td className="sticky left-0 z-10 px-5 py-2.5 text-center" style={{ background: "var(--surface)" }}>
-                        <span
-                          className={clsx("inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-extrabold", grad ? "text-white" : "")}
-                          style={grad ? { background: grad } : { background: "var(--surface-2)", color: "var(--text-2)" }}
-                        >
+                        <span className="text-[13px] font-bold tabular-nums" style={{ color: "var(--text)" }}>
                           {row.rank}
                         </span>
                       </td>
                       <td className="sticky left-16 z-10 px-3 py-2.5" style={{ background: "var(--surface)" }}>
-                        <div className="flex items-center gap-2.5">
+                        <Link
+                          to={`/students/${row.student.id}`}
+                          className="flex items-center gap-2.5 rounded-lg transition-opacity hover:opacity-75"
+                          title="Open student profile"
+                        >
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-extrabold" style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
                             {initialsOf(row.student)}
                           </span>
                           <span className="min-w-0">
                             <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>
-                              {row.student.khmerName || `${row.student.firstName} ${row.student.lastName}`}
+                              {row.student.khmerName || latinName}
                             </span>
-                            <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
-                              {row.student.khmerName ? `${row.student.firstName} ${row.student.lastName} · ` : ""}{row.student.studentId}
-                            </span>
+                            {latinName && row.student.khmerName && (
+                              <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
+                                {latinName}
+                              </span>
+                            )}
                           </span>
-                        </div>
+                        </Link>
+                      </td>
+                      <td
+                        className="px-3 py-2.5 text-center text-[12.5px] font-semibold tabular-nums whitespace-nowrap"
+                        style={{ minWidth: 120, color: row.student.studentId ? "var(--text-2)" : "var(--text-3)" }}
+                        title={row.student.studentId || undefined}
+                      >
+                        {row.student.studentId || "–"}
                       </td>
                       {subjects.map((sub, si) => {
-                        const v = rawOf(row.student.id, sub);
+                        const v = scoreFor(classId, row.student.id, sub);
                         return (
                           <td key={si} className="px-2 py-2.5 text-center text-[13px] font-semibold tabular-nums" style={{ color: v === "" ? "var(--text-3)" : "var(--text)" }}>
                             {v === "" ? "–" : v}
@@ -324,6 +470,124 @@ export default function Billboard() {
           </div>
         </div>
       )}
+
+      {dlOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0" style={{ background: "rgba(0,0,0,0.4)" }} onClick={() => setDlOpen(false)} />
+            <div className="relative rounded-2xl w-full max-w-2xl p-6 shadow-2xl animate-fade-up" style={{ background: "#ffffff" }}>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-sm font-bold" style={{ color: "#1e293b" }}>
+                  Export billboard
+                </h3>
+                <button onClick={() => setDlOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-slate-100">
+                  <X size={14} />
+                </button>
+              </div>
+              <p className="text-xs mb-3" style={{ color: "#94a3b8" }}>
+                Pick classes and format
+              </p>
+
+              <label className="flex items-center gap-2 py-2 border-b" style={{ borderColor: "#e2e8f0" }}>
+                <input
+                  type="checkbox"
+                  checked={dlAll}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setDlAll(on);
+                    if (on) setDlChecked({});
+                  }}
+                  className="accent-emerald-500"
+                />
+                <span className="text-sm font-semibold" style={{ color: "#1e293b" }}>
+                  Export all classes
+                </span>
+              </label>
+
+              <div className="max-h-56 overflow-y-auto thin-scroll my-3 space-y-0.5">
+                {billboardClasses.length === 0 && (
+                  <p className="px-2 py-3 text-sm" style={{ color: "#94a3b8" }}>
+                    No classes with subjects yet — add subjects on the Schedule page first.
+                  </p>
+                )}
+                {billboardClasses.map((c) => {
+                  const on = dlAll || dlChecked[c.id];
+                  const n = computeBillboard(c.id).rows.length;
+                  return (
+                    <label
+                      key={c.id}
+                      className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-50"
+                      style={{ color: "#1e293b" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!on}
+                        disabled={dlAll}
+                        onChange={(e) => setDlChecked((x) => ({ ...x, [c.id]: e.target.checked }))}
+                        className="accent-emerald-500"
+                      />
+                      <span className="text-sm">{c.name}</span>
+                      <span className="ml-auto text-[10px]" style={{ color: "#94a3b8" }}>
+                        {n} ranked
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-t pt-3" style={{ borderColor: "#e2e8f0" }}>
+                {[
+                  { key: "excel", label: "Excel", icon: FileSpreadsheet, ext: "xls" },
+                  { key: "word", label: "Word", icon: FileText, ext: "doc" },
+                ].map(({ key, label, icon: Icon, ext }) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      if (noExportSel) {
+                        showToast("Pick at least one class");
+                        return;
+                      }
+                      const sheets = exportSheets();
+                      downloadSheet(billboardExportHTML(sheets), key, `billboard.${ext}`);
+                      logAudit("export_billboard", `Exported billboard to ${label} (${sheets.length} class${sheets.length === 1 ? "" : "es"})`);
+                      showToast(`Billboard exported to ${label}`);
+                      setDlOpen(false);
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all"
+                    style={{ background: "#10b981" }}
+                  >
+                    <Icon size={14} /> {label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    if (noExportSel) {
+                      showToast("Pick at least one class");
+                      return;
+                    }
+                    const sheets = exportSheets();
+                    const w = window.open("", "_blank");
+                    if (!w) {
+                      showToast("Allow pop-ups to export as PDF");
+                      return;
+                    }
+                    w.document.write(billboardExportHTML(sheets));
+                    w.document.close();
+                    w.focus();
+                    setTimeout(() => w.print(), 250);
+                    logAudit("export_billboard", `Exported billboard to PDF (${sheets.length} class${sheets.length === 1 ? "" : "es"})`);
+                    setDlOpen(false);
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all"
+                  style={{ background: "#10b981" }}
+                >
+                  <FileDown size={14} /> PDF
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

@@ -439,7 +439,7 @@ function doExport(schedules, type) {
 
 /* ── main page ───────────────────────────────────────────── */
 export default function Schedule() {
-  const { showToast, classes, logAudit, updateClass } = useApp();
+  const { showToast, classes, logAudit, updateClass, addClass } = useApp();
   const [state, setState] = useState(load());
   const stateRef = useRef(state);
   useEffect(() => {
@@ -587,13 +587,60 @@ export default function Schedule() {
   };
 
   const save = () => {
+    const cur = stateRef.current;
+    const autoName = /^Class \d+$/;
+    let created = 0;
+    let linkedByName = 0;
+
+    /* Every schedule that isn't tied to a class yet becomes a real class in
+       the Classes panel on save — set the name here, fill the days/times,
+       hit Save, and it appears in the panel. "Class N" placeholders that were
+       never touched are skipped so they don't create empty junk classes. */
+    const schedules = cur.schedules.map((s) => {
+      if (s.classId) return s;
+      const name = (s.className || "").trim();
+      const hasCells = Object.keys(s.cells || {}).length > 0;
+      if (!hasCells && (!name || autoName.test(name))) return s;
+
+      const sameName = classes.find((c) => c.name === name);
+      if (sameName) {
+        linkedByName += 1;
+        return { ...s, classId: sameName.id, ...fromClass(sameName) };
+      }
+
+      const id = addClass({
+        name: name || `Class ${cur.schedules.length}`,
+        major: majorIdOf(s.major) || "it",
+        field: s.field || "",
+        shift: shiftLabelOf(s.shift),
+        semester: semToClass(s.semester) || `Semester ${s.semester}`,
+        year: yearToClass(s.year),
+        studentYear: s.studentYear || "2026-2027",
+        degree: "Diploma",
+      });
+      created += 1;
+      return { ...s, classId: id };
+    });
+
     try {
-      localStorage.setItem(KEY, JSON.stringify(stateRef.current));
+      localStorage.setItem(KEY, JSON.stringify({ ...cur, schedules }));
     } catch {
       /* ignore */
     }
-    logAudit("save_schedule", `Saved ${stateRef.current.schedules.length} schedule(s)`);
-    showToast("All schedules saved");
+    setState({ ...cur, schedules });
+    logAudit(
+      "save_schedule",
+      created
+        ? `Saved ${schedules.length} schedule(s); created ${created} class(es)`
+        : `Saved ${schedules.length} schedule(s)`
+    );
+    showToast(
+      created
+        ? `Saved — ${created} new class${created === 1 ? "" : "es"} added to Classes`
+        : linkedByName
+          ? "All schedules saved (linked to existing classes)"
+          : "All schedules saved"
+    );
   };
 
   /* export picker state */

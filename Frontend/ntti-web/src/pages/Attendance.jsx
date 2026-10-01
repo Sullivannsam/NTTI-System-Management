@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import PageHeader, { ProgressBar, EmptyState } from "../components/Page";
 import { useApp } from "../context/AppContext";
-import { majorName, shiftRange, lastNWeeks, weekKeyOf, todayISO } from "../data/seed";
+import { majorName, shiftRange, lastNWeeks } from "../data/seed";
 import { StudentAvatar } from "../components/Badge";
 import StudentFormModal from "../components/StudentFormModal";
 import StudentAttendanceModal from "../components/StudentAttendanceModal";
@@ -207,16 +207,14 @@ function doExport(sheets, type) {
     `n` is passed in by the caller so the numbering shifts when the Subject row is hidden. */
 function stepLabel(n, text) {
   return (
-    <span className="flex shrink-0 items-center gap-1.5 pr-1">
+    <span className="flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1" style={{ background: "#e2e8f0", color: "#1e293b" }}>
       <span
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-extrabold text-white"
         style={{ background: "var(--primary)" }}
       >
         {n}
       </span>
-      <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "#94a3b8" }}>
-        {text}
-      </span>
+      <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wider">{text}</span>
     </span>
   );
 }
@@ -664,9 +662,9 @@ function ClassGrid({
               onClick={onReset}
               className="flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition-all hover:bg-red-50"
               style={{ borderColor: "#e2e8f0", color: "#dc2626" }}
-              title="Clear this week's marks"
+              title="Erase every mark on this sheet for the selected week — nothing is saved until you press Save"
             >
-              <RotateCcw size={13} /> Reset
+              <RotateCcw size={13} /> Clear week
             </button>
             <button
               onClick={onSave}
@@ -694,12 +692,10 @@ function ClassGrid({
         <>
           {hasRealSubjects && (
             <div
-              className="flex items-center gap-1.5 overflow-x-auto thin-scroll border-b px-5 py-2"
-              style={{ borderColor: "#e2e8f0", background: "#fafbfc" }}
+              className="flex flex-wrap items-center gap-1.5 border-b px-5 py-3.5"
+              style={{ borderColor: "var(--border)", background: "#f1f5f9" }}
             >
-              <span className="text-[9px] font-bold uppercase tracking-wider shrink-0" style={{ color: "#94a3b8" }}>
-                Subject
-              </span>
+              {stepLabel(1, "Subject")}
               {subjects.map((sub) => {
                 const active = sub.key === subject;
                 return (
@@ -707,16 +703,16 @@ function ClassGrid({
                     key={sub.key}
                     type="button"
                     onClick={() => onSelectSubject(sub.key)}
-                    className="flex shrink-0 flex-col items-start rounded-lg px-2 py-1 text-left transition-colors"
+                    className="flex max-w-44 flex-col items-start rounded-lg px-2.5 py-1.5 text-left transition-colors"
                     style={
                       active
                         ? { background: "#10b981", color: "#fff" }
-                        : { background: "#f1f5f9", color: "#64748b" }
+                        : { background: "#e2e8f0", color: "#1e293b" }
                     }
                   >
-                    <span className="text-[10px] font-bold leading-tight">{sub.name}</span>
+                    <span className="break-words text-[11px] font-bold leading-tight">{sub.name}</span>
                     {sub.day ? (
-                      <span className="text-[8px] leading-tight" style={{ opacity: 0.8 }}>
+                      <span className="text-[9px] font-semibold leading-tight" style={{ color: active ? "#d1fae5" : "#64748b" }}>
                         {sub.day}
                       </span>
                     ) : null}
@@ -728,8 +724,8 @@ function ClassGrid({
 
           {/* Step 2 — which week */}
           <div
-            className="flex items-center gap-1.5 overflow-x-auto thin-scroll border-b px-5 py-2"
-            style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+            className="flex flex-wrap items-center gap-1.5 border-b px-5 py-3.5"
+            style={{ borderColor: "var(--border)", background: "#f1f5f9" }}
           >
             {stepLabel(hasRealSubjects ? 2 : 1, "Week")}
             {weeks.map((w, i) => {
@@ -774,8 +770,8 @@ function ClassGrid({
 
           {/* Step 3 — the marking toolbar. Pick once, then click cells. */}
           <div
-            className="border-b px-5 py-3"
-            style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+            className="border-b px-5 py-4"
+            style={{ borderColor: "var(--border)", background: "#f1f5f9" }}
           >
             <div className="flex flex-wrap items-center gap-2">
               {stepLabel(hasRealSubjects ? 3 : 2, "Mark with")}
@@ -923,7 +919,7 @@ function ClassGrid({
                   return (
                     <tr key={s.id} className="group">
                       <td
-                        className="sticky left-0 z-10 px-4 py-1.5"
+                        className="sticky left-0 z-10 px-4 py-3"
                         style={{ background: zebra, borderBottom: "1px solid var(--border)" }}
                       >
                         <div className="flex min-w-0 items-center gap-2">
@@ -936,13 +932,13 @@ function ClassGrid({
                             <StudentAvatar student={s} size="sm" />
                             <div className="min-w-0">
                               <p
-                                className="truncate text-[13px] font-semibold leading-tight"
+                                className="truncate text-[13px] font-semibold leading-normal"
                                 style={{ color: "var(--text)" }}
                               >
                                 {s.khmerName || `${s.firstName} ${s.lastName}`}
                               </p>
                               {s.khmerName ? (
-                                <p className="truncate text-[11px] leading-tight" style={{ color: "var(--text-3)" }}>
+                                <p className="truncate text-[11px] leading-snug" style={{ color: "var(--text-3)" }}>
                                   {s.firstName} {s.lastName}
                                 </p>
                               ) : null}
@@ -1222,12 +1218,12 @@ function ClassView({ cls, students, week, weekLabel, subjects, dailyOf, scopeDay
               const ov = overall(s);
               return (
                 <tr key={s.id}>
-                  <td className="sticky left-0 z-10 px-4 py-1.5" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+                  <td className="sticky left-0 z-10 px-4 py-3" style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
                     <button type="button" className="flex items-center gap-2.5 min-w-0 text-left" title={`${s.firstName} ${s.lastName}`}>
                       <StudentAvatar student={s} size="sm" />
                       <div className="min-w-0">
-                        <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text)" }}>{s.khmerName || `${s.firstName} ${s.lastName}`}</p>
-                        <p className="text-[10px] leading-tight truncate" style={{ color: "var(--text-3)" }}>{s.studentId || ""}</p>
+                        <p className="text-[13px] font-semibold leading-normal truncate" style={{ color: "var(--text)" }}>{s.khmerName || `${s.firstName} ${s.lastName}`}</p>
+                        <p className="text-[10px] leading-snug truncate" style={{ color: "var(--text-3)" }}>{s.studentId || ""}</p>
                       </div>
                     </button>
                   </td>
@@ -1329,7 +1325,7 @@ export default function Attendance() {
   const [dlChecked, setDlChecked] = useState({});
   const [dayStudent, setDayStudent] = useState(null); // student whose day log is open
   const [delClassTarget, setDelClassTarget] = useState(null); // class awaiting delete confirmation
-  const [focusKey, setFocusKey] = useState(() => weekKeyOf(todayISO())); // selected week (shared by all sheets)
+  const [focusKey, setFocusKey] = useState(() => lastNWeeks(15)[0].key); // selected week (shared by all sheets) — always starts on the first week
   const [draft, setDraft] = useState({}); // staged cells: { studentId: { subjectKey: { dateISO: status } } } — saved only on Save
   const [subjectOf, setSubjectOf] = useState({}); // { classId: subjectKey } — which subject's session is being marked right now
   const [mode, setMode] = useState("mark"); // "mark" | "view"
@@ -1365,15 +1361,22 @@ export default function Attendance() {
   }, [weekMap]);
 
   const baseWeeks = useMemo(() => lastNWeeks(15), []);
+  const baseKeys = useMemo(() => baseWeeks.map((w) => w.key), [baseWeeks]);
   const weeksOf = useMemo(() => {
+    /* Always open on the CURRENT 15-week window: each class's list starts with
+       today's base weeks (so W1 is always the first week), then keeps any extra
+       weeks the admin added — stale weeks from an older window are dropped. */
     const map = {};
     classes.forEach((c) => {
-      if (weekMap[c.id] !== undefined) map[c.id] = weekMap[c.id].map(weekFromKey);
-      else if (weekMap["*"] !== undefined) map[c.id] = weekMap["*"].map(weekFromKey);
-      else map[c.id] = baseWeeks;
+      const stored =
+        weekMap[c.id] !== undefined ? weekMap[c.id] : weekMap["*"] !== undefined ? weekMap["*"] : [];
+      const custom = (Array.isArray(stored) ? stored : []).filter(
+        (k) => typeof k === "string" && !baseKeys.includes(k) && k >= baseKeys[0]
+      );
+      map[c.id] = [...baseKeys, ...custom].map(weekFromKey);
     });
     return map;
-  }, [classes, weekMap, baseWeeks]);
+  }, [classes, weekMap, baseKeys]);
   const attendanceOf = useMemo(() => {
     const map = {};
     attendance.forEach((r) => {
