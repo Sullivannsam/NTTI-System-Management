@@ -4,7 +4,7 @@ import { Trophy, ClipboardList, Link2, FileText, FileSpreadsheet, FileDown, X } 
 import { Link } from "react-router-dom";
 import clsx from "clsx";
 import { useApp } from "../context/AppContext";
-import { EmptyState } from "../components/Page";
+import { EmptyState, CtaButton } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
 
 const SCORES_KEY = "ntti.scores.v1";
@@ -314,9 +314,9 @@ export default function Billboard() {
             title={`No schedule for ${cls.name}`}
             subtitle="Add subjects for this class on the Schedule page, then fill the score sheet — the billboard follows both."
             action={
-              <button onClick={() => (window.location.href = "/schedule")} className="btn btn-primary">
-                <Link2 className="h-4 w-4" /> Open Schedule
-              </button>
+              <CtaButton onClick={() => (window.location.href = "/schedule")} icon={Link2}>
+                Open Schedule
+              </CtaButton>
             }
           />
         </div>
@@ -329,9 +329,9 @@ export default function Billboard() {
             title={`No scores yet for ${cls.name}`}
             subtitle="Fill in the score sheet for this class, then come back — the billboard ranks students as soon as scores exist."
             action={
-              <button onClick={() => (window.location.href = "/scores")} className="btn btn-primary">
-                <ClipboardList className="h-4 w-4" /> Open Scores
-              </button>
+              <CtaButton onClick={() => (window.location.href = "/scores")} icon={ClipboardList}>
+                Open Scores
+              </CtaButton>
             }
           />
         </div>

@@ -14,7 +14,7 @@ import {
   Lock,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
-import PageHeader, { EmptyState } from "../components/Page";
+import PageHeader, { EmptyState, CtaButton } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
 import ScoreImportModal from "../components/ScoreImportModal";
 import ScoreSheet from "../components/ScoreSheet";
@@ -145,7 +145,7 @@ function SaveBadge({ dirty, savedAt }) {
   );
 }
 
-function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, onRenameGroup, onMerge, onSplit, onClearGroups, onRenameName, onSave, dirty, savedAt, readOnly }) {
+function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, onRenameGroup, onMerge, onSplit, onClearGroups, onRenameName, onSave, dirty, savedAt, readOnly, classNote }) {
   const { rows = [], scores = {} } = meta || {};
   const layout = meta?.layout || null;
   const columns = layout ? layout.columns : bootstrapColumns(meta?.subjects || []);
@@ -158,13 +158,20 @@ function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
+            <span
+              className="flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{ borderColor: "var(--primary-soft)", background: "var(--primary-soft)", color: "var(--primary-strong)" }}
+              title="This sheet is a standalone score list — it is not a class, no matter what its name is"
+            >
+              <ClipboardList size={10} /> Cheatsheet · no class
+            </span>
             <input
               value={listName}
               onChange={(e) => onRenameName(e.target.value)}
               readOnly={readOnly}
               placeholder="Score list name…"
               aria-label="Score list name"
-              className="input h-10 w-full min-w-[220px] max-w-[380px] !rounded-lg !px-3 text-base font-bold disabled:cursor-not-allowed"
+              className="input h-10 w-full min-w-[200px] max-w-[340px] !rounded-lg !px-3 text-base font-bold disabled:cursor-not-allowed"
               style={{ color: "var(--text)" }}
             />
             {readOnly && (
@@ -178,8 +185,14 @@ function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, 
             )}
           </div>
           <p className="mt-1 text-xs" style={{ color: "var(--text-2)" }}>
-            {columns.length} subject{columns.length === 1 ? "" : "s"} · {rows.length} student{rows.length === 1 ? "" : "s"} — columns, groups and names come straight from the imported file
+            {columns.length} subject{columns.length === 1 ? "" : "s"} · {rows.length} student{rows.length === 1 ? "" : "s"} — standalone score list (no class): columns, groups and names come straight from the imported file
           </p>
+          {classNote && (
+            <p className="mt-1.5 flex items-start gap-1.5 text-xs font-semibold" style={{ color: "var(--warning)" }}>
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              {classNote}
+            </p>
+          )}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <button
@@ -347,10 +360,14 @@ function AddStudentModal({ open, onClose, onAdd, cls }) {
 }
 
 export default function Scores() {
-  const { students, classes, logAudit, showToast, addClass, addStudentsBatch, updateStudent, importStudents } = useApp();
+  const { students, classes, drafts, logAudit, showToast, addClass, addStudentsBatch, updateStudent, importStudents, updateClass } = useApp();
   const [scores, setScores] = useState(loadScores);
   const [schedules, setSchedules] = useState(loadSchedules);
   const [noneMeta, setNoneMeta] = useState(loadNoneMeta);
+  /* The "(No class)" cheatsheet is hidden by default — it only appears after the
+     user explicitly opens it (Open saved cheatsheet) or imports a new file, so
+     selecting "None" always starts on a clean page. */
+  const [noneOpened, setNoneOpened] = useState(false);
   const [layout, setLayout] = useState(loadLayout);
   const [classId, setClassId] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
@@ -362,6 +379,15 @@ export default function Scores() {
      Every mutating action (score cells, rename/merge headers, add subject,
      add student, reset, save, import) is gated on this flag. */
   const [editMode, setEditMode] = useState(false);
+
+  /* Draft for renaming the selected class straight from the sheet header.
+     Committed on blur/Enter so the class (Classes panel + linked schedules)
+     is renamed exactly once. */
+  const [clsNameDraft, setClsNameDraft] = useState("");
+  useEffect(() => {
+    const c = classes.find((x) => x.id === classId);
+    setClsNameDraft(c?.name || "");
+  }, [classId, classes]);
 
   /* ── save state ──
      Scores are written continuously by the effects above, so "saved" is tracked
@@ -453,6 +479,20 @@ export default function Scores() {
         : "no schedule yet — importing creates it",
     })),
   ];
+
+  /* If the "(No class)" cheatsheet was previously saved as a class, explain what
+     happened to it now (e.g. the class was moved to Draft) so it doesn't look
+     like a deleted class is still hanging around on this page. */
+  const noneClassNote = useMemo(() => {
+    const cid = noneMeta?.classId;
+    if (!cid) return null;
+    const c = classes.find((x) => x.id === cid);
+    if (c) return null;
+    const d = drafts.find((x) => x.id === cid);
+    if (d)
+      return `This list was saved as class "${d.name}", which is currently in Draft — restore it from the Draft tab, or press "Save as class" to recreate it from this sheet.`;
+    return `This list was once saved as a class that no longer exists — press "Save as class" to recreate it from this sheet.`;
+  }, [noneMeta, classes, drafts]);
 
   const roster = useMemo(() => {
     if (!cls) return [];
@@ -724,9 +764,21 @@ export default function Scores() {
 
   const clearNone = () => {
     setNoneMeta(null);
+    setNoneOpened(false);
     setNoneSavedSig(null);
     setNoneSavedAt(null);
     showToast("Cheatsheet cleared", "info");
+  };
+
+  /* Reopen the stored "(No class)" cheatsheet on demand — it is not shown by
+     default, but remains saved so nothing was lost. */
+  const openSavedNone = () => {
+    const m = loadNoneMeta();
+    if (!m) return;
+    setNoneMeta(m);
+    setNoneOpened(true);
+    setNoneSavedSig(JSON.stringify(m));
+    setNoneSavedAt(stampNow());
   };
 
   const renameNoneName = (name) => setNoneMeta((prev) => (prev ? { ...prev, name } : prev));
@@ -924,6 +976,7 @@ export default function Scores() {
       );
       showToast(`Class "${nm}" created — ${rowCount} students · ${subjectCount} subjects saved with their scores`);
       setClassId(createdClassId);
+      setNoneOpened(false); /* it is now a real class — the cheatsheet stays closed on None */
     } else {
       logAudit("save_scores_none", `Saved score list "${nm}" (${subjectCount} subjects · ${rowCount} students)`);
       showToast(`Score list "${nm}" saved at ${stamp}`);
@@ -999,6 +1052,7 @@ export default function Scores() {
         scores: scoresMap,
       };
       setNoneMeta(meta);
+      setNoneOpened(true);
       try {
         localStorage.setItem(NONE_META_KEY, JSON.stringify(meta));
       } catch {
@@ -1159,6 +1213,19 @@ export default function Scores() {
     setImportOpen(false);
   };
 
+  /* Rename the selected class from the score sheet header — the name change
+     flows out to the Classes panel, the class dropdown and linked schedules,
+     because updateClass updates the shared classes state. */
+  const commitClassName = () => {
+    const v = clsNameDraft.trim();
+    if (v && v !== cls?.name) {
+      updateClass(classId, { name: v });
+      showToast(`Class renamed to "${v}" — updated in Classes and linked schedules`);
+    } else {
+      setClsNameDraft(cls?.name || "");
+    }
+  };
+
   return (
     <div className="max-w-[1500px] mx-auto space-y-5 animate-fade-up">
       <PageHeader
@@ -1220,7 +1287,7 @@ export default function Scores() {
 
       {!classId && (
         <div className="card">
-          {noneMeta ? (
+          {noneMeta && noneOpened ? (
             <NoneSheet
               meta={noneMeta}
               onScore={setNoneMetaScore}
@@ -1237,24 +1304,40 @@ export default function Scores() {
               dirty={noneDirty}
               savedAt={noneSavedAt}
               readOnly={!editMode}
+              classNote={noneClassNote}
             />
           ) : (
             <EmptyState
               icon={ClipboardList}
               title="Select a class or import"
               subtitle={
-                scoredClasses.length === 0
+                noneMeta && !noneOpened
+                  ? `A cheatsheet ("${(noneMeta.name || "Score list").trim()}") is saved but hidden — open it below to keep working on it, or import a new file.`
+                  : scoredClasses.length === 0
                   ? "Select or import to see the students — pick a class from the dropdown, or import an Excel cheatsheet and its columns become the score subjects exactly as written in the file."
                   : "Select or import to see the students — pick a class from the dropdown to open its score sheet, or import an Excel cheatsheet."
               }
               action={
-                <button
-                  onClick={() => setImportOpen(true)}
-                  className="btn btn-primary"
-                  title="Import an Excel cheatsheet — its columns and group headers become the score subjects exactly as written in the file"
-                >
-                  <FileSpreadsheet className="h-4 w-4" /> Import Excel
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {noneMeta && !noneOpened && (
+                    <CtaButton onClick={openSavedNone} icon={ClipboardList}>
+                      Open saved cheatsheet
+                    </CtaButton>
+                  )}
+                  {noneMeta && !noneOpened ? (
+                    <button
+                      onClick={() => setImportOpen(true)}
+                      className="btn btn-outline h-10 shrink-0 px-4 text-sm"
+                      title="Import an Excel cheatsheet — its columns and group headers become the score subjects exactly as written in the file"
+                    >
+                      <FileSpreadsheet className="h-4 w-4" /> Import Excel
+                    </button>
+                  ) : (
+                    <CtaButton onClick={() => setImportOpen(true)} icon={FileSpreadsheet}>
+                      Import Excel
+                    </CtaButton>
+                  )}
+                </div>
               }
             />
           )}
@@ -1268,12 +1351,9 @@ export default function Scores() {
             title={`No schedule for ${cls.name}`}
             subtitle="Add subject columns on the Schedule page — or use Import Excel above: the file's columns automatically become this class's score subjects (and its students are added with their scores)."
             action={
-              <button
-                onClick={() => (window.location.href = "/schedule")}
-                className="btn btn-primary"
-              >
-                <Link2 className="h-4 w-4" /> Open Schedule
-              </button>
+              <CtaButton onClick={() => (window.location.href = "/schedule")} icon={Link2}>
+                Open Schedule
+              </CtaButton>
             }
           />
         </div>
@@ -1283,13 +1363,34 @@ export default function Scores() {
         <div className="card overflow-hidden">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
             <div>
-              <p className="text-base font-bold" style={{ color: "var(--text)" }}>
-                {cls.name} — score sheet
+              <p className="flex flex-wrap items-center gap-1.5 text-base font-bold" style={{ color: "var(--text)" }}>
+                {editMode ? (
+                  <>
+                    <input
+                      value={clsNameDraft}
+                      onChange={(e) => setClsNameDraft(e.target.value)}
+                      onBlur={commitClassName}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.currentTarget.blur();
+                          commitClassName();
+                        }
+                      }}
+                      className="input h-8 min-w-0 !rounded-md !px-2 text-base font-bold"
+                      style={{ width: `${Math.max(clsNameDraft.length + 2, 7)}ch`, minWidth: 84, maxWidth: 280 }}
+                      aria-label="Class name"
+                      title="Rename the class — this updates Classes and linked schedules too"
+                    />
+                    — score sheet
+                  </>
+                ) : (
+                  <span>{cls.name} — score sheet</span>
+                )}
                 {!editMode && (
                   <span
                     className="ml-2 inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider"
                     style={{ borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-3)" }}
-                    title="The sheet is locked — press Edit to change scores, subjects or students"
+                    title="The sheet is locked — press Edit to rename the class, change scores, subjects or students"
                   >
                     <Lock size={10} /> Read-only
                   </span>
