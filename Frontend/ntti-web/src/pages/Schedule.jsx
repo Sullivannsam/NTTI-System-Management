@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, Save, RotateCcw, Trash2, CalendarDays, Download, ChevronDown, Check, X,
@@ -470,7 +470,27 @@ export default function Schedule() {
   }, [state]);
 
   const schedules = state.schedules;
-  const data = schedules.find((s) => s.id === state.activeId) || schedules[0];
+
+  /* Schedules linked to a class that was moved to Draft are parked in storage
+     (restoring the class from Draft re-links and brings them back) but stay
+     hidden on this page, so a drafted class never shows up in the lists. */
+  const visibleSchedules = useMemo(
+    () => schedules.filter((s) => !(s.classId && !classes.some((c) => c.id === s.classId))),
+    [schedules, classes]
+  );
+
+  // if the open schedule belongs to a drafted class, switch to the first visible one
+  useEffect(() => {
+    setState((prev) => {
+      const vis = prev.schedules.filter((s) => !(s.classId && !classes.some((c) => c.id === s.classId)));
+      if (vis.length && !vis.some((s) => s.id === prev.activeId)) {
+        return { ...prev, activeId: vis[0].id };
+      }
+      return prev;
+    });
+  }, [classes]);
+
+  const data = visibleSchedules.find((s) => s.id === state.activeId) || visibleSchedules[0] || schedules[0];
 
   const persist = (next) => setState(next);
 
@@ -666,8 +686,8 @@ export default function Schedule() {
   const toggleAll = (on) => setDlAll(on);
 
   const dlSchedules = () => {
-    if (dlAll) return schedules;
-    return schedules.filter((s) => checked[s.id]);
+    if (dlAll) return visibleSchedules;
+    return visibleSchedules.filter((s) => checked[s.id]);
   };
   const someChecked = dlAll || Object.keys(checked).some((k) => checked[k]);
 
@@ -689,7 +709,7 @@ export default function Schedule() {
   const noSelected = dlSel && !someChecked && !dlAll;
 
   /* copy an existing schedule's subjects/teachers/times into the current one */
-  const copySources = schedules
+  const copySources = visibleSchedules
     .filter((s) => s.id !== data.id)
     .sort(
       (a, b) =>
@@ -744,7 +764,7 @@ export default function Schedule() {
               searchable
               style={{ minWidth: 220 }}
               value={state.activeId}
-              options={[...schedules]
+              options={[...visibleSchedules]
                 .sort(
                   (a, b) =>
                     (a.classId ? 0 : 1) - (b.classId ? 0 : 1) ||
@@ -1034,7 +1054,7 @@ export default function Schedule() {
 
               {/* schedule list */}
               <div className="max-h-64 overflow-y-auto thin-scroll my-3 space-y-1">
-                {schedules.map((s) => {
+                {visibleSchedules.map((s) => {
                   const on = dlAll || checked[s.id];
                   return (
                     <label

@@ -16,6 +16,7 @@ import {
   History,
   Flag,
   UserPlus,
+  Check,
 } from "lucide-react";
 import PageHeader, { EmptyState } from "../components/Page";
 import Modal from "../components/Modal";
@@ -41,6 +42,11 @@ export default function Classes() {
   const [view, setView] = useState("list"); // "list" | "detail"
   const [selId, setSelId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null); // class pending soft-delete → Draft
+
+  /* global multi-select → bulk move to Draft */
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [deleteManyOpen, setDeleteManyOpen] = useState(false);
 
   const [classQuery, setClassQuery] = useState("");
   const [studentQuery, setStudentQuery] = useState("");
@@ -176,6 +182,30 @@ export default function Classes() {
     setView("detail");
   };
 
+  /* global multi-select helpers */
+  const toggleSelectMode = () => {
+    setSelectMode((m) => !m);
+    setSelectedIds([]);
+  };
+  const toggleSelected = (id) => {
+    setSelectedIds((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
+  };
+  const setAllSelected = (on) => setSelectedIds(on ? filteredClasses.map((c) => c.id) : []);
+  const selectedClasses = useMemo(
+    () => classes.filter((c) => selectedIds.includes(c.id)),
+    [classes, selectedIds]
+  );
+  /* move every selected class to Draft — each goes through the same safe
+     soft-delete as the per-class trash bin, nothing is lost */
+  const deleteSelected = () => {
+    const targets = classes.filter((c) => selectedIds.includes(c.id));
+    targets.forEach((c) => deleteClass(c.id));
+    showToast(`${targets.length} class${targets.length === 1 ? "" : "es"} moved to Draft`);
+    setSelectedIds([]);
+    setSelectMode(false);
+    setDeleteManyOpen(false);
+  };
+
   const accent = sel?.major ? (ACCENT[sel.major] || ACCENT.it) : ACCENT.it;
 
   /* current / next semester for the selected class + its finished-term archive */
@@ -227,9 +257,22 @@ export default function Classes() {
         title="Classes"
         subtitle="All classes · click a class to see its students, rename it, or add new students. Classes you create show up on the Attendance page."
         actions={
-          <button onClick={() => setAddClassOpen(true)} className="btn btn-primary h-10 px-4 text-sm">
-            <Plus size={16} /> New class
-          </button>
+          <>
+            <button
+              onClick={toggleSelectMode}
+              className={`btn h-10 px-4 text-sm gap-1.5 ${selectMode ? "btn-outline !text-red-500" : "btn-outline"}`}
+              title={
+                selectMode
+                  ? "Stop selecting classes"
+                  : "Select classes and move them all to Draft"
+              }
+            >
+              <Trash2 size={15} /> {selectMode ? "Cancel selection" : "Select classes"}
+            </button>
+            <button onClick={() => setAddClassOpen(true)} className="btn btn-primary h-10 px-4 text-sm">
+              <Plus size={16} /> New class
+            </button>
+          </>
         }
       />
 
@@ -288,6 +331,39 @@ export default function Classes() {
         )}
       </div>
 
+      {/* global select toolbar */}
+      {selectMode && (
+        <div className="card p-3 mb-4 flex flex-wrap items-center gap-2 animate-fade-up">
+          <button
+            onClick={() => setAllSelected(true)}
+            disabled={!filteredClasses.length}
+            className="btn btn-outline h-9 px-3 text-xs disabled:opacity-50"
+          >
+            Select all
+          </button>
+          <button
+            onClick={() => setAllSelected(false)}
+            className="btn btn-outline h-9 px-3 text-xs"
+          >
+            Clear all
+          </button>
+          <span className="text-xs font-semibold tabular-nums px-1" style={{ color: "var(--text-2)" }}>
+            {selectedIds.length} of {filteredClasses.length} selected
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setDeleteManyOpen(true)}
+              disabled={!selectedIds.length}
+              className="btn h-9 px-3 text-xs gap-1.5 disabled:opacity-50"
+              style={{ background: "var(--danger)", color: "#fff" }}
+              title="Move the selected classes to Draft — nothing is lost"
+            >
+              <Trash2 size={14} /> Move to Draft{selectedIds.length ? ` (${selectedIds.length})` : ""}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* class cards grid */}
       {classes.length === 0 ? (
         <div className="card">
@@ -322,11 +398,13 @@ export default function Classes() {
             const totalSteps = cLevels.length || 1;
             const cNextCode = cIdx >= 0 && cIdx < cLevels.length - 1 ? cLevels[cIdx + 1] : null;
             const pct = Math.round((stepNo / totalSteps) * 100);
+            const selOn = selectMode && selectedIds.includes(c.id);
             return (
             <button
               key={c.id}
-              onClick={() => openClass(c.id)}
-              className="card p-5 text-left transition-all duration-150 hover:-translate-y-0.5 hover:shadow-soft animate-fade-up group relative"
+              onClick={() => (selectMode ? toggleSelected(c.id) : openClass(c.id))}
+              className={`card p-5 text-left transition-all duration-150 hover:-translate-y-0.5 hover:shadow-soft animate-fade-up group relative ${selOn ? "ring-2" : ""}`}
+              style={selOn ? { "--tw-ring-color": "var(--primary)", borderColor: "var(--primary)" } : undefined}
             >
               <div className="flex items-start gap-3">
                 <span
@@ -343,52 +421,66 @@ export default function Classes() {
                     {c.field || c.name} · {c.shift} shift
                   </p>
                 </div>
-                {/* quick promote — no need to open the class to move it to the next semester */}
-                {!c.completed && cNextCode && (
+                {selectMode ? (
                   <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelId(c.id);
-                      setEndOpen(true);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        setSelId(c.id);
-                        setEndOpen(true);
-                      }
-                    }}
-                    title={`Move ${c.name} to ${cNextCode}`}
-                    className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--surface-2)]"
-                    style={{ color: "var(--primary-strong)" }}
+                    className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg border transition-colors"
+                    style={
+                      selOn
+                        ? { background: "var(--primary)", borderColor: "var(--primary)", color: "#fff" }
+                        : { background: "var(--surface-1)", borderColor: "var(--border)", color: "var(--text-3)" }
+                    }
+                    title={selOn ? "Click to unselect" : "Click to select"}
                   >
-                    <Flag size={15} />
+                    {selOn && <Check size={16} />}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1">
+                    {!c.completed && cNextCode && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelId(c.id);
+                          setEndOpen(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setSelId(c.id);
+                            setEndOpen(true);
+                          }
+                        }}
+                        title={`Move ${c.name} to ${cNextCode}`}
+                        className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--surface-2)]"
+                        style={{ color: "var(--primary-strong)" }}
+                      >
+                        <Flag size={15} />
+                      </span>
+                    )}
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(c);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setDeleteTarget(c);
+                        }
+                      }}
+                      title={`Move ${c.name} to Draft`}
+                      className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--surface-2)]"
+                      style={{ color: "var(--danger)" }}
+                    >
+                      <Trash2 size={15} />
+                    </span>
                   </span>
                 )}
-                {/* delete this class */}
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteTarget(c);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      setDeleteTarget(c);
-                    }
-                  }}
-                  title={`Move ${c.name} to Draft`}
-                  className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--surface-2)]"
-                  style={{ color: "var(--danger)" }}
-                >
-                  <Trash2 size={15} />
-                </span>
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -840,6 +932,43 @@ export default function Classes() {
           <p className="text-xs" style={{ color: "var(--text-3)" }}>
             Nothing is lost — students, term records, schedule and scores stay exactly as they are. You can
             restore it anytime from the <b>Draft</b> page in the left menu, or delete it forever from there.
+          </p>
+        </div>
+      </Modal>
+
+      {/* bulk move selected classes to draft */}
+      <Modal
+        open={deleteManyOpen}
+        onClose={() => setDeleteManyOpen(false)}
+        title="Move classes to Draft"
+        subtitle={`${selectedIds.length} class${selectedIds.length === 1 ? "" : "es"} selected`}
+        footer={
+          <>
+            <button onClick={() => setDeleteManyOpen(false)} className="btn btn-outline h-10 px-4 text-sm">Cancel</button>
+            <button
+              onClick={deleteSelected}
+              className="btn h-10 px-4 text-sm"
+              style={{ background: "var(--danger)", color: "#fff" }}
+            >
+              <Trash2 size={15} /> Move to Draft
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-2 text-sm" style={{ color: "var(--text-2)" }}>
+          <p>
+            These classes move to the <b style={{ color: "var(--text)" }}>Draft</b> page in the left menu. Nothing is
+            lost — students, term records, schedules and scores stay exactly as they are.
+          </p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {selectedClasses.map((c) => (
+              <span key={c.id} className="rounded-lg border px-2 py-0.5 text-xs font-semibold" style={{ borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-2)" }}>
+                {c.name}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs" style={{ color: "var(--text-3)" }}>
+            Restore any of them anytime from the <b>Draft</b> page in the left menu, or delete them forever from there.
           </p>
         </div>
       </Modal>

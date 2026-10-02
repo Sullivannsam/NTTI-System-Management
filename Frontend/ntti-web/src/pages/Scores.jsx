@@ -37,6 +37,18 @@ const SCORES_KEY = "ntti.scores.v1";
 const SCHED_KEY = "ntti.schedule.v2";
 const NONE_META_KEY = "ntti.scores.none.v1";
 const LAYOUT_KEY = "ntti.scores.layout.v1";
+const SEL_CLASS_KEY = "ntti.scores.selectedClass.v1";
+
+/* the last class the user had open on this page — so switching panels and
+   coming back keeps you on the same score sheet (resets to None only when
+   the class no longer exists, e.g. it was moved to Draft). */
+function loadSelectedClass() {
+  try {
+    return String(localStorage.getItem(SEL_CLASS_KEY) || "");
+  } catch {
+    return "";
+  }
+}
 
 function loadScores() {
   try {
@@ -369,7 +381,7 @@ export default function Scores() {
      selecting "None" always starts on a clean page. */
   const [noneOpened, setNoneOpened] = useState(false);
   const [layout, setLayout] = useState(loadLayout);
-  const [classId, setClassId] = useState("");
+  const [classId, setClassId] = useState(loadSelectedClass);
   const [confirmReset, setConfirmReset] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [frozen, setFrozen] = useState(false);
@@ -447,6 +459,17 @@ export default function Scores() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [classes, schedules]
   );
+
+  // keep the open class across panel switches; reset to None only when the
+  // class is gone (deleted / moved to Draft)
+  useEffect(() => {
+    try {
+      if (classId && classes.some((c) => c.id === classId)) localStorage.setItem(SEL_CLASS_KEY, classId);
+      else localStorage.removeItem(SEL_CLASS_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, [classId, classes]);
 
   useEffect(() => {
     if (classId && !classes.some((c) => c.id === classId)) setClassId("");
@@ -1381,10 +1404,9 @@ export default function Scores() {
                       aria-label="Class name"
                       title="Rename the class — this updates Classes and linked schedules too"
                     />
-                    — score sheet
                   </>
                 ) : (
-                  <span>{cls.name} — score sheet</span>
+                  <span>{cls.name}</span>
                 )}
                 {!editMode && (
                   <span

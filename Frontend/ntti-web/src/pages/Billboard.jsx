@@ -9,7 +9,7 @@ import ClassSelect from "../components/ClassSelect";
 
 const SCORES_KEY = "ntti.scores.v1";
 const SCHED_KEY = "ntti.schedule.v2";
-const SEL_KEY = "ntti.billboard.selected.v1";
+const SEL_KEY = "ntti.rankings.selected.v1";
 const LAYOUT_KEY = "ntti.scores.layout.v1";
 
 function loadScores() {
@@ -45,7 +45,7 @@ const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 
 /* ranked billboard tables for the chosen classes, as an HTML document that opens
    in Excel/Word (or prints to PDF) — mirrors the Attendance export. */
-function billboardExportHTML(sheets) {
+function rankingsExportHTML(sheets) {
   return `<html><head><meta charset="utf-8"><title>Billboard</title></head><body>${sheets
     .map(({ cls, subjects, rows }) => {
       const meta = (label, val) => `<p style="margin:1px 0;font-size:12px"><b>${esc(label)}:</b> ${esc(val)}</p>`;
@@ -80,7 +80,7 @@ function billboardExportHTML(sheets) {
         : `<tr><td colspan="${subjects.length + 5}" align="center" style="padding:10px;color:#64748b">No scores yet for this class</td></tr>`;
       const clsAvg = rows.length ? (rows.reduce((a, r) => a + r.avg, 0) / rows.length).toFixed(2) : "—";
       return (
-        `<h3 style="margin:22px 0 4px">${esc(cls.name)} — billboard</h3>` +
+        `<h3 style="margin:22px 0 4px">${esc(cls.name)} — rankings</h3>` +
         meta("Class avg", clsAvg) +
         meta("Field", cls.field || "—") +
         meta("Shift", cls.shift || "—") +
@@ -119,7 +119,7 @@ const gradeOf = (avg) => {
 const initialsOf = (s) =>
   `${String(s.firstName || "?")[0] || ""}${String(s.lastName || "")[0] || ""}`.toUpperCase();
 
-export default function Billboard() {
+export default function Rankings() {
   const { students, classes, showToast, logAudit } = useApp();
   const [scores, setScores] = useState(loadScores);
   const [schedules, setSchedules] = useState(loadSchedules);
@@ -258,7 +258,7 @@ export default function Billboard() {
       <div className="mb-6 space-y-3 animate-fade-up">
         <div>
           <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
-            Billboard
+            Rankings
           </h1>
           <p className="mt-1 text-sm" style={{ color: "var(--text-3)" }}>
             Students ranked by average score — the highest score is on top.
@@ -550,9 +550,9 @@ export default function Billboard() {
                         return;
                       }
                       const sheets = exportSheets();
-                      downloadSheet(billboardExportHTML(sheets), key, `billboard.${ext}`);
+                      downloadSheet(rankingsExportHTML(sheets), key, `rankings.${ext}`);
                       logAudit("export_billboard", `Exported billboard to ${label} (${sheets.length} class${sheets.length === 1 ? "" : "es"})`);
-                      showToast(`Billboard exported to ${label}`);
+                      showToast(`Rankings exported to ${label}`);
                       setDlOpen(false);
                     }}
                     className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all"
@@ -573,7 +573,7 @@ export default function Billboard() {
                       showToast("Allow pop-ups to export as PDF");
                       return;
                     }
-                    w.document.write(billboardExportHTML(sheets));
+                    w.document.write(rankingsExportHTML(sheets));
                     w.document.close();
                     w.focus();
                     setTimeout(() => w.print(), 250);

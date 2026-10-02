@@ -38,7 +38,7 @@ const NAV = [
   { to: "/attendance", label: "Attendance", icon: CalendarCheck },
   { to: "/schedule", label: "Schedule", icon: CalendarRange },
   { to: "/scores", label: "Scores", icon: ClipboardList },
-  { to: "/billboard", label: "Billboard", icon: Trophy },
+  { to: "/rankings", label: "Rankings", icon: Trophy },
   { to: "/transcript", label: "Transcript", icon: FileText },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/admin", label: "Admin", icon: ShieldCheck },

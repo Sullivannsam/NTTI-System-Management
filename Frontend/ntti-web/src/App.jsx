@@ -13,7 +13,7 @@ import StudentDetail from "./pages/StudentDetail";
 import Attendance from "./pages/Attendance";
 import Schedule from "./pages/Schedule";
 import Scores from "./pages/Scores";
-import Billboard from "./pages/Billboard";
+import Rankings from "./pages/Billboard";
 import Transcript from "./pages/Transcript";
 import Analytics from "./pages/Analytics";
 import Admin from "./pages/Admin";
@@ -46,7 +46,7 @@ function App() {
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/schedule" element={<Schedule />} />
             <Route path="/scores" element={<Scores />} />
-            <Route path="/billboard" element={<Billboard />} />
+            <Route path="/rankings" element={<Rankings />} />
             <Route path="/transcript" element={<Transcript />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/admin" element={<Admin />} />
