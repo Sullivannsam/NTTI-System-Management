@@ -248,7 +248,7 @@ export default function ScoreSheet({
         ) : (
           <>
             {!readOnly && columns.length > 1 && (
-              <button onClick={() => setMergeMode(true)} className="btn btn-ghost h-8 px-3 text-xs gap-1.5">
+              <button onClick={() => setMergeMode(true)} className="btn btn-ghost h-8 px-3 text-xs gap-1.5" style={{ background: "var(--primary)", color: "#fff" }}>
                 <Columns3 size={13} /> Merge headers
               </button>
             )}
