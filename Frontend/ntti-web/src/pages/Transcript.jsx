@@ -134,18 +134,18 @@ const gradeTone = (g) =>
   g === "A"
     ? { color: "#047857", background: "rgba(16,185,129,.12)", border: "1px solid rgba(16,185,129,.35)" }
     : g === "B+"
-    ? { color: "#0369a1", background: "rgba(14,165,233,.16)", border: "1px solid rgba(14,165,233,.45)" }
-    : g === "B"
-    ? { color: "#0369a1", background: "rgba(14,165,233,.12)", border: "1px solid rgba(14,165,233,.35)" }
-    : g === "C+"
-    ? { color: "#b45309", background: "rgba(245,158,11,.18)", border: "1px solid rgba(245,158,11,.45)" }
-    : g === "C"
-    ? { color: "#b45309", background: "rgba(245,158,11,.14)", border: "1px solid rgba(245,158,11,.35)" }
-    : g === "D"
-    ? { color: "#c2410c", background: "rgba(249,115,22,.14)", border: "1px solid rgba(249,115,22,.35)" }
-    : g === "F"
-    ? { color: "#b91c1c", background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.35)" }
-    : { color: MUTED, background: SOFT, border: `1px solid ${LINE}` };
+      ? { color: "#0369a1", background: "rgba(14,165,233,.16)", border: "1px solid rgba(14,165,233,.45)" }
+      : g === "B"
+        ? { color: "#0369a1", background: "rgba(14,165,233,.12)", border: "1px solid rgba(14,165,233,.35)" }
+        : g === "C+"
+          ? { color: "#b45309", background: "rgba(245,158,11,.18)", border: "1px solid rgba(245,158,11,.45)" }
+          : g === "C"
+            ? { color: "#b45309", background: "rgba(245,158,11,.14)", border: "1px solid rgba(245,158,11,.35)" }
+            : g === "D"
+              ? { color: "#c2410c", background: "rgba(249,115,22,.14)", border: "1px solid rgba(249,115,22,.35)" }
+              : g === "F"
+                ? { color: "#b91c1c", background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.35)" }
+                : { color: MUTED, background: SOFT, border: `1px solid ${LINE}` };
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -218,7 +218,7 @@ function StudentSelect({ students, value, onChange, placeholder = "Select a stud
             }}
             placeholder="Search student…"
             className="w-full rounded-md border py-2 pl-8 pr-3 text-sm outline-none transition-colors"
-            style={{ 
+            style={{
               background: COLORS.bgDefault,
               borderColor: COLORS.border,
               color: COLORS.textPrimary,
@@ -377,7 +377,7 @@ function docHTML({ student, cls, terms, overall, att, refNo, issued }) {
   <p style="margin:10px 0 4px;font-size:12px;color:#0f172a"><b>REMARKS:</b></p>
   <table style="width:100%"><tr>
     <td style="vertical-align:top;padding-right:24px">
-      <table style="border-collapse:collapse;font-size:9px">
+      <table style="border-collapse:collapse;font-size:11px">
         <tr><th style="${cell};background:#f1f5f9">Mark Obtained</th><th style="${cell};background:#f1f5f9">Grade</th><th style="${cell};background:#f1f5f9">Meaning</th><th style="${cell};background:#f1f5f9">Grade Point</th></tr>
         ${legendRows}
       </table>
@@ -421,12 +421,13 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/* ── real .xlsx export — mirror of the official “ex” cheatsheet from
-   (G)IT07D_new.xlsx: the same 20-column grid (A..T), the same narrow
-   column widths and the same merges, so the table in Excel is exactly
-   the same size as the office file’s cheatsheet. ── */
+/* ── real .xlsx export — a literal mirror of the on-screen #transcript-doc
+   table: same 9 columns (YEAR · Subjects/HOUR/Score/Grade × 2), same rows,
+   same grade legend, one font everywhere (Times New Roman, matching the
+   on-screen letterhead/title) so opening the file in Excel shows exactly
+   what the website shows — no different layout, no different font. ── */
 function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, att, refNo, issued }) {
-  const W = 20; // A..T — YEAR | SEM I (Subjects·HOUR·Score·Grade) | SEM II (same)
+  const W = 9; // A..I — YEAR, Subjects/HOUR/Score/Grade ×2
   const aoa = [];
   const merges = [];
   const FONT = "Times New Roman";
@@ -436,92 +437,82 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
   };
   const thin = { style: "thin", color: { rgb: "9CA3AF" } };
   const border = { top: thin, bottom: thin, left: thin, right: thin };
-  const st = (o = {}) => ({ border, ...o, font: { name: FONT, ...(o.font || {}) } });
+  const st = (o = {}) => ({
+    border,
+    ...o,
+    font: { name: FONT, ...(o.font || {}) },
+  });
   const cell = (v, o) => ({ t: "s", v: v ?? "", s: st(o) });
-  const H = (r, c, v, span = 1, font = {}, align = {}) => {
-    set(r, c, cell(v, { font: { name: "Arial", sz: 12, bold: true, ...font }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true, ...align } }));
+  const H = (r, c, v, span = 1) => {
+    set(r, c, cell(v, { font: { bold: true }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
     if (span > 1) merges.push({ s: { r, c }, e: { r, c: c + span - 1 } });
   };
   const merge = (r, c0, c1, r2 = r) => merges.push({ s: { r, c: c0 }, e: { r: r2, c: c1 } });
 
-  /* letterhead — same positions as the website: “KINGDOM OF CAMBODIA” +
-     “Nation Religion King” top-RIGHT (merged M..T, centred on each other),
-     the institute block (Ministry / Institute / N0) top-LEFT (merged A..J,
-     centred on each other), then OFFICIAL TRANSCRIPT centred below. */
-  const blockR = (r, v, bold, sz, color) => {
-    set(r, 12, cell(v, { font: { bold, sz, color: color || "000000" }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
-    merge(r, 12, 19); // M..T
+  /* letterhead — same lines as the on-screen title block, centred the same way */
+  const L = (r, v, bold, sz) => {
+    set(r, 0, cell(v, { font: { bold, sz }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
+    merge(r, 0, W - 1);
   };
-  const blockL = (r, v, bold, sz, color) => {
-    set(r, 0, cell(v, { font: { bold, sz, color: color || "000000" }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
-    merge(r, 0, 9); // A..J
-  };
-  blockR(0, INSTITUTION_LINES.country, true, 14);
-  blockR(1, INSTITUTION_LINES.motto, false, 14);
-  blockL(2, INSTITUTION_LINES.ministry, true, 13);
-  blockL(3, INSTITUTION_LINES.institute, true, 12);
-  blockL(4, INSTITUTION_LINES.noLine, false, 10, "475569");
-  set(5, 0, cell("", {}));
-  set(6, 0, cell("OFFICIAL TRANSCRIPT", { font: { bold: true, sz: 16 }, alignment: { horizontal: "center", vertical: "center" } }));
-  merge(6, 0, W - 1);
+  L(0, INSTITUTION_LINES.country, true, 14);
+  L(1, INSTITUTION_LINES.motto, false, 14);
+  L(2, INSTITUTION_LINES.ministry, true, 13);
+  L(3, INSTITUTION_LINES.institute, true, 12);
+  L(4, INSTITUTION_LINES.noLine, false, 10);
+  L(5, "", false, 10);
+  L(6, "OFFICIAL TRANSCRIPT", true, 16);
 
-  /* student block — official R8–R10: left = Student/DOB/Place, right = Sex/Nationality/Graduation */
+  /* student block — mirrors on-screen 2-column layout: left = Student/DOB/Place,
+     right = Sex/Nationality/Date of Graduation */
   let row = 7;
-  set(row, 0, cell("Student", { font: { bold: true }, alignment: { horizontal: "left" } }));
-  set(row, 2, cell(":", { alignment: { horizontal: "left" } }));
-  set(row, 3, cell(student.khmerName ? `${student.khmerName} · ${student.firstName} ${student.lastName}` : `${student.firstName} ${student.lastName}`, { alignment: { horizontal: "left" } }));
-  merge(row, 3, 10);
-  set(row, 12, cell("Sex :", { font: { bold: true }, alignment: { horizontal: "left" } }));
-  set(row, 13, cell(student.gender || "—", { alignment: { horizontal: "left" } }));
-  set(row, 16, cell("Nationality : Khmer", { alignment: { horizontal: "left" } }));
-  merge(row, 16, 19);
+  const pair = (r, lLabel, lValue, sLabel, sValue) => {
+    set(r, 0, cell(`${lLabel} :`, { font: { bold: true }, alignment: { horizontal: "left" } }));
+    merge(r, 0, 1);
+    set(r, 2, cell(lValue ?? "—", { alignment: { horizontal: "left" } }));
+    merge(r, 2, 4);
+    set(r, 5, cell(`${sLabel} :`, { font: { bold: true }, alignment: { horizontal: "left" } }));
+    merge(r, 5, 6);
+    set(r, 7, cell(sValue ?? "—", { alignment: { horizontal: "left" } }));
+    merge(r, 7, 8);
+  };
+  pair(row, "Student", student.khmerName ? `${student.khmerName} · ${student.firstName} ${student.lastName}` : `${student.firstName} ${student.lastName}`, "Sex", student.gender || "—");
   row++;
-  set(row, 0, cell("Date of Birth", { font: { bold: true }, alignment: { horizontal: "left" } }));
-  set(row, 2, cell(":", { alignment: { horizontal: "left" } }));
-  set(row, 3, cell(student.dob ? prettyDate(student.dob) : "—", { alignment: { horizontal: "left" } }));
-  merge(row, 3, 10);
-  set(row, 12, cell("Date of Graduation :", { font: { bold: true }, alignment: { horizontal: "left" } }));
-  set(row, 16, cell(graduationDate(student), { alignment: { horizontal: "left" } }));
-  merge(row, 16, 19);
+  pair(row, "Date of Birth", student.dob ? prettyDate(student.dob) : "—", "Nationality", "Khmer");
   row++;
-  set(row, 0, cell("Place of Birth", { font: { bold: true }, alignment: { horizontal: "left" } }));
-  set(row, 2, cell(":", { alignment: { horizontal: "left" } }));
-  set(row, 3, cell("—", { alignment: { horizontal: "left" } }));
-  merge(row, 3, 10);
+  pair(row, "Place of Birth", "—", "Date of Graduation", graduationDate(student));
   row++;
 
-  /* completion statement — official R10–R11, centred */
+  /* completion statement — centred, same wording as on-screen */
   const yearsInProgram = programYears(student.major);
-  const statement = `Has successfully completed Diploma of Technology in the field of ${cls?.field || majorName(student.major)} in academic year ${student.enrollmentYear || "—"} - ${student.enrollmentYear ? Number(student.enrollmentYear) + (yearsInProgram - 1) : "—"}`;
-  set(row, 0, cell(statement, { font: { bold: true }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
-  merge(row, 0, W - 1, row + 1);
+  set(row, 0, cell(
+    `Has successfully completed Diploma of Technology in the field of ${cls?.field || majorName(student.major)} in academic year ${student.enrollmentYear || "—"} - ${student.enrollmentYear ? Number(student.enrollmentYear) + (yearsInProgram - 1) : "—"}`,
+    { font: { bold: true }, alignment: { horizontal: "center", wrapText: true } }
+  ));
+  merge(row, 0, W - 1);
   row += 2;
 
-  /* table header — official R12–R13 */
-  const hdr = row;
-  H(hdr, 0, "YEAR");
-  merge(hdr, 0, 0, hdr + 1);
-  H(hdr, 1, "SEMESTER I", 10);
-  H(hdr, 11, "SEMESTER II", 9);
-  const sub = hdr + 1;
-  H(sub, 1, "Subjects", 7);
-  H(sub, 8, "HOUR", 1, { sz: 8, bold: false }, { textRotation: 90 });
-  H(sub, 9, "Score (100/100)", 1, { sz: 10 });
-  H(sub, 10, "Grade", 1, { sz: 10 });
-  H(sub, 11, "Subjects", 6);
-  H(sub, 17, "HOUR", 1, { sz: 8, bold: false }, { textRotation: 90 });
-  H(sub, 18, "Score (100/100)", 1, { sz: 10 });
-  H(sub, 19, "Grade", 1, { sz: 10 });
+  /* ----- main table header — same 9 columns as the on-screen .ex-table ----- */
+  const hdrR = row;
+  H(hdrR, 0, "YEAR");
+  H(hdrR, 1, "SEMESTER I", 4);
+  H(hdrR, 5, "SEMESTER II", 4);
+  merge(hdrR, 0, 0, hdrR + 1);
+  const sub = hdrR + 1;
+  H(sub, 1, "Subjects");
+  H(sub, 2, "HOUR");
+  H(sub, 3, "Score (100/100)");
+  H(sub, 4, "Grade");
+  H(sub, 5, "Subjects");
+  H(sub, 6, "HOUR");
+  H(sub, 7, "Score (100/100)");
+  H(sub, 8, "Grade");
   row = sub + 1;
 
-  const yearCell = (v) => cell(v, { font: { name: "Arial", sz: 14, bold: true }, alignment: { horizontal: "center", vertical: "center" } });
-  const subjCell = (v) => cell(v, { font: { name: "Arial", sz: 10 }, alignment: { horizontal: "left", vertical: "center", wrapText: true } });
-  const numCell = (v) => cell(v == null ? "" : Number(v).toFixed(2), { font: { name: "Arial", sz: 10 }, alignment: { horizontal: "center", vertical: "center" } });
-  const hourCell = (v) => {
-    const o = { font: { name: "Arial", sz: 8 }, alignment: { horizontal: "center", vertical: "center" } };
-    return v == null ? cell("", o) : { t: "n", v, s: st(o) };
-  };
-  const gradeCell = (g) => cell(g || "", { font: { name: "Arial", sz: 10, bold: true }, alignment: { horizontal: "center", vertical: "center" } });
+  const yearCell = (v) => cell(v, { font: { bold: true }, alignment: { horizontal: "center", vertical: "center" } });
+  const subjCell = (v) => cell(v, { alignment: { horizontal: "left" } });
+  const numCell = (v) => cell(v == null ? "" : Number(v).toFixed(2), { alignment: { horizontal: "center" } });
+  const hourCell = (v) => (v == null ? cell("", { alignment: { horizontal: "center" } }) : { t: "n", v, s: st({ alignment: { horizontal: "center" } }) });
+  const gradeCell = (g) => cell(g || "", { font: { bold: true }, alignment: { horizontal: "center" } });
 
   yearBlocks.forEach((block) => {
     const r1 = rowsOf(block.s1 || {});
@@ -536,9 +527,9 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
     if (uncompleted) {
       set(y0, 0, yearCell(yearLabel));
       set(y0, 1, cell("Uncompleted", { alignment: { horizontal: "center", vertical: "center" } }));
-      merge(y0, 1, 10);
-      set(y0, 11, cell("Uncompleted", { alignment: { horizontal: "center", vertical: "center" } }));
-      merge(y0, 11, 19);
+      merge(y0, 1, 4);
+      set(y0, 5, cell("Uncompleted", { alignment: { horizontal: "center", vertical: "center" } }));
+      merge(y0, 5, 8);
       row += 1;
       return;
     }
@@ -549,66 +540,62 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
       const a = r1[i];
       const b = r2[i];
       set(row, 1, subjCell(a?.subject || ""));
-      merge(row, 1, 7);
-      set(row, 8, hourCell(a?.hour));
-      set(row, 9, numCell(a ? a.score : null));
-      set(row, 10, gradeCell(a?.grade));
-      set(row, 11, subjCell(b?.subject || ""));
-      merge(row, 11, 16);
-      set(row, 17, hourCell(b?.hour));
-      set(row, 18, numCell(b ? b.score : null));
-      set(row, 19, gradeCell(b?.grade));
+      set(row, 2, hourCell(a?.hour));
+      set(row, 3, numCell(a ? a.score : null));
+      set(row, 4, gradeCell(a?.grade));
+      set(row, 5, subjCell(b?.subject || ""));
+      set(row, 6, hourCell(b?.hour));
+      set(row, 7, numCell(b ? b.score : null));
+      set(row, 8, gradeCell(b?.grade));
       row++;
     }
   });
 
-  /* State Exam / Practical Exam row — official R41 */
-  row++;
-  const practical = student.thesisScore != null && student.thesisScore !== ""
-    ? `Practical Exam : ${student.thesisTitle || "Thesis / Practical project"} · Score: ${Number(student.thesisScore).toFixed(2)} · Grade: ${letterOf(Number(student.thesisScore))}`
-    : "Practical Exam : —";
+  /* State Exam / Practical Exam row — same as the on-screen table */
   set(row, 0, cell(student.stateExam ? `State Exam : ${student.stateExam}` : "State Exam", {
     font: { bold: true }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true },
   }));
-  merge(row, 0, 10);
-  set(row, 11, cell(practical, { alignment: { horizontal: "left", vertical: "center", wrapText: true } }));
-  merge(row, 11, 19);
+  merge(row, 0, 4);
+  set(row, 5, cell(
+    student.thesisScore != null && student.thesisScore !== ""
+      ? `Practical Exam : ${student.thesisTitle || "Thesis / Practical project"} · Score: ${Number(student.thesisScore).toFixed(2)} · Grade: ${letterOf(Number(student.thesisScore))}`
+      : "Practical Exam : —",
+    { alignment: { horizontal: "left", vertical: "center", wrapText: true } }
+  ));
+  merge(row, 5, 8);
   row++;
 
-/* REMARKS + grade legend — like the web, "Phnom Penh, Date + Deputy Director"
-     sits on the RIGHT of the legend (legend = cols A–I, signature = cols J–M).
-     Official R49–R56; the legend text is 9pt with wrapText so the rows expand
-     instead of clipping. */
+  /* REMARKS + grade legend — like the web, "Phnom Penh, Date + Deputy Director"
+     sits on the RIGHT of the legend (legend = cols A–I, signature = cols J–M) */
   row++;
-  set(row, 1, cell("REMARKS:", { font: { bold: true, sz: 9 }, alignment: { horizontal: "left" } }));
-  merge(row, 1, 4);
+  set(row, 0, cell("REMARKS:", { font: { bold: true } }));
   row++;
-  const hRow = row;
-  H(hRow, 1, "Mark Obtained", 3, { name: "Times New Roman", sz: 9 });
-  H(hRow, 4, "Grade", 2, { name: "Times New Roman", sz: 9 });
-  H(hRow, 6, "Meaning", 3, { name: "Times New Roman", sz: 9 });
-  set(hRow, 9, cell("Grade Point", { font: { bold: true, sz: 9 }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
-  set(hRow, 12, cell("Phnom Penh, Date ..................", { font: { sz: 9 }, alignment: { horizontal: "center", vertical: "center" } }));
-  merge(hRow, 12, 18);
+  H(row, 0, "Mark Obtained", 2);
+  H(row, 2, "Grade", 2);
+  H(row, 4, "Meaning", 3);
+  H(row, 7, "Grade Point", 2);
+  const sig = 10; // column J
+  set(row, sig, cell("Phnom Penh, Date ..................", { alignment: { horizontal: "center" } }));
+  merge(row, sig, sig + 3);
   row++;
-  const legendStart = row;
   NTTI_SCALE.forEach((g, i) => {
-    set(row, 1, cell(g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`, { font: { sz: 9 }, alignment: { horizontal: "center", vertical: "center", wrapText: true } }));
-    merge(row, 1, 3);
-    set(row, 4, cell(g.grade, { font: { bold: true, sz: 9 }, alignment: { horizontal: "center", vertical: "center" } }));
-    merge(row, 4, 5);
-    set(row, 6, cell(g.meaning, { font: { sz: 9 }, alignment: { horizontal: "left", vertical: "center", wrapText: true } }));
-    merge(row, 6, 8);
-    set(row, 9, { t: "n", v: Number(g.point), s: st({ font: { sz: 9 }, alignment: { horizontal: "center" } }) });
+    set(row, 0, cell(g.min === 0 ? "Less than 50" : `${g.min} - ${g.max}`, { alignment: { horizontal: "center" } }));
+    merge(row, 0, 1);
+    set(row, 2, cell(g.grade, { font: { bold: true }, alignment: { horizontal: "center" } }));
+    merge(row, 2, 3);
+    set(row, 4, cell(g.meaning, { alignment: { horizontal: "left" } }));
+    merge(row, 4, 6);
+    set(row, 7, cell(g.point, { alignment: { horizontal: "center" } }));
+    merge(row, 7, 8);
     if (i === 0) {
-      set(row, 12, cell("Deputy Director", { font: { bold: true, sz: 9 }, alignment: { horizontal: "right", vertical: "center" } }));
-      merge(row, 12, 19);
+      set(row, sig, cell("Deputy Director", { font: { bold: true }, alignment: { horizontal: "right" } }));
+      merge(row, sig, sig + 3);
     }
     row++;
   });
+  row += 2; // blank spacer before the footer
 
-  /* ISO footer — official R71–R73 */
-  row += 2;
+  /* ISO footer — same as on-screen */
   const foot = (v) => {
     set(row, 0, cell(v, { alignment: { horizontal: "center", vertical: "center" } }));
     merge(row, 0, W - 1);
@@ -620,32 +607,20 @@ function buildTranscriptWorkbook({ student, cls, yearBlocks, ordinal, overall, a
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!merges"] = merges;
-  ws["!rows"] = [];
-  ws["!rows"][hdr] = { hpt: 21.75 };
-  ws["!rows"][sub] = { hpt: 39 };
-  ws["!rows"][hRow] = { hpt: 17 };
-  for (let rr = legendStart; rr < row; rr++) ws["!rows"][rr] = { hpt: 16 };
   ws["!cols"] = [
-    { width: 7.57 }, // A  YEAR
-    { width: 6.29 }, // B
-    { width: 2.15 }, // C
-    { width: 5.57 }, // D
-    { width: 5.57 }, // E
-    { width: 4.57 }, // F
-    { width: 3.15 }, // G
-    { width: 4.29 }, // H  Subjects I (B..H)
-    { width: 3.86 }, // I  HOUR
-    { width: 9.86 }, // J  Score
-    { width: 6.43 }, // K  Grade
-    { width: 5.57 }, // L
-    { width: 5.57 }, // M
-    { width: 5.57 }, // N
-    { width: 5 },    // O
-    { width: 5.57 }, // P
-    { width: 5.57 }, // Q  Subjects II (L..Q)
-    { width: 3.29 }, // R  HOUR
-    { width: 9.86 }, // S  Score — same as Semester I so "Score (100/100)" fits on one line
-    { width: 6.29 }, // T  Grade
+    { wch: 8 },  // YEAR
+    { wch: 30 }, // Subjects (SEM I)
+    { wch: 8 },  // HOUR
+    { wch: 16 }, // Score
+    { wch: 8 },  // Grade
+    { wch: 30 }, // Subjects (SEM II)
+    { wch: 8 },  // HOUR
+    { wch: 16 }, // Score
+    { wch: 8 },  // Grade
+    { wch: 10 }, // J–M — signature block beside the legend
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Transcript");
@@ -1097,10 +1072,12 @@ export default function Transcript() {
             action={
               <button
                 onClick={() => navigate("/students")}
-                className="px-6 py-2.5 text-sm font-medium rounded-lg text-white transition"
-                style={{ background: COLORS.accent }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = COLORS.accentHover)}
-                onMouseLeave={(e) => (e.currentTarget.style.background = COLORS.accent)}
+                className="px-6 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 border-2 hover:bg-opacity-10 active:scale-95"
+                style={{
+                  borderColor: COLORS.accent,
+                  color: COLORS.accent,
+                  backgroundColor: `${COLORS.accent}0a`
+                }}
               >
                 <Link2 className="h-4 w-4 inline mr-2" /> Go to Students
               </button>
