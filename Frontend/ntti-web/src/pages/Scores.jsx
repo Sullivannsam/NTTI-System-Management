@@ -12,6 +12,7 @@ import {
   UserPlus,
   Pencil,
   Lock,
+  Trash2,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import PageHeader, { EmptyState, CtaButton } from "../components/Page";
@@ -29,6 +30,8 @@ import {
   splitGroups,
   clearGroups,
   appendColumns,
+  removeColumn,
+  moveColumn,
   uniqueColumnKey,
   nextGroupId,
 } from "../components/scoreSheetModel";
@@ -62,7 +65,12 @@ function loadScores() {
 function loadSchedules() {
   try {
     const raw = JSON.parse(localStorage.getItem(SCHED_KEY));
-    return raw && Array.isArray(raw.schedules) ? raw.schedules : [];
+    if (!raw || !Array.isArray(raw.schedules)) return [];
+    /* keep only real schedule objects — a stray non-object row would break every
+       field access on this page */
+    return raw.schedules
+      .filter((s) => s && typeof s === "object" && !Array.isArray(s))
+      .map((s) => ({ ...s, subjects: (Array.isArray(s.subjects) ? s.subjects : []).filter(Boolean) }));
   } catch {
     return [];
   }
@@ -134,6 +142,49 @@ function loadNoneMeta() {
 /* "(No class)" cheatsheet card */
 /** Always-visible save state, so the admin can confirm the sheet is written
     without waiting for a toast. Green = written, amber = edits not yet saved. */
+/* Confirmation for the sheet's trash bins. A subject column carries a score for
+   every student and a row is a real student, so both get one clear question
+   instead of vanishing on a single mis-click. */
+function ConfirmTrash({ open, title, confirmLabel, message, onCancel, onConfirm }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onCancel} />
+      <div className="relative card w-full max-w-md p-6 shadow-2xl animate-fade-up">
+        <div className="flex items-start gap-3">
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            style={{ background: "var(--danger-soft, rgba(239,68,68,0.12))", color: "var(--danger)" }}
+          >
+            <Trash2 size={18} />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold" style={{ color: "var(--text)" }}>
+              {title}
+            </h3>
+            <p className="mt-1 text-xs" style={{ color: "var(--text-2)" }}>
+              {message}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button type="button" className="btn btn-ghost h-10 px-4 text-sm" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="btn h-10 px-4 text-sm gap-1.5"
+            style={{ background: "var(--danger)", color: "#fff" }}
+          >
+            <Trash2 size={15} /> {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SaveBadge({ dirty, savedAt }) {
   if (dirty) {
     return (
@@ -157,7 +208,7 @@ function SaveBadge({ dirty, savedAt }) {
   );
 }
 
-function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, onRenameGroup, onMerge, onSplit, onClearGroups, onRenameName, onSave, dirty, savedAt, readOnly, classNote }) {
+function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, onRenameGroup, onMerge, onSplit, onClearGroups, onRenameName, onSave, dirty, savedAt, readOnly, classNote, onDeleteColumn, onDeleteRow, onMoveColumn }) {
   const { rows = [], scores = {} } = meta || {};
   const layout = meta?.layout || null;
   const columns = layout ? layout.columns : bootstrapColumns(meta?.subjects || []);
@@ -241,7 +292,10 @@ function NoneSheet({ meta, onScore, onClear, frozen, setFrozen, onRenameColumn, 
         onMerge={onMerge}
         onSplit={onSplit}
         onClearGroups={onClearGroups}
-      />
+        onDeleteColumn={onDeleteColumn}
+            onDeleteRow={onDeleteRow}
+            onMoveColumn={onMoveColumn}
+          />
 
       <div
         className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-5 py-3 border-t text-[11px]"
@@ -372,7 +426,7 @@ function AddStudentModal({ open, onClose, onAdd, cls }) {
 }
 
 export default function Scores() {
-  const { students, classes, drafts, logAudit, showToast, addClass, addStudentsBatch, updateStudent, importStudents, updateClass } = useApp();
+  const { students, classes, drafts, logAudit, showToast, addClass, addStudentsBatch, updateStudent, importStudents, updateClass, renameAttendanceSubject } = useApp();
   const [scores, setScores] = useState(loadScores);
   const [schedules, setSchedules] = useState(loadSchedules);
   const [noneMeta, setNoneMeta] = useState(loadNoneMeta);
@@ -537,6 +591,63 @@ export default function Scores() {
     setLayout((prev) => ({ ...prev, version: 1, [classId]: { columns: columns_, groups: groups_ } }));
   const ensureLayout = () => clsLayout || layoutFromColumns(columns, null);
 
+  const persistSchedules = (next) => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SCHED_KEY) || "{}");
+      localStorage.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /* the schedule record a class gets when it does not have one yet */
+  const scheduleEntryFor = (subjects) => {
+    const clean = Array.from(new Set((subjects || []).map((n) => String(n ?? "").trim()).filter(Boolean)));
+    const sem = String(cls?.semester || "").match(/\d+/)?.[0] || "1";
+    const year = String(cls?.year || "").match(/\d+/)?.[0] || "1";
+    const cal = new Date().getFullYear();
+    return {
+      id: `sch_${cls?.id}_${Date.now().toString(36)}`,
+      className: cls?.name || "",
+      classId: cls?.id,
+      semester: sem,
+      year,
+      major: majorName(cls?.major) || "IT",
+      field: cls?.field || "",
+      studentYear: `${cal}-${cal + 1}`,
+      shift: shiftKeyOfClass(cls),
+      subjects: clean,
+      teachers: ["Teacher 1", "Teacher 2", "Teacher 3", "Teacher 4", "Teacher 5", "Teacher 6", "Teacher 7"],
+      cells: {},
+    };
+  };
+
+  /* The sheet's columns and the class Schedule list the same subjects, so a change
+     to the columns is mirrored onto the schedule. Called from the actions themselves
+     instead of from an effect: an effect also fires when the page opens, which would
+     push the sheet's stored labels back over a rename made on the Schedule page. */
+  const syncSubjectsToSchedule = (labels) => {
+    if (!cls) return false;
+    const want = (labels || []).map((l) => String(l ?? "").trim()).filter(Boolean);
+    const have = sched ? (sched.subjects || []).filter(Boolean) : [];
+    if (want.length === have.length && want.every((w, i) => w === have[i])) return false;
+    /* This class may have no schedule at all yet — a fresh class, or one whose entry
+       went missing. With no schedule there is nothing to link to, so make one now. */
+    const entry = sched ? null : scheduleEntryFor(want);
+    if (!sched && !entry.subjects.length) return false;
+    setSchedules((prev) => {
+      const next = sched
+        ? prev.map((s) => {
+            const same = s.id ? s.id === sched.id : s === sched;
+            return same ? { ...s, subjects: want } : s;
+          })
+        : [...prev, entry];
+      persistSchedules(next);
+      return next;
+    });
+    return true;
+  };
+
   /* ── score cells ── */
   const setScore = (studentId, colKey, value) => {
     setScores((prev) => {
@@ -618,36 +729,15 @@ export default function Scores() {
     return i >= 0 ? ["morning", "evening", "night"][i] : "morning";
   };
   const ensureSchedule = (subjectNames) => {
-    const clean = Array.from(new Set((subjectNames || []).map((n) => String(n ?? "").trim()).filter(Boolean)));
-    if (!clean.length || !cls || sched) return 0;
-    const sem = String(cls.semester || "").match(/\d+/)?.[0] || "1";
-    const year = String(cls.year || "").match(/\d+/)?.[0] || "1";
-    const cal = new Date().getFullYear();
-    const entry = {
-      id: `sch_${cls.id}_${Date.now().toString(36)}`,
-      className: cls.name || "",
-      classId: cls.id,
-      semester: sem,
-      year,
-      major: majorName(cls.major) || "IT",
-      field: cls.field || "",
-      studentYear: `${cal}-${cal + 1}`,
-      shift: shiftKeyOfClass(cls),
-      subjects: clean,
-      teachers: ["Teacher 1", "Teacher 2", "Teacher 3", "Teacher 4", "Teacher 5", "Teacher 6", "Teacher 7"],
-      cells: {},
-    };
+    if (!cls || sched) return 0;
+    const entry = scheduleEntryFor(subjectNames);
+    if (!entry.subjects.length) return 0;
     setSchedules((prev) => {
       const next = [...prev, entry];
-      try {
-        const raw = JSON.parse(localStorage.getItem(SCHED_KEY) || "{}");
-        localStorage.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
-      } catch {
-        /* ignore */
-      }
+      persistSchedules(next);
       return next;
     });
-    return clean.length;
+    return entry.subjects.length;
   };
 
   /* append subject names to this class's schedule so the new score columns exist next time */
@@ -663,12 +753,7 @@ export default function Scores() {
         const same = s.id ? s.id === sched.id : s === sched;
         return same ? { ...s, subjects: merged } : s;
       });
-      try {
-        const raw = JSON.parse(localStorage.getItem(SCHED_KEY) || "{}");
-        localStorage.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
-      } catch {
-        /* ignore */
-      }
+      persistSchedules(next);
       return next;
     });
     return clean.length;
@@ -680,6 +765,86 @@ export default function Scores() {
     if (clsLayout) upsertLayout(appendColumns(clsLayout, [n]).columns, appendColumns(clsLayout, [n]).groups);
     if (added || clsLayout) showToast(`Added empty column "${n}" — scores go in here`);
     else showToast("That column already exists", "info");
+  };
+
+  /* ── move a subject column somewhere else (drag the grip in its header) ── */
+  const moveSheetColumn = (fromKey, toKey) => {
+    const L = ensureLayout();
+    const next = moveColumn(L, fromKey, toKey);
+    if (next === L) return;
+    upsertLayout(next.columns, next.groups);
+    /* the schedule keeps the same subject order as the sheet */
+    syncSubjectsToSchedule(next.columns.map((c) => c.label));
+    const at = next.columns.findIndex((c) => c.key === fromKey);
+    const label = next.columns[at]?.label || fromKey;
+    showToast(`Moved "${label}" to position ${at + 1} of ${next.columns.length}`);
+  };
+
+  /* ── delete a subject column: the column, every score in it, and the subject
+        on this class's schedule. Done in one shot — no leftovers to clean up. ── */
+  const [confirmDropColumn, setConfirmDropColumn] = useState(null);
+  const [confirmDropRow, setConfirmDropRow] = useState(null);
+
+  const deleteColumn = () => {
+    const target = confirmDropColumn;
+    setConfirmDropColumn(null);
+    if (!target || !cls) return;
+    const L = ensureLayout();
+    const gone = removeColumn(L, target.key);
+    if (gone.columns.length === L.columns.length) return;
+    upsertLayout(gone.columns, gone.groups);
+    /* drop it from the class Schedule too, so it can't creep back in */
+    syncSubjectsToSchedule(gone.columns.map((c) => c.label));
+    /* clear that column's score for every student in this class */
+    setScores((prev) => {
+      const perStudent = { ...(prev[classId] || {}) };
+      let touched = false;
+      Object.keys(perStudent).forEach((sid) => {
+        const row = perStudent[sid];
+        if (row && Object.prototype.hasOwnProperty.call(row, target.key)) {
+          const nextRow = { ...row };
+          delete nextRow[target.key];
+          perStudent[sid] = nextRow;
+          touched = true;
+        }
+      });
+      if (!touched) return prev;
+      const next = { ...prev, [classId]: perStudent };
+      try {
+        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    logAudit("delete_subject_column", `Deleted subject column "${target.label}" from ${cls.name}`);
+    showToast(`Deleted "${target.label}" and its scores`);
+  };
+
+  /* ── remove a student from THIS CLASS only — they stay in the Students panel,
+        just unassigned, and their attendance is untouched. ── */
+  const deleteRow = () => {
+    const target = confirmDropRow;
+    setConfirmDropRow(null);
+    if (!target || !cls) return;
+    const s = students.find((x) => String(x.id) === String(target.id));
+    if (!s) return;
+    updateStudent(s.id, { className: "" });
+    /* clear their scores for this class so the numbers don't linger */
+    setScores((prev) => {
+      const perStudent = { ...(prev[classId] || {}) };
+      if (!Object.prototype.hasOwnProperty.call(perStudent, String(s.id))) return prev;
+      delete perStudent[String(s.id)];
+      const next = { ...prev, [classId]: perStudent };
+      try {
+        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    logAudit("remove_student_from_class", `Removed ${s.khmerName || `${s.firstName} ${s.lastName}`} from ${cls.name} via the score sheet`);
+    showToast(`Removed ${s.khmerName || `${s.firstName} ${s.lastName}`} from ${cls.name} — still in Students`);
   };
 
   /* ── add a student straight from the sheet ──
@@ -727,7 +892,25 @@ export default function Scores() {
   };
 
   /* ── header editing: rename + merge + split ── */
-  const onRenameColumn = (colKey, label) => upsertLayout(renameColumn(ensureLayout(), colKey, label).columns, renameColumn(ensureLayout(), colKey, label).groups);
+  const onRenameColumn = (colKey, label) => {
+    const L = ensureLayout();
+    const was = L.columns.find((c) => c.key === colKey)?.label || "";
+    const next = renameColumn(L, colKey, label);
+    upsertLayout(next.columns, next.groups);
+    /* keep the class Schedule in step — same subjects, same order, same names */
+    const now = next.columns.find((c) => c.key === colKey)?.label || "";
+    if (was === now) return;
+    const linked = syncSubjectsToSchedule(next.columns.map((c) => c.label));
+    /* Attendance keys its records by subject name, so carry that history across */
+    const moved = renameAttendanceSubject(classId, was, now);
+    if (linked || moved) {
+      showToast(
+        `Renamed "${was}" to "${now}" — ${linked ? "schedule" : ""}${linked && moved ? " + " : ""}${moved ? `${moved} attendance record${moved === 1 ? "" : "s"}` : ""} updated`
+      );
+    } else {
+      showToast(`Renamed "${was}" to "${now}"`, "info");
+    }
+  };
   const onMerge = (keys, name) => {
     const L = ensureLayout();
     upsertLayout(mergeColumns(L, keys, name).columns, mergeColumns(L, keys, name).groups);
@@ -769,6 +952,55 @@ export default function Scores() {
     const L = ensureNoneLayout();
     setNoneLayout(splitGroups(L, keys).columns, splitGroups(L, keys).groups);
   };
+  const onNoneMoveColumn = (fromKey, toKey) => {
+    const L = ensureNoneLayout();
+    const next = moveColumn(L, fromKey, toKey);
+    if (next === L) return;
+    setNoneLayout(next.columns, next.groups);
+  };
+
+  const [confirmDropNoneColumn, setConfirmDropNoneColumn] = useState(null);
+  const [confirmDropNoneRow, setConfirmDropNoneRow] = useState(null);
+
+  const onNoneDeleteColumn = () => {
+    const target = confirmDropNoneColumn;
+    setConfirmDropNoneColumn(null);
+    if (!target || !noneMeta) return;
+    const L = ensureNoneLayout();
+    const gone = removeColumn(L, target.key);
+    if (gone.columns.length === L.columns.length) return;
+    setNoneLayout(gone.columns, gone.groups);
+    setNoneMeta((prev) => {
+      if (!prev) return prev;
+      const perRow = { ...(prev.scores || {}) };
+      let touched = false;
+      Object.keys(perRow).forEach((rk) => {
+        const row = perRow[rk];
+        if (row && Object.prototype.hasOwnProperty.call(row, target.key)) {
+          const nextRow = { ...row };
+          delete nextRow[target.key];
+          perRow[rk] = nextRow;
+          touched = true;
+        }
+      });
+      return touched ? { ...prev, scores: perRow } : prev;
+    });
+    showToast(`Deleted "${target.label}" and its scores`);
+  };
+
+  const onNoneDeleteRow = () => {
+    const target = confirmDropNoneRow;
+    setConfirmDropNoneRow(null);
+    if (!target || !noneMeta) return;
+    setNoneMeta((prev) => {
+      if (!prev) return prev;
+      const perRow = { ...(prev.scores || {}) };
+      delete perRow[target.key];
+      return { ...prev, rows: (prev.rows || []).filter((r) => r.key !== target.key), scores: perRow };
+    });
+    showToast(`Removed ${target.name || "that row"} from this cheatsheet`);
+  };
+
   const onNoneClearGroups = () => {
     const L = ensureNoneLayout();
     setNoneLayout(clearGroups(L).columns, clearGroups(L).groups);
@@ -1322,6 +1554,12 @@ export default function Scores() {
               onMerge={onNoneMerge}
               onSplit={onNoneSplit}
               onClearGroups={onNoneClearGroups}
+              onDeleteColumn={(key) => {
+                const col = noneColumns.find((c) => c.key === key);
+                if (col) setConfirmDropNoneColumn({ key, label: col.label });
+              }}
+              onDeleteRow={(r) => setConfirmDropNoneRow({ key: r.key, name: r.name })}
+              onMoveColumn={onNoneMoveColumn}
               onRenameName={renameNoneName}
               onSave={saveNone}
               dirty={noneDirty}
@@ -1461,18 +1699,18 @@ export default function Scores() {
               rows={roster.map((s) => ({
                 key: String(s.id),
                 node: (
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--text-3)" }}>
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <span className="text-[11px] font-extrabold tabular-nums shrink-0 leading-[1.15] pt-[1px]" style={{ color: "var(--text-3)" }}>
                       {String(roster.findIndex((r) => r.id === s.id) + 1).padStart(2, "0")}
                     </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-bold leading-tight" style={{ color: "var(--text)" }}>
                         {s.khmerName || `${s.firstName} ${s.lastName}`}
-                      </span>
-                      <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
-                        {s.khmerName ? `${s.firstName} ${s.lastName} · ` : ""}{s.studentId}
-                      </span>
-                    </span>
+                      </div>
+                      <div className="truncate text-[10.5px] leading-tight mt-[1px]" style={{ color: "var(--text-3)" }}>
+                        {s.khmerName ? `${s.firstName} ${s.lastName}` : s.studentId}
+                      </div>
+                    </div>
                   </div>
                 ),
               }))}
@@ -1492,6 +1730,18 @@ export default function Scores() {
               onMerge={onMerge}
               onSplit={onSplit}
               onClearGroups={onClearGroups}
+              onDeleteColumn={(key) => {
+                const col = columns.find((c) => c.key === key);
+                if (col) setConfirmDropColumn({ key, label: col.label });
+              }}
+              onDeleteRow={(r) => {
+                const s = students.find((x) => String(x.id) === String(r.key));
+                setConfirmDropRow({
+                  id: r.key,
+                  name: s ? s.khmerName || `${s.firstName} ${s.lastName}`.trim() : "this student",
+                });
+              }}
+              onMoveColumn={moveSheetColumn}
               emptyNote={`No active students in ${cls.name} yet — add them from the Classes page.`}
             />
           )}
@@ -1544,6 +1794,56 @@ export default function Scores() {
         onClose={() => setAddStudentOpen(false)}
         onAdd={addStudentToSheet}
         cls={cls}
+      />
+
+      <ConfirmTrash
+        open={!!confirmDropColumn}
+        title={`Delete subject "${confirmDropColumn?.label || ""}"?`}
+        confirmLabel="Delete subject"
+        message={
+          <>
+            This removes the <b>{confirmDropColumn?.label}</b> column and every score in it, and drops the subject from{" "}
+            {cls?.name}&rsquo;s schedule. Students and their other subjects are untouched.
+          </>
+        }
+        onCancel={() => setConfirmDropColumn(null)}
+        onConfirm={deleteColumn}
+      />
+
+      <ConfirmTrash
+        open={!!confirmDropRow}
+        title={`Remove ${confirmDropRow?.name || "this student"} from ${cls?.name}?`}
+        confirmLabel="Remove from class"
+        message={
+          <>
+            They stay in the Students panel, just without a class, and their attendance is kept. Only this class&rsquo;s scores are
+            cleared.
+          </>
+        }
+        onCancel={() => setConfirmDropRow(null)}
+        onConfirm={deleteRow}
+      />
+
+      <ConfirmTrash
+        open={!!confirmDropNoneColumn}
+        title={`Delete subject "${confirmDropNoneColumn?.label || ""}"?`}
+        confirmLabel="Delete subject"
+        message={
+          <>
+            This removes the <b>{confirmDropNoneColumn?.label}</b> column and every score in it from this cheatsheet.
+          </>
+        }
+        onCancel={() => setConfirmDropNoneColumn(null)}
+        onConfirm={onNoneDeleteColumn}
+      />
+
+      <ConfirmTrash
+        open={!!confirmDropNoneRow}
+        title={`Remove ${confirmDropNoneRow?.name || "this row"}?`}
+        confirmLabel="Remove row"
+        message="This removes the row and its scores from this cheatsheet. No student record is affected."
+        onCancel={() => setConfirmDropNoneRow(null)}
+        onConfirm={onNoneDeleteRow}
       />
     </div>
   );

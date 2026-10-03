@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Columns3, Merge, Pin, PinOff, Split, Undo2 } from "lucide-react";
+import { Columns3, GripVertical, Merge, Pin, PinOff, Split, Trash2, Undo2, X } from "lucide-react";
 import { orderedGroups, groupSpan } from "./scoreSheetModel";
 
 /* Click-to-rename header label (group or subject column). Blank values show a
@@ -90,13 +90,32 @@ export default function ScoreSheet({
   onMerge,
   onSplit,
   onClearGroups,
+  onDeleteColumn,
+  onDeleteRow,
+  onMoveColumn,
   emptyNote = null,
 }) {
   const [mergeMode, setMergeMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [mergeName, setMergeName] = useState("");
+  const [dragKey, setDragKey] = useState(null);
+  const [overKey, setOverKey] = useState(null);
 
   const displayedGroups = useMemo(() => (groups ? orderedGroups({ columns, groups }) : []), [columns, groups]);
+
+  /* Escape always leaves merge mode without touching a single header */
+  useEffect(() => {
+    if (!mergeMode) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        setMergeMode(false);
+        setSelected(new Set());
+        setMergeName("");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mergeMode]);
 
   /* spreadsheet-style cell navigation (arrow keys + Enter) */
   const cellRefs = useRef({});
@@ -209,7 +228,7 @@ export default function ScoreSheet({
       {/* header management bar */}
       <div className="flex flex-wrap items-center gap-2 px-5 py-2.5 border-b" style={{ borderColor: "var(--border)" }}>
         {mergeMode ? (
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
               Merge headers
             </span>
@@ -241,12 +260,16 @@ export default function ScoreSheet({
                 <Undo2 size={13} /> Clear all
               </button>
             )}
-            <button onClick={exitMerge} className="btn btn-ghost h-8 px-2.5 text-xs ml-auto">
-              Cancel
+            <button
+              onClick={exitMerge}
+              className="btn btn-outline h-8 px-2.5 text-xs gap-1"
+              title="Leave merge mode without changing any header (Esc)"
+            >
+              <X size={13} /> Cancel
             </button>
-          </>
+          </div>
         ) : (
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             {!readOnly && columns.length > 1 && (
               <button onClick={() => setMergeMode(true)} className="btn btn-ghost h-8 px-3 text-xs gap-1.5" style={{ background: "var(--primary)", color: "#fff" }}>
                 <Columns3 size={13} /> Merge headers
@@ -262,7 +285,7 @@ export default function ScoreSheet({
                 Sheet is read-only — press <b style={{ color: "var(--text-2)" }}>Edit</b> to rename or merge headers
               </span>
             )}
-          </>
+          </div>
         )}
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -326,8 +349,23 @@ export default function ScoreSheet({
               {columns.map((c) => (
                 <th
                   key={c.key}
-                  className="align-bottom"
+                  className={`align-bottom ${dragKey && dragKey !== c.key ? "transition-shadow" : ""}`}
                   title={c.label}
+                  onDragOver={(e) => {
+                    if (readOnly || !dragKey || dragKey === c.key) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setOverKey(c.key);
+                  }}
+                  onDragLeave={() => setOverKey((k) => (k === c.key ? null : k))}
+                  onDrop={(e) => {
+                    if (readOnly) return;
+                    e.preventDefault();
+                    const from = dragKey || e.dataTransfer.getData("text/plain");
+                    setDragKey(null);
+                    setOverKey(null);
+                    if (from && from !== c.key && onMoveColumn) onMoveColumn(from, c.key);
+                  }}
                   style={{
                     ...thStyle({ padding: hasGroups ? "0.5rem 0.35rem" : "0.875rem 0.5rem" }),
                     minWidth: 108,
@@ -335,6 +373,8 @@ export default function ScoreSheet({
                     whiteSpace: "normal",
                     lineHeight: 1.2,
                     wordBreak: "break-word",
+                    opacity: dragKey && dragKey !== c.key ? 0.55 : 1,
+                    boxShadow: overKey === c.key ? "inset 3px 0 0 0 var(--primary)" : undefined,
                   }}
                 >
                   <div className="flex flex-col items-center gap-0.5">
@@ -347,7 +387,40 @@ export default function ScoreSheet({
                         title={selected.has(c.key) ? "Unselect" : "Select for merge"}
                       />
                     )}
-                    <EditableLabel value={c.label} onSave={(v) => onRenameColumn(c.key, v)} readOnly={readOnly} />
+                    <div className="flex items-center justify-center gap-0.5">
+                      <EditableLabel value={c.label} onSave={(v) => onRenameColumn(c.key, v)} readOnly={readOnly} />
+                      {!readOnly && (
+                        <>
+                          <span
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", c.key);
+                              setDragKey(c.key);
+                            }}
+                            onDragEnd={() => {
+                              setDragKey(null);
+                              setOverKey(null);
+                            }}
+                            title="Drag sideways to move this subject to another position"
+                            className="shrink-0 cursor-grab leading-none opacity-60 hover:opacity-100 active:cursor-grabbing"
+                            style={{ color: "var(--text-3)" }}
+                          >
+                            <GripVertical size={12} />
+                          </span>
+                          {onDeleteColumn && (
+                            <button
+                              onClick={() => onDeleteColumn(c.key)}
+                              title={`Delete "${c.label}" and every score in it`}
+                              className="shrink-0 leading-none opacity-60 transition-opacity hover:opacity-100"
+                              style={{ color: "var(--danger)" }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 </th>
               ))}
@@ -373,20 +446,34 @@ export default function ScoreSheet({
               return (
                 <tr key={r.key}>
                   <td className="sticky left-0 z-10 px-5 py-2.5" style={{ background: "var(--surface)" }}>
-                    {r.node ? (
-                      r.node
-                    ) : (
-                      <div className="min-w-0">
-                        <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>
-                          {r.name || "—"}
-                        </span>
-                        {r.sub && (
-                          <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
-                            {r.sub}
-                          </span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="min-w-0 flex-1">
+                        {r.node ? (
+                          r.node
+                        ) : (
+                          <div className="min-w-0">
+                            <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>
+                              {r.name || "—"}
+                            </span>
+                            {r.sub && (
+                              <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
+                                {r.sub}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
+                      {!readOnly && onDeleteRow && (
+                        <button
+                          onClick={() => onDeleteRow(r)}
+                          title={`Remove ${r.name || "this student"} from this list`}
+                          className="shrink-0 rounded p-1 leading-none opacity-50 transition-opacity hover:opacity-100"
+                          style={{ color: "var(--danger)" }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                   {columns.map((c, si) => {
                     const cellKey = `${r.key}:${si}`;

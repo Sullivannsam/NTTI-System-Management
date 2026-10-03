@@ -735,6 +735,38 @@ export function AppProvider({ children }) {
     [classes, students, logAudit, showToast]
   );
 
+  /* Attendance records are keyed by subject NAME ("<student>-<date>-<subject>"),
+     so renaming a subject anywhere would orphan its whole history. Follow the
+     rename through for this class's students only, so a subject of the same name
+     in another class keeps its records. */
+  const renameAttendanceSubject = useCallback(
+    (classId, oldName, newName) => {
+      const from = String(oldName ?? "").trim();
+      const to = String(newName ?? "").trim();
+      if (!from || !to || from === to) return 0;
+      const roster = new Set(
+        students.filter((s) => s.className === classId && s.status !== "Graduate").map((s) => String(s.id))
+      );
+      if (!roster.size) return 0;
+      const hit = attendance.filter((r) => r.subject === from && roster.has(String(r.studentId)));
+      if (!hit.length) return 0;
+      const suffix = `-${from}`;
+      setAttendance((prev) =>
+        prev.map((r) => {
+          if (r.subject !== from || !roster.has(String(r.studentId))) return r;
+          const id = String(r.id || "");
+          return {
+            ...r,
+            id: id.endsWith(suffix) ? `${id.slice(0, -suffix.length)}-${to}` : `${r.studentId}-${r.date}-${to}`,
+            subject: to,
+          };
+        })
+      );
+      return hit.length;
+    },
+    [students, attendance]
+  );
+
   const saveAttendance = useCallback(
     (records) => {
       setAttendance((prev) => {
@@ -1172,6 +1204,7 @@ export function AppProvider({ children }) {
       removeFromClass,
       endClassTerm,
       saveAttendance,
+      renameAttendanceSubject,
       login,
       logout,
       addAdmin,
@@ -1183,7 +1216,7 @@ export function AppProvider({ children }) {
       theme,
       toggleTheme,
     }),
-    [students, attendance, classes, drafts, weekly, admins, audit, currentAdmin, addClass, updateClass, deleteClass, restoreFromDraft, purgeFromDraft, saveWeekly, addStudent, addStudentsBatch, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
+    [students, attendance, classes, drafts, weekly, admins, audit, currentAdmin, addClass, updateClass, deleteClass, restoreFromDraft, purgeFromDraft, saveWeekly, addStudent, addStudentsBatch, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, renameAttendanceSubject, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

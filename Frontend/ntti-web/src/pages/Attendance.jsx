@@ -60,7 +60,10 @@ function readScheduleState() {
     const raw = localStorage.getItem(LS_SCHED);
     if (!raw) return { schedules: [] };
     const v = JSON.parse(raw);
-    return v && Array.isArray(v.schedules) ? v : { schedules: [] };
+    if (!v || !Array.isArray(v.schedules)) return { schedules: [] };
+    /* keep only real schedule objects — a stray non-object row would break the
+       field reads below and hide every subject */
+    return { ...v, schedules: v.schedules.filter((s) => s && typeof s === "object" && !Array.isArray(s)) };
   } catch {
     return { schedules: [] };
   }
