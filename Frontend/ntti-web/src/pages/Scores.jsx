@@ -1462,8 +1462,8 @@ export default function Scores() {
                 key: String(s.id),
                 node: (
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-extrabold" style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
-                      {String(s.firstName || "?")[0]}{String(s.lastName || "")[0] || ""}
+                    <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--text-3)" }}>
+                      {String(roster.findIndex((r) => r.id === s.id) + 1).padStart(2, "0")}
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>

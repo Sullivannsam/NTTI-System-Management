@@ -2,6 +2,8 @@ export const MAJORS = [
   { id: "it", name: "IT" },
   { id: "el", name: "Electronic" },
   { id: "arc", name: "Architecture" },
+  { id: "des", name: "Design" },
+  { id: "elec", name: "Electric" },
 ];
 
 export const DEGREES = ["Certificate", "Diploma", "Bachelor", "Master"];
@@ -27,7 +29,7 @@ export const ACADEMIC_LEVELS = ["S1Y1", "S2Y1", "S1Y2", "S2Y2", "S1Y3", "S2Y3", 
  * curriculum. Architecture runs 5 years; IT / Electronic run 4. A major that
  * isn't listed falls back to 4 years.
  */
-export const PROGRAM_YEARS = { it: 4, el: 4, arc: 5 };
+export const PROGRAM_YEARS = { it: 4, el: 4, arc: 5, des: 4, elec: 4 };
 export const programYears = (majorId) => PROGRAM_YEARS[majorId] || 4;
 /** The levels a major actually runs through: S1Y1 … S2Y<years>. */
 export const levelsForMajor = (majorId) => ACADEMIC_LEVELS.slice(0, programYears(majorId) * 2);
@@ -49,6 +51,8 @@ export const FIELDS_OF_STUDY = {
   it: ["IT General", "Cyber Security", "Graphic Design"],
   el: ["Electrical Engineering", "Mechatronics", "Electronics Repair"],
   arc: ["Architecture Design", "Interior Design", "Urban Planning"],
+  des: ["Graphic Design", "Interior Design", "UX/UI Design"],
+  elec: ["Electrical Engineering", "Power Systems", "Automation"],
 };
 
 /* Every demo class starts at the very beginning of its programme: Year 1 · Semester 1. */

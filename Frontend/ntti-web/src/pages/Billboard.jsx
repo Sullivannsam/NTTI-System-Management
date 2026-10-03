@@ -342,12 +342,9 @@ export default function Rankings() {
           {/* header */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-lg" style={{ background: "linear-gradient(135deg,#f59e0b,#fbbf24)" }}>
-                <Trophy size={19} />
-              </span>
               <div>
                 <p className="text-base font-bold" style={{ color: "var(--text)" }}>
-                  {cls.name} — billboard
+                  {cls.name} — rankings
                 </p>
                 <p className="text-xs mt-0.5" style={{ color: "var(--text-2)" }}>
                   {[cls.field, cls.shift].filter(Boolean).join(" · ")} · {cls.year || "Year 1"} · {cls.semester || "Semester 1"} · {subjects.length} subject{subjects.length === 1 ? "" : "s"}
@@ -410,9 +407,6 @@ export default function Rankings() {
                           className="flex items-center gap-2.5 rounded-lg transition-opacity hover:opacity-75"
                           title="Open student profile"
                         >
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-extrabold" style={{ background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
-                            {initialsOf(row.student)}
-                          </span>
                           <span className="min-w-0">
                             <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>
                               {row.student.khmerName || latinName}
