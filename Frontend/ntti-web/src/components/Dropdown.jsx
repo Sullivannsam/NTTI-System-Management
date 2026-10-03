@@ -118,7 +118,7 @@ export function DropdownPanel({ pos, menuRef, onClose, className = "", style, ch
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
         ref={menuRef}
-        className={`fixed z-50 card flex flex-col overflow-hidden shadow-xl ${
+        className={`fixed z-50 card flex flex-col overflow-hidden shadow-xl border ${
           pos.up ? "animate-fade-down" : "animate-fade-up"
         } ${className}`}
         style={{
@@ -127,6 +127,8 @@ export function DropdownPanel({ pos, menuRef, onClose, className = "", style, ch
           maxHeight: pos.maxHeight,
           top: pos.top,
           bottom: pos.bottom,
+          borderColor: "var(--border)",
+          background: "var(--surface)",
           ...style,
         }}
       >
