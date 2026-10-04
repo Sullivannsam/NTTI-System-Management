@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import Modal from "../components/Modal";
+import Select from "../components/Select";
 
 const fmtTime = (iso) => {
   if (!iso) return "—";
@@ -115,17 +116,25 @@ function AdminForm({ open, onClose, existing }) {
         </div>
         <div>
           <label className={labelCls}>Role</label>
-          <select className={inputCls} value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="admin">Admin</option>
-            <option value="superadmin">Super Admin</option>
-          </select>
+          <Select
+            value={role}
+            onChange={setRole}
+            options={[
+              { value: "admin", label: "Admin" },
+              { value: "superadmin", label: "Super Admin" },
+            ]}
+          />
         </div>
         <div>
           <label className={labelCls}>Status</label>
-          <select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="active">Active</option>
-            <option value="suspended">Suspended</option>
-          </select>
+          <Select
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: "active", label: "Active" },
+              { value: "suspended", label: "Suspended" },
+            ]}
+          />
         </div>
         <div className="sm:col-span-2">
           <label className={labelCls}>
@@ -310,17 +319,16 @@ export default function Admin() {
                 onChange={(e) => setQ(e.target.value)}
               />
             </div>
-            <select
-              className="rounded-xl border bg-[var(--surface-2)] px-3 py-2.5 text-sm outline-none"
-              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            <Select
+              className="sm:w-56"
+              minWidth={180}
               value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            >
-              <option value="all">All actions</option>
-              {actionOptions.map((a) => (
-                <option key={a} value={a}>{ACTION_META[a]?.label || a}</option>
-              ))}
-            </select>
+              onChange={setFilter}
+              options={[
+                { value: "all", label: "All actions" },
+                ...actionOptions.map((a) => ({ value: a, label: ACTION_META[a]?.label || a })),
+              ]}
+            />
           </div>
 
           <div className="overflow-x-auto thin-scroll">

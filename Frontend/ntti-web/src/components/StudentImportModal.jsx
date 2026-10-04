@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, X, Download, Users, TableProperties } from "lucide-react";
 import Modal from "./Modal";
+import Select from "./Select";
 import Avatar from "./Avatar";
 import * as XLSX from "xlsx";
 import {
@@ -315,27 +316,25 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
               {wb && wb.SheetNames.length > 1 && (
                 <label className="flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
                   Sheet
-                  <select className="input h-8 w-auto text-xs py-1" value={sheetIdx} onChange={(e) => switchSheet(Number(e.target.value))}>
-                    {wb.SheetNames.map((n, i) => (
-                      <option key={n} value={i}>{i + 1}. {n}</option>
-                    ))}
-                  </select>
+                  <Select
+                    minWidth={130}
+                    value={sheetIdx}
+                    onChange={(v) => switchSheet(Number(v))}
+                    options={wb.SheetNames.map((n, i) => ({ value: i, label: `${i + 1}. ${n}` }))}
+                  />
                 </label>
               )}
               <label className="flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
                 Header row
-                <select
-                  className="input h-8 w-auto text-xs py-1"
+                <Select
+                  minWidth={110}
                   value={headerRow}
-                  onChange={(e) => {
-                    setHeaderRow(Number(e.target.value));
+                  onChange={(v) => {
+                    setHeaderRow(Number(v));
                     setRoles(null);
                   }}
-                >
-                  {rawRows.slice(0, 10).map((_, i) => (
-                    <option key={i} value={i}>Row {i + 1}</option>
-                  ))}
-                </select>
+                  options={rawRows.slice(0, 10).map((_, i) => ({ value: i, label: `Row ${i + 1}` }))}
+                />
               </label>
               <button onClick={() => { setRawRows([]); setFile(null); setWb(null); }} className="ml-auto btn btn-ghost h-8 px-2 text-xs" style={{ color: "var(--text-3)" }}>
                 Choose another file
@@ -361,12 +360,15 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
                 <span className="flex items-center gap-1.5 font-semibold" style={{ color: "var(--text-2)" }}>
                   <Users size={13} style={{ color: "var(--primary-strong)" }} /> Apply to rows without a class:
                 </span>
-                <select className="input h-8 w-auto text-xs py-1" value={defaultClass} onChange={(e) => setDefaultClass(e.target.value)}>
-                  <option value="">No class (kept unassigned)</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name} · {c.shift}</option>
-                  ))}
-                </select>
+                <Select
+                  minWidth={190}
+                  value={defaultClass}
+                  onChange={setDefaultClass}
+                  options={[
+                    { value: "", label: "No class (kept unassigned)" },
+                    ...classes.map((c) => ({ value: c.id, label: `${c.name} · ${c.shift}` })),
+                  ]}
+                />
                 <label className="ml-auto flex items-center gap-1.5 font-medium" style={{ color: "var(--text-2)" }}>
                   <input
                     type="checkbox"
@@ -398,18 +400,15 @@ export default function StudentImportModal({ open, onClose, onImport, classes = 
                       <span className="min-w-0 flex-1 truncate text-[11px] font-medium" style={{ color: "var(--text-2)" }}>
                         {collapse(h) || `Column ${i + 1}`}
                       </span>
-                      <select
-                        className="input h-7 w-[150px] text-[11px] px-1.5 py-0 font-semibold"
+                      <Select
+                        minWidth={150}
                         value={role}
-                        onChange={(e) =>
-                          setRoles((prev) => ({ ...(prev || {}), [i]: e.target.value || null }))
-                        }
-                      >
-                        <option value="">— Skip column —</option>
-                        {ROLES.map((r) => (
-                          <option key={r.key} value={r.key}>{r.label}</option>
-                        ))}
-                      </select>
+                        onChange={(v) => setRoles((prev) => ({ ...(prev || {}), [i]: v || null }))}
+                        options={[
+                          { value: "", label: "— Skip column —" },
+                          ...ROLES.map((r) => ({ value: r.key, label: r.label })),
+                        ]}
+                      />
                     </div>
                   );
                 })}

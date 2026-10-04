@@ -26,6 +26,7 @@ import NextSemesterModal from "../components/NextSemesterModal";
 import { useApp } from "../context/AppContext";
 import { majorName, computeRate, lastNWeeks, shiftRange, prettyDate, levelsForMajor } from "../data/seed";
 import { StudentAvatar, Badge, statusTone } from "../components/Badge";
+import Select from "../components/Select";
 
 const MAJOR_ACCENT = {
   it: "linear-gradient(135deg,#6366f1,#8b5cf6)",
@@ -287,12 +288,18 @@ export default function ClassDetail() {
                 </button>
               )}
             </div>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input sm:w-40">
-              <option value="all">All statuses</option>
-              <option>Learning</option>
-              <option>Graduate</option>
-              <option>Undergraduate</option>
-            </select>
+            <Select
+              className="sm:w-40"
+              minWidth={140}
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "all", label: "All statuses" },
+                { value: "Learning", label: "Learning" },
+                { value: "Graduate", label: "Graduate" },
+                { value: "Undergraduate", label: "Undergraduate" },
+              ]}
+            />
           </div>
         </div>
 

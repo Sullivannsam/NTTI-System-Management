@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Plus, X } from "lucide-react";
 import Modal from "./Modal";
+import Select from "./Select";
 import { StudentAvatar } from "./Badge";
 import * as XLSX from "xlsx";
 import { detectGroupRow, groupsFromRow, matchSheetColumn } from "./scoreSheetModel";
@@ -528,31 +529,25 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
               {sheetNames.length > 1 && (
                 <label className="flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
                   Sheet
-                  <select className="input h-8 w-auto text-xs py-1" value={sheetIdx} onChange={(e) => switchSheet(Number(e.target.value))}>
-                    {sheetNames.map((n, i) => (
-                      <option key={n} value={i}>
-                        {i + 1}. {n}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    minWidth={130}
+                    value={sheetIdx}
+                    onChange={(v) => switchSheet(Number(v))}
+                    options={sheetNames.map((n, i) => ({ value: i, label: `${i + 1}. ${n}` }))}
+                  />
                 </label>
               )}
               <label className="flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
                 Header row
-                <select
-                  className="input h-8 w-auto text-xs py-1"
+                <Select
+                  minWidth={110}
                   value={headerRow}
-                  onChange={(e) => {
-                    setHeaderRow(Number(e.target.value));
+                  onChange={(v) => {
+                    setHeaderRow(Number(v));
                     setColRoles(null);
                   }}
-                >
-                  {rawRows.slice(0, 8).map((_, i) => (
-                    <option key={i} value={i}>
-                      Row {i + 1}
-                    </option>
-                  ))}
-                </select>
+                  options={rawRows.slice(0, 8).map((_, i) => ({ value: i, label: `Row ${i + 1}` }))}
+                />
               </label>
               {groupRowIdx >= 0 && (
                 <span className="rounded-lg border px-2.5 py-1.5 font-semibold" style={{ borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
@@ -594,22 +589,16 @@ export default function ScoreImportModal({ open, onClose, cls, columns = [], ros
                         {c.kind === "subject" ? (
                           <>
                             {!noneMode ? (
-                              <select
-                                className="input h-7 w-full min-w-[110px] text-[11px] py-0.5 font-semibold"
+                              <Select
+                                minWidth={110}
                                 value={c.subject || "_skip"}
-                                onChange={(e) => setColRole(i, e.target.value)}
-                                title={rawHeader[i]}
-                              >
-                                <option value="_skip">— Skip column —</option>
-                                {c.subject === "__new__" && (
-                                  <option value="__new__">＋ New subject: {newSubjectName(c)}</option>
-                                )}
-                                {columns.map((col) => (
-                                  <option key={col.key} value={col.label}>
-                                    {col.label}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={(v) => setColRole(i, v)}
+                                options={[
+                                  { value: "_skip", label: "— Skip column —" },
+                                  ...(c.subject === "__new__" ? [{ value: "__new__", label: `＋ New subject: ${newSubjectName(c)}` }] : []),
+                                  ...columns.map((col) => ({ value: col.label, label: col.label })),
+                                ]}
+                              />
                             ) : (
                               <span className="block max-w-[140px] truncate font-medium" style={{ color: "var(--primary-strong)" }} title={rawHeader[i]}>
                                 ＋ {newSubjectName(c)}

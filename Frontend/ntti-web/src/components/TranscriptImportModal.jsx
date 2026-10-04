@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, X, Search, Layers } from "lucide-react";
 import Modal from "./Modal";
+import Select from "./Select";
 import * as XLSX from "xlsx";
 import { ACADEMIC_LEVELS } from "../data/seed";
 import { cleanName, isRollLabel, splitLatin } from "./studentImportHelpers";
@@ -463,31 +464,25 @@ export default function TranscriptImportModal({ open, onClose, students, onImpor
               {wb && wb.SheetNames.length > 1 && (
                 <label className="flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
                   Sheet
-                  <select className="input h-8 w-auto text-xs py-1" value={sheetIdx} onChange={(e) => switchSheet(Number(e.target.value))}>
-                    {wb.SheetNames.map((n, i) => (
-                      <option key={n} value={i}>
-                        {i + 1}. {n}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    minWidth={130}
+                    value={sheetIdx}
+                    onChange={(v) => switchSheet(Number(v))}
+                    options={wb.SheetNames.map((n, i) => ({ value: i, label: `${i + 1}. ${n}` }))}
+                  />
                 </label>
               )}
               <label className="flex items-center gap-1.5" style={{ color: "var(--text-3)" }}>
                 Header row
-                <select
-                  className="input h-8 w-auto text-xs py-1"
+                <Select
+                  minWidth={110}
                   value={headerRow}
-                  onChange={(e) => {
-                    setHeaderRow(Number(e.target.value));
+                  onChange={(v) => {
+                    setHeaderRow(Number(v));
                     setOverrides(null);
                   }}
-                >
-                  {rawRows.slice(0, 8).map((_, i) => (
-                    <option key={i} value={i}>
-                      Row {i + 1}
-                    </option>
-                  ))}
-                </select>
+                  options={rawRows.slice(0, 8).map((_, i) => ({ value: i, label: `Row ${i + 1}` }))}
+                />
               </label>
               <button onClick={() => { setRawRows([]); setFile(null); setWb(null); }} className="ml-auto btn btn-ghost h-8 px-2 text-xs" style={{ color: "var(--text-3)" }}>
                 Choose another file
@@ -505,21 +500,12 @@ export default function TranscriptImportModal({ open, onClose, students, onImpor
                     <span className="max-w-[150px] truncate text-[11px] font-medium" style={{ color: "var(--text-2)" }} title={c.name}>
                       {c.name || `Col ${c.idx + 1}`}
                     </span>
-                    <select
-                      className="input h-6 w-[74px] text-[10.5px] px-1 py-0 font-semibold"
+                    <Select
+                      minWidth={74}
                       value={colLevels[c.idx]}
-                      onChange={(e) =>
-                        setOverrides((prev) => ({ ...(prev || {}), [c.idx]: e.target.value }))
-                      }
-                      title="Semester this subject is recorded under"
-                    >
-                      <option value="_skip">skip</option>
-                      {levelOptions.map((l) => (
-                        <option key={l} value={l}>
-                          {l}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(v) => setOverrides((prev) => ({ ...(prev || {}), [c.idx]: v }))}
+                      options={[{ value: "_skip", label: "skip" }, ...levelOptions.map((l) => ({ value: l, label: l }))]}
+                    />
                   </span>
                 ))}
                 {!subjectCols.length && (

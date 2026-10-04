@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
+import Select from "./Select";
 import { useApp } from "../context/AppContext";
 import { MAJORS, classesOfMajor, SHIFTS, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
 import { norm, nextStudentId } from "./studentImportHelpers";
@@ -94,9 +95,9 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
   const classLocked = !!locked && !editing;
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setV = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
-  const handleMajorSelect = (e) => {
-    const major = e.target.value;
+  const handleMajorSelect = (major) => {
     const firstClass = classesOfMajor(classes, major)[0] || null;
     const nextLevels = levelsForMajor(major);
     setForm((f) => ({
@@ -109,11 +110,11 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
     }));
   };
 
-  const handleClassSelect = (e) => {
-    const cls = classes.find((c) => c.id === e.target.value);
+  const handleClassSelect = (classId) => {
+    const cls = classes.find((c) => c.id === classId);
     setForm((f) => ({
       ...f,
-      className: e.target.value,
+      className: classId,
       major: cls?.major || f.major,
       field: cls?.field || f.field,
       shift: cls?.shift || f.shift,
@@ -431,10 +432,7 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-group">
                   <label className="form-label">Gender</label>
-                  <select className="modern-input" value={form.gender} onChange={set("gender")}>
-                    <option>Male</option>
-                    <option>Female</option>
-                  </select>
+                  <Select value={form.gender} onChange={setV("gender")} options={["Male", "Female"]} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Date of birth</label>
@@ -520,68 +518,51 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-group">
                   <label className="form-label">Major *</label>
-                  <select 
-                    className="modern-input" 
-                    value={form.major} 
-                    onChange={handleMajorSelect} 
+                  <Select
+                    value={form.major}
+                    onChange={handleMajorSelect}
                     disabled={classLocked}
-                  >
-                    {MAJORS.map((m) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
+                    options={MAJORS.map((m) => ({ value: m.id, label: m.name }))}
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Class *</label>
-                  <select 
-                    className="modern-input" 
-                    value={form.className} 
-                    onChange={handleClassSelect} 
-                    disabled={classLocked} 
-                    key={form.major}
-                  >
-                    {formClasses.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  <Select
+                    value={form.className}
+                    onChange={handleClassSelect}
+                    disabled={classLocked}
+                    options={formClasses.map((c) => ({ value: c.id, label: c.name }))}
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-group">
                   <label className="form-label">Field of study</label>
-                  <select className="modern-input" value={form.field} onChange={set("field")} key={form.major}>
-                    {(FIELDS_OF_STUDY[form.major] || []).map((f) => (
-                      <option key={f} value={f}>{f}</option>
-                    ))}
-                  </select>
+                  <Select
+                    value={form.field}
+                    onChange={setV("field")}
+                    options={(FIELDS_OF_STUDY[form.major] || []).map((f) => ({ value: f, label: f }))}
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Shift</label>
-                  <select className="modern-input" value={form.shift} onChange={set("shift")}>
-                    {SHIFTS.map((sh) => (
-                      <option key={sh} value={sh}>{sh}</option>
-                    ))}
-                  </select>
+                  <Select value={form.shift} onChange={setV("shift")} options={SHIFTS.map((sh) => ({ value: sh, label: sh }))} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="form-group">
                   <label className="form-label">Status</label>
-                  <select className="modern-input" value={form.status} onChange={set("status")}>
-                    <option>Learning</option>
-                    <option>Graduate</option>
-                    <option>Undergraduate</option>
-                  </select>
+                  <Select value={form.status} onChange={setV("status")} options={["Learning", "Graduate", "Undergraduate"]} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Enrollment year</label>
-                  <select className="modern-input" value={form.enrollmentYear} onChange={set("enrollmentYear")}>
-                    {Array.from({ length: 9 }, (_, i) => new Date().getFullYear() - (8 - i)).map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
+                  <Select
+                    value={form.enrollmentYear}
+                    onChange={setV("enrollmentYear")}
+                    options={Array.from({ length: 9 }, (_, i) => new Date().getFullYear() - (8 - i)).map((y) => ({ value: y, label: String(y) }))}
+                  />
                 </div>
               </div>
 
@@ -597,11 +578,11 @@ export default function StudentFormModal({ open, onClose, editing = null, locked
 
               <div className="form-group">
                 <label className="form-label">Academic level</label>
-                <select className="modern-input" value={form.level} onChange={set("level")}>
-                  {levelsForMajor(form.major).map((lvl) => (
-                    <option key={lvl} value={lvl}>{lvl} · Semester {lvl[1]} · Year {lvl[3]}</option>
-                  ))}
-                </select>
+                <Select
+                  value={form.level}
+                  onChange={setV("level")}
+                  options={levelsForMajor(form.major).map((lvl) => ({ value: lvl, label: `${lvl} · Semester ${lvl[1]} · Year ${lvl[3]}` }))}
+                />
                 <p className="form-hint">
                   Current position (1 semester = 15 weeks). Students advance via "Next semester".
                 </p>

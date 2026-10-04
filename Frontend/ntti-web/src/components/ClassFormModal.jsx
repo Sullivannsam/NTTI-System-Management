@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";
 import Modal from "./Modal";
+import Select from "./Select";
 import { useApp } from "../context/AppContext";
 import { MAJORS, SHIFTS, YEARS, SEMESTERS, DEGREES, FIELDS_OF_STUDY } from "../data/seed";
 
@@ -35,9 +36,9 @@ export default function ClassFormModal({ open, onClose, editing = null, onCreate
   }, [open, editing?.id]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setV = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
-  const handleMajor = (e) => {
-    const major = e.target.value;
+  const handleMajor = (major) => {
     setForm((f) => ({ ...f, major, field: FIELDS_OF_STUDY[major]?.[0] || "" }));
   };
 
@@ -208,19 +209,15 @@ export default function ClassFormModal({ open, onClose, editing = null, onCreate
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="form-group">
             <label className="form-label">Field of study *</label>
-            <select className="modern-input" value={form.field} onChange={set("field")}>
-              {(FIELDS_OF_STUDY[form.major] || []).map((f) => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
+            <Select
+              value={form.field}
+              onChange={setV("field")}
+              options={(FIELDS_OF_STUDY[form.major] || []).map((f) => ({ value: f, label: f }))}
+            />
           </div>
           <div className="form-group">
             <label className="form-label">Major *</label>
-            <select className="modern-input" value={form.major} onChange={handleMajor}>
-              {MAJORS.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
+            <Select value={form.major} onChange={handleMajor} options={MAJORS.map((m) => ({ value: m.id, label: m.name }))} />
           </div>
         </div>
 
@@ -228,30 +225,18 @@ export default function ClassFormModal({ open, onClose, editing = null, onCreate
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="form-group">
             <label className="form-label">Degree</label>
-            <select className="modern-input" value={form.degree} onChange={set("degree")}>
-              {DEGREES.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
+            <Select value={form.degree} onChange={setV("degree")} options={DEGREES.map((d) => ({ value: d, label: d }))} />
           </div>
           <div className="form-group">
             <label className="form-label">Year</label>
-            <select className="modern-input" value={form.year} onChange={set("year")}>
-              {YEARS.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+            <Select value={form.year} onChange={setV("year")} options={YEARS.map((y) => ({ value: y, label: y }))} />
           </div>
         </div>
 
         {/* Row 3: Semester */}
         <div className="form-group">
           <label className="form-label">Semester</label>
-          <select className="modern-input" value={form.semester} onChange={set("semester")}>
-            {SEMESTERS.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+          <Select value={form.semester} onChange={setV("semester")} options={SEMESTERS.map((s) => ({ value: s, label: s }))} />
         </div>
 
         {/* Row 4: Shift buttons */}

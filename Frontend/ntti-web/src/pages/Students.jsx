@@ -11,6 +11,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { cleanName } from "../components/studentImportHelpers";
 import { useApp } from "../context/AppContext";
 import { Badge, StudentAvatar, statusTone } from "../components/Badge";
+import Select from "../components/Select";
 
 const STATUSES = ["Learning", "Undergraduate", "Graduate"];
 
@@ -144,30 +145,26 @@ export default function Students() {
 
         {/* filters */}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <select
-            className="input h-10 w-auto text-sm py-2 max-w-[180px]"
+          <Select
+            minWidth={170}
+            className="max-w-[220px]"
             value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            title="Filter by class"
-          >
-            <option value="all">All classes</option>
-            {classesWithStudents.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} · {c.shift}
-              </option>
-            ))}
-          </select>
-          <select
-            className="input h-10 w-auto text-sm py-2 max-w-[160px]"
+            onChange={setClassFilter}
+            options={[
+              { value: "all", label: "All classes" },
+              ...classesWithStudents.map((c) => ({ value: c.id, label: `${c.name} · ${c.shift}` })),
+            ]}
+          />
+          <Select
+            minWidth={150}
+            className="max-w-[180px]"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            title="Filter by status"
-          >
-            <option value="all">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+            onChange={setStatusFilter}
+            options={[
+              { value: "all", label: "All statuses" },
+              ...STATUSES.map((s) => ({ value: s, label: s })),
+            ]}
+          />
 
           {/* view toggle */}
           <div className="flex items-center gap-1 rounded-xl border p-1" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
