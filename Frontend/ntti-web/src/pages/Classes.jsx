@@ -17,6 +17,7 @@ import {
   Flag,
   UserPlus,
   Check,
+  Undo2,
 } from "lucide-react";
 import PageHeader, { EmptyState } from "../components/Page";
 import Modal from "../components/Modal";
@@ -26,6 +27,7 @@ import StudentImportModal from "../components/StudentImportModal";
 import ImportStudentChooser from "../components/ImportStudentChooser";
 import TermRecordModal from "../components/TermRecordModal";
 import NextSemesterModal from "../components/NextSemesterModal";
+import RollbackTermModal from "../components/RollbackTermModal";
 import { useApp } from "../context/AppContext";
 import { majorName, shiftRange, prettyDate, levelsForMajor } from "../data/seed";
 import { StudentAvatar, Badge, statusTone } from "../components/Badge";
@@ -37,11 +39,12 @@ const ACCENT = {
 };
 
 export default function Classes() {
-  const { classes, students, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, addStudentsBatch, deleteClass, showToast } = useApp();
+  const { classes, students, attendance, deleteStudent, removeFromClass, endClassTerm, rollbackClassTerm, importStudents, addStudentsBatch, deleteClass, showToast } = useApp();
 
   const [view, setView] = useState("list"); // "list" | "detail"
   const [selId, setSelId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null); // class pending soft-delete → Draft
+  const [rollbackOpen, setRollbackOpen] = useState(false);
 
   /* global multi-select → bulk move to Draft */
   const [selectMode, setSelectMode] = useState(false);
@@ -223,6 +226,9 @@ export default function Classes() {
     String(b.endedOn || "").localeCompare(String(a.endedOn || ""))
   );
   const finishedLevels = new Set(termRecords.map((t) => t.level));
+  /* the archive is appended in order, so the newest entry is the last one — the
+     same term the "undo" button takes back */
+  const lastTerm = sel ? sel.terms[sel.terms.length - 1] || null : null;
 
   /* "Import students" chooser → Excel file directly into this class */
   const onExcelImport = (rows, stats = {}) => {
@@ -579,6 +585,16 @@ export default function Classes() {
                 style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
               >
                 <UserPlus size={13} /> Import from {prevLevelCode}
+              </button>
+            )}
+            {lastTerm?.level && (
+              <button
+                onClick={() => setRollbackOpen(true)}
+                className="btn h-9 px-3 text-xs font-medium transition-colors border bg-[var(--surface-2)] hover:bg-[var(--primary-soft)]"
+                style={{ borderColor: "var(--border)", color: "var(--warning)" }}
+                title={`Undo the last semester and put ${sel.name} back to ${lastTerm.level}`}
+              >
+                <Undo2 size={13} /> Undo semester · {lastTerm.level}
               </button>
             )}
             <button
@@ -990,6 +1006,34 @@ export default function Classes() {
               : `${currentLevel} finished · ${sel.name} programme complete`
           );
           if (term) setRecordTerm(term);
+        }}
+      />
+
+      {/* undo the last semester — puts the class, its students and its term data back */}
+      <RollbackTermModal
+        open={rollbackOpen}
+        onClose={() => setRollbackOpen(false)}
+        cls={sel}
+        term={lastTerm}
+        currentLevel={currentLevel}
+        onConfirm={() => {
+          const r = rollbackClassTerm(sel.id);
+          setRollbackOpen(false);
+          if (!r) {
+            showToast("There is no semester to undo");
+            return;
+          }
+          let msg = `${sel.name} rolled back to ${r.level}`;
+          if (r.students) msg += ` · ${r.students} student${r.students === 1 ? "" : "s"} restored`;
+          if (r.scoresBack) msg += ` · ${r.scoresBack} score sheet${r.scoresBack === 1 ? "" : "s"}`;
+          if (r.attendanceBack) msg += ` · ${r.attendanceBack} attendance day${r.attendanceBack === 1 ? "" : "s"}`;
+          showToast(msg);
+          if (r.attendanceMissing) {
+            showToast(
+              `${r.attendanceMissing} attendance day${r.attendanceMissing === 1 ? "" : "s"} could not be restored — the archive did not record which subject they belonged to`,
+              "info"
+            );
+          }
         }}
       />
 

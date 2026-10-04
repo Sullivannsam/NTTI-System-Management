@@ -139,7 +139,9 @@ export default function NextSemesterModal({
             ? `${stays} student${stays === 1 ? "" : "s"} will stay at ${currentLevel} and can be imported again.`
             : "All students will advance."}
         </p>
-        <p className="text-xs" style={{ color: "var(--text-3)" }}>This cannot be undone.</p>
+        <p className="text-xs" style={{ color: "var(--text-3)" }}>
+          Done by mistake? <b>Undo semester</b> on the class page brings it all back.
+        </p>
       </div>
     </Modal>
   );

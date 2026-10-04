@@ -71,14 +71,15 @@ function rankingsExportHTML(sheets) {
                 td(esc(row.student.khmerName || latin)) +
                 td(esc(row.student.studentId || ""), "center") +
                 row.cells.map((v) => td(v === "" ? "–" : esc(v), "center")).join("") +
-                td(row.avg.toFixed(2), "center") +
+                td(row.avg === null ? "–" : row.avg.toFixed(2), "center") +
                 td(g ? g.g : "–", "center") +
                 `</tr>`
               );
             })
             .join("")
-        : `<tr><td colspan="${subjects.length + 5}" align="center" style="padding:10px;color:#64748b">No scores yet for this class</td></tr>`;
-      const clsAvg = rows.length ? (rows.reduce((a, r) => a + r.avg, 0) / rows.length).toFixed(2) : "—";
+        : `<tr><td colspan="${subjects.length + 5}" align="center" style="padding:10px;color:#64748b">No students in this class yet</td></tr>`;
+      const scored = rows.filter((r) => r.avg !== null);
+      const clsAvg = scored.length ? (scored.reduce((a, r) => a + r.avg, 0) / scored.length).toFixed(2) : "—";
       return (
         `<h3 style="margin:22px 0 4px">${esc(cls.name)} — rankings</h3>` +
         meta("Class avg", clsAvg) +
@@ -214,17 +215,34 @@ export default function Rankings() {
         .filter((v) => v !== "")
         .map((v) => Number(v))
         .filter((n) => !isNaN(n));
-      if (!vals.length) continue;
-      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-      scored.push({ student: s, avg, scoredSubjects: vals.length });
+      /* A student with nothing assessed yet still belongs in the table. Dropping
+         them made an unmarked sheet look like a missing student, so keep everyone:
+         scored students carry an average, rank and grade, the rest sit below the
+         table with none of the three until their first score is saved. */
+      scored.push({
+        student: s,
+        avg: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null,
+        scoredSubjects: vals.length,
+      });
     }
-    scored.sort((a, b) => b.avg - a.avg || a.student.firstName.localeCompare(b.student.firstName));
+    // highest average on top; anyone unassessed goes below them, then by name
+    scored.sort((a, b) => {
+      if (a.avg === null || b.avg === null) {
+        return a.avg === b.avg ? a.student.firstName.localeCompare(b.student.firstName) : a.avg === null ? 1 : -1;
+      }
+      return b.avg - a.avg || a.student.firstName.localeCompare(b.student.firstName);
+    });
 
-    // competition ranking (ties share a rank)
+    /* Competition ranking: equal averages share a rank. Students with nothing
+       assessed yet still take their place in the numbering, so every student on
+       the roster has a number; save them a score and they move up to the rank
+       that score earns. */
     let prevAvg = null;
     let prevRank = 0;
     const rows = scored.map((row, i) => {
-      const rank = prevAvg !== null && Math.abs(row.avg - prevAvg) < 1e-9 ? prevRank : i + 1;
+      const place = i + 1;
+      if (row.avg === null) return { ...row, rank: place };
+      const rank = prevAvg !== null && Math.abs(row.avg - prevAvg) < 1e-9 ? prevRank : place;
       prevAvg = row.avg;
       prevRank = rank;
       return { ...row, rank };
@@ -248,10 +266,13 @@ export default function Rankings() {
   };
   const noExportSel = dlOpen && !dlAll && !billboardClasses.some((c) => dlChecked[c.id]);
 
-  const classAvg = useMemo(
-    () => (rows.length ? rows.reduce((a, r) => a + r.avg, 0) / rows.length : null),
-    [rows]
-  );
+  /* only assessed students have an average, so only they count towards it */
+  const classAvg = useMemo(() => {
+    const scored = rows.filter((r) => r.avg !== null);
+    return scored.length ? scored.reduce((a, r) => a + r.avg, 0) / scored.length : null;
+  }, [rows]);
+
+  const scoredCount = rows.filter((r) => r.avg !== null).length;
 
   return (
     <div className="max-w-[1500px] mx-auto space-y-5 animate-fade-up">
@@ -326,8 +347,8 @@ export default function Rankings() {
         <div className="card">
           <EmptyState
             icon={ClipboardList}
-            title={`No scores yet for ${cls.name}`}
-            subtitle="Fill in the score sheet for this class, then come back — the billboard ranks students as soon as scores exist."
+            title={`No students in ${cls.name}`}
+            subtitle="This class has nobody on its roster yet, so there is nothing to rank. Add students and they will appear here."
             action={
               <CtaButton onClick={() => (window.location.href = "/scores")} icon={ClipboardList}>
                 Open Scores
@@ -352,8 +373,19 @@ export default function Rankings() {
               </div>
             </div>
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <span className="rounded-lg border px-2.5 py-1 text-xs font-semibold" style={{ borderColor: "var(--border)", background: "var(--primary-soft)", color: "var(--primary-strong)" }}>
-                {rows.length} ranked
+              <span
+                className="rounded-lg border px-2.5 py-1 text-xs font-semibold"
+                style={{ borderColor: "var(--border)", background: "var(--primary-soft)", color: "var(--primary-strong)" }}
+                title={
+                  scoredCount === rows.length
+                    ? "Every student on the roster has at least one score"
+                    : `${rows.length - scoredCount} student${rows.length - scoredCount === 1 ? " has" : "s have"} no scores yet and are ranked below the rest`
+                }
+              >
+                {scoredCount} ranked
+                {scoredCount < rows.length && (
+                  <span style={{ opacity: 0.75 }}> · {rows.length} total</span>
+                )}
               </span>
               {classAvg != null && (
                 <span className="rounded-lg border px-2.5 py-1 text-xs font-semibold" style={{ borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-2)" }}>
@@ -397,7 +429,11 @@ export default function Rankings() {
                   return (
                     <tr key={row.student.id} className="border-t transition-colors hover:bg-[var(--surface-2)]" style={{ borderColor: "var(--border)" }}>
                       <td className="sticky left-0 z-10 w-16 px-5 py-2.5 text-center" style={{ background: "var(--surface)" }}>
-                        <span className="text-[13px] font-extrabold tabular-nums" style={{ color: "var(--text)" }}>
+                        <span
+                          className="text-[13px] font-extrabold tabular-nums"
+                          style={{ color: row.avg === null ? "var(--text-3)" : "var(--text)" }}
+                          title={row.avg === null ? "No scores saved yet — ranked last until the first one is" : undefined}
+                        >
                           {row.rank}
                         </span>
                       </td>
@@ -434,8 +470,12 @@ export default function Rankings() {
                           </td>
                         );
                       })}
-                      <td className="px-3 py-2.5 text-center font-extrabold tabular-nums" style={{ color: "var(--text)" }}>
-                        {row.avg.toFixed(2)}
+                      <td
+                        className="px-3 py-2.5 text-center font-extrabold tabular-nums"
+                        style={{ color: row.avg === null ? "var(--text-3)" : "var(--text)" }}
+                        title={row.avg === null ? "No scores saved yet — nothing to average" : undefined}
+                      >
+                        {row.avg === null ? "–" : row.avg.toFixed(2)}
                       </td>
                       <td className="px-5 py-2.5 text-center">
                         {gr && (
@@ -461,7 +501,16 @@ export default function Rankings() {
           </div>
 
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-5 py-3 border-t text-[11px]" style={{ borderColor: "var(--border)", color: "var(--text-3)" }}>
-            <span>Sorted by average — highest on top · ties share a rank</span>
+            <span>
+              Sorted by average — highest on top · ties share a rank
+              {scoredCount < rows.length && (
+                <>
+                  {" "}
+                  · {rows.length - scoredCount} student{rows.length - scoredCount === 1 ? "" : "s"} without a
+                  score take the last place{rows.length - scoredCount === 1 ? "" : "s"}
+                </>
+              )}
+            </span>
             <span className="ml-auto">Subject scores come from the class schedule and score sheet</span>
           </div>
         </div>
@@ -508,7 +557,8 @@ export default function Rankings() {
                 )}
                 {billboardClasses.map((c) => {
                   const on = dlAll || dlChecked[c.id];
-                  const n = computeBillboard(c.id).rows.length;
+                  const rs = computeBillboard(c.id).rows;
+                  const n = rs.filter((r) => r.avg !== null).length;
                   return (
                     <label
                       key={c.id}
@@ -524,7 +574,7 @@ export default function Rankings() {
                       />
                       <span className="text-sm">{c.name}</span>
                       <span className="ml-auto text-[10px]" style={{ color: "#94a3b8" }}>
-                        {n} ranked
+                        {n} ranked{n < rs.length ? ` · ${rs.length} total` : ""}
                       </span>
                     </label>
                   );

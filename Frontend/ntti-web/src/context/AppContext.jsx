@@ -819,20 +819,31 @@ export function AppProvider({ children }) {
 
   /** Move a class or student back from the Draft panel to the live list.
       Each draft keeps its original id + source, so it returns exactly where
-      it existed before (classes → Classes list, students → Students registry). */
+      it existed before (classes → Classes list, students → Students registry).
+      Pass one id or an array of them to restore a whole selection at once. */
   const restoreFromDraft = useCallback(
-    (id) => {
-      const item = drafts.find((d) => d.id === id);
-      if (!item) return;
-      const { source, deletedAt, ...back } = item;
-      setDrafts((prev) => prev.filter((d) => d.id !== id));
-      if (source === "student") {
-        setStudents((prev) => [back, ...prev]);
-        logAudit("restore_student", `Restored student "${back.firstName} ${back.lastName}" from Draft`);
-      } else {
-        setClasses((prev) => [back, ...prev]);
-        logAudit("restore_class", `Restored class "${back.name}" from Draft`);
-      }
+    (idOrIds) => {
+      const ids = new Set(Array.isArray(idOrIds) ? idOrIds : [idOrIds]);
+      const items = drafts.filter((d) => ids.has(d.id));
+      if (!items.length) return 0;
+      setDrafts((prev) => prev.filter((d) => !ids.has(d.id)));
+      const backStudents = [];
+      const backClasses = [];
+      items.forEach((item) => {
+        const { source, deletedAt, ...back } = item;
+        if (source === "student") backStudents.push(back);
+        else backClasses.push(back);
+      });
+      if (backStudents.length) setStudents((prev) => [...backStudents, ...prev]);
+      if (backClasses.length) setClasses((prev) => [...backClasses, ...prev]);
+      items.forEach((item) => {
+        if (item.source === "student") {
+          logAudit("restore_student", `Restored student "${item.firstName} ${item.lastName}" from Draft`);
+        } else {
+          logAudit("restore_class", `Restored class "${item.name}" from Draft`);
+        }
+      });
+      return items.length;
     },
     [drafts, logAudit]
   );
@@ -841,78 +852,107 @@ export function AppProvider({ children }) {
       students (records and history are kept), detach the schedule link, and
       clear the score sheet + column layout. Pass { removeStudents: [ids] }
       to also permanently erase the selected students of the class together
-      with it. Students: erase them and their attendance/weekly records. */
+      with it. Students: erase them and their attendance/weekly records.
+      Pass one id or an array of them to purge a whole selection at once. */
   const purgeFromDraft = useCallback(
-    (id, opts = {}) => {
-      const item = drafts.find((d) => d.id === id);
-      if (!item) return;
-      setDrafts((prev) => prev.filter((d) => d.id !== id));
-      if (item.source === "student") {
-        setAttendance((prev) => prev.filter((a) => a.studentId !== item.id));
-        setWeekly((prev) => prev.filter((r) => r.studentId !== item.id));
-        logAudit("purge_student", `Permanently deleted student "${item.firstName} ${item.lastName}"`);
-        return;
-      }
-      const removeIds = new Set(Array.isArray(opts.removeStudents) ? opts.removeStudents : []);
+    (idOrIds, opts = {}) => {
+      const ids = new Set(Array.isArray(idOrIds) ? idOrIds : [idOrIds]);
+      const items = drafts.filter((d) => ids.has(d.id));
+      if (!items.length) return 0;
+      const classItems = items.filter((d) => d.source !== "student");
+      const classIds = new Set(classItems.map((c) => c.id));
+      setDrafts((prev) => prev.filter((d) => !ids.has(d.id)));
+
       // students that stay are moved out of the class; selected ones are erased
-      setStudents((prev) =>
-        prev
-          .map((s) => (s.className === id && !removeIds.has(s.id) ? { ...s, className: "" } : s))
-          .filter((s) => !removeIds.has(s.id))
-      );
+      const removeIds = new Set(Array.isArray(opts.removeStudents) ? opts.removeStudents : []);
+      // a student draft normally has no row left in students (deleteStudent removes
+      // it) — drop it here too so a stale row can never outlive the purge
+      const draftStudentIds = new Set(items.filter((d) => d.source === "student").map((d) => d.id));
+      if (classIds.size || removeIds.size || draftStudentIds.size) {
+        setStudents((prev) =>
+          prev
+            .map((s) => (classIds.has(s.className) && !removeIds.has(s.id) ? { ...s, className: "" } : s))
+            .filter((s) => !removeIds.has(s.id) && !draftStudentIds.has(s.id))
+        );
+      }
       if (removeIds.size) {
         setAttendance((prev) => prev.filter((a) => !removeIds.has(a.studentId)));
         setWeekly((prev) => prev.filter((r) => !removeIds.has(r.studentId)));
       }
-      // detach any schedule entry bound to this class (stays in the file, unlinked)
-      try {
-        const schedRaw = readLS(LS_SCHED, { schedules: [], activeId: null });
-        const schedList = Array.isArray(schedRaw?.schedules) ? schedRaw.schedules : [];
-        const sched = scheduleForClass(schedList, item);
-        if (sched) {
-          localStorage.setItem(
-            LS_SCHED,
-            JSON.stringify({
-              ...schedRaw,
-              schedules: schedList.map((s) => (s === sched ? { ...s, classId: null, className: "" } : s)),
-            })
+
+      // student drafts erase that student's own records
+      if (draftStudentIds.size) {
+        setAttendance((prev) => prev.filter((a) => !draftStudentIds.has(a.studentId)));
+        setWeekly((prev) => prev.filter((r) => !draftStudentIds.has(r.studentId)));
+      }
+
+      if (classItems.length) {
+        // detach any schedule entries bound to the purged classes (they stay in the file, unlinked)
+        try {
+          const schedRaw = readLS(LS_SCHED, { schedules: [], activeId: null });
+          const schedList = Array.isArray(schedRaw?.schedules) ? schedRaw.schedules : [];
+          const unlink = new Set(classItems.map((c) => scheduleForClass(schedList, c)).filter(Boolean));
+          if (unlink.size) {
+            localStorage.setItem(
+              LS_SCHED,
+              JSON.stringify({
+                ...schedRaw,
+                schedules: schedList.map((s) => (unlink.has(s) ? { ...s, classId: null, className: "" } : s)),
+              })
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+        // clear each class's score sheet and merged-header layout
+        try {
+          const allScores = readLS(LS_SCORES, {});
+          let touched = false;
+          classIds.forEach((cid) => {
+            if (allScores[cid] !== undefined) {
+              delete allScores[cid];
+              touched = true;
+            }
+          });
+          if (touched) localStorage.setItem(LS_SCORES, JSON.stringify(allScores));
+        } catch {
+          /* ignore */
+        }
+        try {
+          const layouts = readLS(LS_SCORES_LAYOUT, {});
+          let touched = false;
+          classIds.forEach((cid) => {
+            if (layouts && typeof layouts === "object" && layouts[cid] !== undefined) {
+              delete layouts[cid];
+              touched = true;
+            }
+          });
+          if (touched) localStorage.setItem(LS_SCORES_LAYOUT, JSON.stringify(layouts));
+        } catch {
+          /* ignore */
+        }
+        // if the Scores page had one of these classes selected, forget it
+        try {
+          const sel = readLS(LS_SEL, null);
+          if (sel && classIds.has(sel.id)) localStorage.removeItem(LS_SEL);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      items.forEach((item) => {
+        if (item.source === "student") {
+          logAudit("purge_student", `Permanently deleted student "${item.firstName} ${item.lastName}"`);
+        } else {
+          logAudit(
+            "purge_class",
+            removeIds.size
+              ? `Permanently deleted class "${item.name}" + ${removeIds.size} student${removeIds.size === 1 ? "" : "s"}`
+              : `Permanently deleted class "${item.name}" (students kept)`
           );
         }
-      } catch {
-        /* ignore */
-      }
-      // clear the class's score sheet and merged-header layout
-      try {
-        const allScores = readLS(LS_SCORES, {});
-        if (allScores[id] !== undefined) {
-          delete allScores[id];
-          localStorage.setItem(LS_SCORES, JSON.stringify(allScores));
-        }
-      } catch {
-        /* ignore */
-      }
-      try {
-        const layouts = readLS(LS_SCORES_LAYOUT, {});
-        if (layouts && typeof layouts === "object" && layouts[id] !== undefined) {
-          delete layouts[id];
-          localStorage.setItem(LS_SCORES_LAYOUT, JSON.stringify(layouts));
-        }
-      } catch {
-        /* ignore */
-      }
-      // if the Scores page had this class selected, forget it
-      try {
-        const sel = readLS(LS_SEL, null);
-        if (sel && sel.id === id) localStorage.removeItem(LS_SEL);
-      } catch {
-        /* ignore */
-      }
-      logAudit(
-        "purge_class",
-        removeIds.size
-          ? `Permanently deleted class "${item.name}" + ${removeIds.size} student${removeIds.size === 1 ? "" : "s"}`
-          : `Permanently deleted class "${item.name}" (students kept)`
-      );
+      });
+      return items.length;
     },
     [drafts, logAudit]
   );
@@ -1056,7 +1096,17 @@ export function AppProvider({ children }) {
         .filter(
           (a) => a.date && a.date <= endedOn && (!termStart || a.date > termStart) && rosterIds.has(a.studentId)
         )
-        .map((a) => ({ studentId: a.studentId, date: a.date, status: a.status, checkIn: a.checkIn || null }));
+        // raw daily records for this term, so clicking a student shows which day
+        // they were present / late / absent / on permission. The subject comes
+        // along because attendance is keyed by it — without it a rolled-back
+        // term could not put those days back where they belong.
+        .map((a) => ({
+          studentId: a.studentId,
+          date: a.date,
+          subject: a.subject || "",
+          status: a.status,
+          checkIn: a.checkIn || null,
+        }));
 
       const term = {
         id: `t-${classId}-${Date.now()}`,
@@ -1180,6 +1230,169 @@ export function AppProvider({ children }) {
     [classes, students, attendance, logAudit]
   );
 
+  /**
+   * Undo the most recent "Next semester" for a class. Everything that rollover
+   * changed is put back from the archive it wrote: the class level, every
+   * student's level / status / history, the live score sheet and the blanked
+   * schedule. The archive entry itself is dropped, so pressing this again walks
+   * the class back a further term. Returns a summary for the UI to report, or
+   * null when there is nothing to undo.
+   */
+  const rollbackClassTerm = useCallback(
+    (classId) => {
+      const cls = classes.find((c) => c.id === classId);
+      if (!cls) return null;
+      const archived = [...(cls.terms || [])];
+      if (!archived.length) return null;
+      // the archive is appended in order, so the last entry is the newest
+      const term = archived[archived.length - 1];
+      const prevLevel = term.level;
+      if (!prevLevel) return null;
+      const pm = levelMeta(prevLevel);
+
+      // 1. the class steps back to the level it was on
+      setClasses((prev) =>
+        prev.map((c) =>
+          c.id === classId
+            ? { ...c, terms: archived.slice(0, -1), year: pm.year, semester: pm.semester, completed: false }
+            : c
+        )
+      );
+
+      // 2. every student this rollover touched steps back too. An advanced student
+      //    is found by the history entry it appended; one left behind was moved
+      //    out of the class and flagged Undergraduate.
+      let moved = 0;
+      let putBack = 0;
+      setStudents((prev) =>
+        prev.map((s) => {
+          const hist = s.history || [];
+          const hi = hist.findIndex(
+            (h) =>
+              h.level === prevLevel &&
+              h.date === term.endedOn &&
+              (!h.className || h.className === classId)
+          );
+          const leftBehind = !s.className && s.level === prevLevel && s.status === "Undergraduate";
+          if (hi < 0 && !leftBehind) return s;
+          moved += 1;
+          const next = { ...s, level: prevLevel, status: "Learning" };
+          if (hi >= 0) next.history = hist.filter((_, i) => i !== hi);
+          if (!s.className) {
+            next.className = classId;
+            putBack += 1;
+          }
+          // a student who graduated on this rollover is studying again
+          if (s.status === "Graduate" || s.graduationDate === term.endedOn) {
+            next.status = "Learning";
+            delete next.graduationDate;
+          }
+          return next;
+        })
+      );
+
+      // 3. the score sheet comes back. Archived subjects win; anything else that
+      //    was typed after the rollover is kept rather than thrown away.
+      let scoresBack = 0;
+      try {
+        const allScores = readLS(LS_SCORES, {});
+        const sheet = { ...(allScores[classId] || {}) };
+        (term.rows || []).forEach((r) => {
+          const map = { ...(sheet[r.studentId] || {}) };
+          const archived = Object.entries(r.scores || {});
+          /* nothing archived and nothing typed since → leave the sheet alone
+             rather than writing an empty row for that student */
+          if (!archived.length && !Object.keys(map).length) return;
+          archived.forEach(([sub, v]) => {
+            map[sub] = v;
+          });
+          if (archived.length) scoresBack += 1;
+          sheet[r.studentId] = map;
+        });
+        allScores[classId] = sheet;
+        localStorage.setItem(LS_SCORES, JSON.stringify(allScores));
+      } catch {
+        /* ignore */
+      }
+
+      // 4. the attendance days the rollover cleared. Records archived before the
+      //    subject was stored cannot be filed again, so they are left out and
+      //    counted for the caller to report.
+      const recs = term.attendanceRecords || [];
+      const fileable = recs.filter((r) => r && r.studentId && r.date && r.subject);
+      const unfiled = recs.length - fileable.length;
+      if (fileable.length) {
+        setAttendance((prev) => {
+          const have = new Set(prev.map((a) => a.id));
+          const add = [];
+          fileable.forEach((r) => {
+            const id = `${r.studentId}-${r.date}-${r.subject}`;
+            if (have.has(id)) return;
+            have.add(id);
+            add.push({
+              id,
+              studentId: r.studentId,
+              date: r.date,
+              subject: r.subject,
+              status: r.status,
+              checkIn: r.checkIn || null,
+            });
+          });
+          return add.length ? [...prev, ...add] : prev;
+        });
+      }
+
+      // 5. the schedule the rollover blanked
+      try {
+        const schedRaw = readLS(LS_SCHED, { schedules: [], activeId: null });
+        const schedList = Array.isArray(schedRaw?.schedules) ? schedRaw.schedules : [];
+        const sched = scheduleForClass(schedList, cls);
+        if (sched) {
+          localStorage.setItem(
+            LS_SCHED,
+            JSON.stringify({
+              ...schedRaw,
+              schedules: schedList.map((s) =>
+                s === sched
+                  ? {
+                      ...s,
+                      subjects: term.subjects || [],
+                      teachers: term.teachers || [],
+                      cells: term.cells || {},
+                      year: pm.year,
+                      semester: pm.semester,
+                    }
+                  : s
+              ),
+            })
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+
+      logAudit(
+        "rollback_class_term",
+        `Rolled ${cls.name} back to ${prevLevel} · ${moved} student${moved === 1 ? "" : "s"} restored${
+          scoresBack ? ` · ${scoresBack} score sheet${scoresBack === 1 ? "" : "s"}` : ""
+        }${fileable.length ? ` · ${fileable.length} attendance day${fileable.length === 1 ? "" : "s"}` : ""}`
+      );
+
+      return {
+        level: prevLevel,
+        year: pm.year,
+        semester: pm.semester,
+        from: classLevelOf(cls),
+        students: moved,
+        putBack,
+        scoresBack,
+        attendanceBack: fileable.length,
+        attendanceMissing: unfiled,
+      };
+    },
+    [classes, logAudit]
+  );
+
   const value = useMemo(
     () => ({
       students,
@@ -1203,6 +1416,7 @@ export function AppProvider({ children }) {
       importStudents,
       removeFromClass,
       endClassTerm,
+      rollbackClassTerm,
       saveAttendance,
       renameAttendanceSubject,
       login,
@@ -1216,7 +1430,7 @@ export function AppProvider({ children }) {
       theme,
       toggleTheme,
     }),
-    [students, attendance, classes, drafts, weekly, admins, audit, currentAdmin, addClass, updateClass, deleteClass, restoreFromDraft, purgeFromDraft, saveWeekly, addStudent, addStudentsBatch, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, saveAttendance, renameAttendanceSubject, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
+    [students, attendance, classes, drafts, weekly, admins, audit, currentAdmin, addClass, updateClass, deleteClass, restoreFromDraft, purgeFromDraft, saveWeekly, addStudent, addStudentsBatch, updateStudent, deleteStudent, importStudents, removeFromClass, endClassTerm, rollbackClassTerm, saveAttendance, renameAttendanceSubject, login, logout, addAdmin, updateAdmin, deleteAdmin, logAudit, showToast, toasts, theme, toggleTheme]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -54,6 +54,7 @@ const rateTone = (r) => (r >= 85 ? "#10b981" : r >= 70 ? "#f59e0b" : "#ef4444");
 const LS_EXTRA_WEEKS = "ntti.weekly.extra.v1";
 const LS_WEEKS = "ntti.weekly.weeks.v1";
 const LS_SCHED = "ntti.schedule.v2";
+const LS_CLASS_SEL = "ntti.attendance.classes.v1";
 
 function readScheduleState() {
   try {
@@ -830,16 +831,6 @@ function ClassGrid({
                 </button>
               </div>
             </div>
-
-            <p className="mt-2 text-[11px]" style={{ color: "var(--text-3)" }}>
-              Click a cell to mark it{" "}
-              <b style={{ color: activeTool.value ? activeTool.color : "var(--text-2)" }}>
-                {activeTool.value ? activeTool.label : "empty"}
-              </b>
-              . Hold and drag to mark a whole row or column at once. Click the same cell again to undo it. Keys{" "}
-              <b style={{ color: "var(--text-2)" }}>1–4</b> and <b style={{ color: "var(--text-2)" }}>0</b> switch tools.
-              Nothing is stored until you press <b style={{ color: "var(--text-2)" }}>Save sheet</b>.
-            </p>
           </div>
 
           <div className="overflow-x-auto thin-scroll">
@@ -1315,10 +1306,48 @@ export default function Attendance() {
   const [searchParams] = useSearchParams();
   const classParam = searchParams.get("class");
 
+  /* Which class sheets are open, remembered across a refresh so the panel comes
+     back to the same sheets instead of "no class selected". An explicit ?class=
+     link wins; ids whose class has since been deleted are dropped. With nothing
+     remembered we open the first class rather than show an empty panel — the
+     empty state is then only reachable when no class exists at all, or after the
+     user clears the selection themselves (an empty list is remembered as such). */
   const [sel, setSel] = useState(() => {
     if (classParam && classes.some((c) => c.id === classParam)) return [classParam];
-    return [];
+    const live = classes.map((c) => c.id);
+    try {
+      const stored = localStorage.getItem(LS_CLASS_SEL);
+      if (stored !== null) {
+        const raw = JSON.parse(stored);
+        if (Array.isArray(raw)) {
+          const kept = raw.filter((id) => live.includes(id));
+          // everything remembered is gone — fall back instead of sitting empty
+          if (kept.length || raw.length === 0) return kept;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return live.length ? [live[0]] : [];
   });
+
+  // a class deleted while the page is open must not linger in the selection
+  useEffect(() => {
+    setSel((prev) => {
+      const live = classes.map((c) => c.id);
+      const kept = prev.filter((id) => live.includes(id));
+      return kept.length === prev.length ? prev : kept;
+    });
+  }, [classes]);
+
+  // remember which sheets are open
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_CLASS_SEL, JSON.stringify(sel));
+    } catch {
+      /* ignore */
+    }
+  }, [sel]);
   const [q, setQ] = useState("");
   const [classQ, setClassQ] = useState("");
   const [formOpen, setFormOpen] = useState(false);

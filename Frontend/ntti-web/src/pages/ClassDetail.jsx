@@ -15,6 +15,7 @@ import {
   History,
   Flag,
   UserPlus,
+  Undo2,
 } from "lucide-react";
 import PageHeader, { EmptyState, ProgressBar } from "../components/Page";
 import Modal from "../components/Modal";
@@ -23,6 +24,7 @@ import StudentImportModal from "../components/StudentImportModal";
 import ImportStudentChooser from "../components/ImportStudentChooser";
 import TermRecordModal from "../components/TermRecordModal";
 import NextSemesterModal from "../components/NextSemesterModal";
+import RollbackTermModal from "../components/RollbackTermModal";
 import { useApp } from "../context/AppContext";
 import { majorName, computeRate, lastNWeeks, shiftRange, prettyDate, levelsForMajor } from "../data/seed";
 import { StudentAvatar, Badge, statusTone } from "../components/Badge";
@@ -44,7 +46,7 @@ const WEEK_STATUS = {
 export default function ClassDetail() {
   const { classId } = useParams();
   const navigate = useNavigate();
-  const { students, classes, attendance, deleteStudent, removeFromClass, endClassTerm, importStudents, addStudentsBatch, showToast } = useApp();
+  const { students, classes, attendance, deleteStudent, removeFromClass, endClassTerm, rollbackClassTerm, importStudents, addStudentsBatch, showToast } = useApp();
 
   const cls = classes.find((c) => c.id === classId);
 
@@ -54,6 +56,7 @@ export default function ClassDetail() {
   const [deleting, setDeleting] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
   const [record, setRecord] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importQuery, setImportQuery] = useState("");
@@ -190,6 +193,9 @@ export default function ClassDetail() {
     String(b.endedOn || "").localeCompare(String(a.endedOn || ""))
   );
   const finishedLevels = new Set(termRecords.map((t) => t.level));
+  /* the archive is appended in order, so the newest entry is the last one — the
+     same term the "undo" button takes back */
+  const lastTerm = (cls.terms || [])[((cls.terms || []).length || 1) - 1] || null;
 
   return (
     <div>
@@ -424,6 +430,17 @@ export default function ClassDetail() {
               Finished semesters are archived here so you can look back after the class moves on.
             </p>
           </div>
+          {lastTerm?.level && (
+            <button
+              onClick={() => setRollbackOpen(true)}
+              className="btn btn-outline h-10 px-4 text-sm gap-1.5"
+              style={{ color: "var(--warning)" }}
+              title={`Undo the last semester and put ${cls.name} back to ${lastTerm.level}`}
+            >
+              <Undo2 size={16} />
+              Undo semester · {lastTerm.level}
+            </button>
+          )}
           <button
             onClick={() => setEndOpen(true)}
             disabled={cls.completed || !nextLevelCode}
@@ -434,7 +451,7 @@ export default function ClassDetail() {
                   ? "No next semester is available for this class — nothing to advance to"
                   : "Archive this term and open the next semester"
             }
-            className="ml-auto btn btn-outline h-10 px-4 text-sm gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`${lastTerm?.level ? "" : "ml-auto "}btn btn-outline h-10 px-4 text-sm gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             <Flag size={16} />
             {cls.completed ? "Programme complete" : nextLevelCode ? `Next semester · ${nextLevelCode}` : "No next semester"}
@@ -529,6 +546,33 @@ export default function ClassDetail() {
               : `${currentLevel} finished · ${cls.name} programme complete`
           );
           if (term) setRecord(term);
+        }}
+      />
+
+      <RollbackTermModal
+        open={rollbackOpen}
+        onClose={() => setRollbackOpen(false)}
+        cls={cls}
+        term={lastTerm}
+        currentLevel={currentLevel}
+        onConfirm={() => {
+          const r = rollbackClassTerm(cls.id);
+          setRollbackOpen(false);
+          if (!r) {
+            showToast("There is no semester to undo");
+            return;
+          }
+          let msg = `${cls.name} rolled back to ${r.level}`;
+          if (r.students) msg += ` · ${r.students} student${r.students === 1 ? "" : "s"} restored`;
+          if (r.scoresBack) msg += ` · ${r.scoresBack} score sheet${r.scoresBack === 1 ? "" : "s"}`;
+          if (r.attendanceBack) msg += ` · ${r.attendanceBack} attendance day${r.attendanceBack === 1 ? "" : "s"}`;
+          showToast(msg);
+          if (r.attendanceMissing) {
+            showToast(
+              `${r.attendanceMissing} attendance day${r.attendanceMissing === 1 ? "" : "s"} could not be restored — the archive did not record which subject they belonged to`,
+              "info"
+            );
+          }
         }}
       />
 
