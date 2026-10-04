@@ -119,7 +119,7 @@ export function DropdownPanel({ pos, menuRef, onClose, className = "", style, ch
       <div
         ref={menuRef}
         className={`fixed z-50 card flex flex-col overflow-hidden shadow-xl border ${
-          pos.up ? "animate-fade-down" : "animate-fade-up"
+          pos.up ? "dd-panel dd-up" : "dd-panel"
         } ${className}`}
         style={{
           left: pos.left,

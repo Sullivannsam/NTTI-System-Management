@@ -344,7 +344,7 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label, 
         }}
       >
         <span className="whitespace-nowrap">{shown || "—"}</span>
-        <ChevronDown size={10} className="shrink-0" style={{ color: "var(--text-3)" }} />
+        <ChevronDown size={10} className={`dd-chevron shrink-0 ${open ? "is-open" : ""}`} style={{ color: open ? "var(--primary)" : "var(--text-3)" }} />
       </button>
 
       {open &&
@@ -355,7 +355,7 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label, 
             <div
               ref={menuRef}
               className={`fixed z-50 card p-1 min-w-[150px] overflow-y-auto thin-scroll shadow-lg ${
-                pos.up ? "animate-fade-down" : "animate-fade-up"
+                pos.up ? "dd-panel dd-up" : "dd-panel"
               }`}
               style={{
                 left: pos.left,
@@ -382,8 +382,8 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label, 
                   onChange("");
                   close();
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-[var(--surface-2)]"
-                style={{ color: "var(--text-3)" }}
+                className="dd-item flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs"
+                style={{ color: "var(--text-3)", "--i": 0 }}
               >
                 <span className="w-3.5 shrink-0">{value === "" ? <Check size={12} /> : null}</span>
                 None
@@ -392,7 +392,7 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label, 
               {searchable && shownOpts.length === 0 && (
                 <p className="px-2.5 py-1.5 text-xs" style={{ color: "var(--text-3)" }}>No match</p>
               )}
-              {shownOpts.map((o) => {
+              {shownOpts.map((o, i) => {
                 const val = typeof o === "string" ? o : o.value;
                 const label = typeof o === "string" ? o : o.label;
                 const active = value === val;
@@ -404,12 +404,10 @@ function HalfSelect({ value, options, onChange, style, wide, h9 = false, label, 
                       onChange(val);
                       close();
                     }}
-                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                      active ? "bg-[var(--primary-soft)]" : "hover:bg-[var(--surface-2)]"
-                    }`}
-                    style={{ color: active ? "var(--primary-strong)" : "var(--text)", fontWeight: active ? 700 : 500 }}
+                    className={`dd-item flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs ${active ? "is-active" : ""}`}
+                    style={{ "--i": i + 1 }}
                   >
-                    <span className="w-3.5 shrink-0">{active ? <Check size={12} /> : null}</span>
+                    <span className="w-3.5 shrink-0">{active ? <Check size={12} className="dd-check" /> : null}</span>
                     <span className="truncate">{label}</span>
                   </button>
                 );

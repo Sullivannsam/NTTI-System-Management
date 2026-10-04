@@ -67,7 +67,7 @@ export default function Select({
         type="button"
         disabled={disabled}
         onClick={() => (open ? close() : setOpen(true))}
-        className="flex h-10 w-full max-w-full items-center justify-between gap-2 rounded-xl border px-3.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-10 w-full max-w-full items-center justify-between gap-2 rounded-xl border px-3.5 text-sm font-medium transition hover:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
         style={{
           minWidth: `min(${typeof minWidth === "number" ? `${minWidth}px` : minWidth}, 100%)`,
           background: disabled ? "var(--surface-2)" : "var(--surface)",
@@ -80,7 +80,7 @@ export default function Select({
           {Icon && <Icon className="h-4 w-4 shrink-0" style={{ color: "var(--primary-strong)" }} />}
           <span className="truncate">{current ? current.label : placeholder}</span>
         </span>
-        <ChevronDown className="h-4 w-4 shrink-0 transition-transform" style={{ color: "var(--text-3)", transform: open ? "rotate(180deg)" : "none" }} />
+        <ChevronDown className={`dd-chevron h-4 w-4 shrink-0 ${open ? "is-open" : ""}`} style={{ color: open ? "var(--primary)" : "var(--text-3)" }} />
       </button>
 
       <DropdownPanel pos={pos} menuRef={menuRef} onClose={close} className="p-1.5">
@@ -107,19 +107,15 @@ export default function Select({
               No match{q ? ` for "${q}"` : ""}
             </p>
           ) : (
-            filtered.map((o) => {
+            filtered.map((o, i) => {
               const active = String(o.value) === String(value);
               return (
                 <button
                   key={o.value}
                   type="button"
                   onClick={() => pick(o.value)}
-                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--surface-2)]"
-                  style={{
-                    color: active ? "var(--primary-strong)" : "var(--text)",
-                    fontWeight: active ? 700 : 500,
-                    background: active ? "var(--primary-soft)" : "transparent",
-                  }}
+                  className={`dd-item flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm ${active ? "is-active" : ""}`}
+                  style={{ "--i": i }}
                 >
                   <span className="truncate">{o.label}</span>
                   {o.sub && (
@@ -127,7 +123,7 @@ export default function Select({
                       {o.sub}
                     </span>
                   )}
-                  {active && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--primary-strong)" }} />}
+                  {active && <Check className="dd-check h-3.5 w-3.5 shrink-0" style={{ color: "var(--primary-strong)" }} />}
                 </button>
               );
             })

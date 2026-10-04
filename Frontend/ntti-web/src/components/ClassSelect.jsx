@@ -57,7 +57,7 @@ export default function ClassSelect({
         ref={ref}
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
-        className="flex h-10 w-full max-w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-medium transition"
+        className="flex h-10 w-full max-w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-medium transition hover:border-[var(--primary)]"
         style={{
           minWidth: `min(${typeof minWidth === "number" ? `${minWidth}px` : minWidth}, 100%)`,
           background: "var(--surface)",
@@ -70,7 +70,7 @@ export default function ClassSelect({
           <School className="h-4 w-4 shrink-0" style={{ color: "var(--primary-strong)" }} />
           <span className="truncate">{current ? current.label : placeholder}</span>
         </span>
-        <ChevronDown className="h-4 w-4 shrink-0" style={{ color: "var(--text-3)" }} />
+        <ChevronDown className={`dd-chevron h-4 w-4 shrink-0 ${open ? "is-open" : ""}`} style={{ color: open ? "var(--primary)" : "var(--text-3)" }} />
       </button>
 
       <DropdownPanel pos={pos} menuRef={menuRef} onClose={close} className="p-2">
@@ -100,17 +100,13 @@ export default function ClassSelect({
               No class matches “{q}”
             </p>
           ) : (
-            filtered.map((o) => (
+            filtered.map((o, i) => (
               <button
                 key={o.value}
                 type="button"
                 onClick={() => pick(o.value)}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--surface-2)]"
-                style={{
-                  color: o.value === value ? "var(--primary-strong)" : "var(--text)",
-                  fontWeight: o.value === value ? 700 : 500,
-                  background: o.value === value ? "var(--primary-soft)" : "transparent",
-                }}
+                className={`dd-item flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm ${o.value === value ? "is-active" : ""}`}
+                style={{ "--i": i }}
               >
                 <School className="h-4 w-4 shrink-0" />
                 <span className="truncate">{o.label}</span>

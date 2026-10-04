@@ -267,6 +267,63 @@
     opacity: 1;
   }
 
+
+  /* ───────── Dropdowns ─────────
+     Panel open animation + option rows with a real hover state.
+     NOTE: option background/colour must come from these classes, never from
+     an inline style — inline styles beat :hover and killed the hover effect.
+     Animations use `backwards` fill so they don't pin `transform` afterwards
+     (which would block the hover nudge). */
+  .dd-panel {
+    transform-origin: top center;
+    animation: dd-in-down 0.2s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+  .dd-panel.dd-up {
+    transform-origin: bottom center;
+    animation-name: dd-in-up;
+  }
+
+  .dd-item {
+    cursor: pointer;
+    color: var(--text);
+    font-weight: 500;
+    background: transparent;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+    animation: dd-item-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation-delay: calc(min(var(--i, 0), 10) * 22ms);
+  }
+  .dd-item:hover,
+  .dd-item:focus-visible {
+    background: var(--surface-2);
+    transform: translateX(3px);
+    outline: none;
+  }
+  .dd-item:active {
+    transform: translateX(3px) scale(0.98);
+  }
+  .dd-item.is-active {
+    color: var(--primary-strong);
+    font-weight: 700;
+    background: var(--primary-soft);
+  }
+  .dd-item.is-active:hover,
+  .dd-item.is-active:focus-visible {
+    background: color-mix(in srgb, var(--primary-soft) 75%, var(--primary) 14%);
+  }
+  .dd-item .dd-check {
+    animation: dd-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  .dd-enter {
+    animation: dd-item-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation-delay: calc(min(var(--i, 0), 10) * 22ms);
+  }
+  .dd-chevron {
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .dd-chevron.is-open {
+    transform: rotate(180deg);
+  }
+
   .chart-tooltip {
     border-radius: 12px;
     background: rgba(15, 20, 35, 0.92);
@@ -319,6 +376,23 @@
   .stagger > * {
     opacity: 0;
   }
+}
+
+@keyframes dd-in-down {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes dd-in-up {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes dd-item-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes dd-pop {
+  from { opacity: 0; transform: scale(0.4); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

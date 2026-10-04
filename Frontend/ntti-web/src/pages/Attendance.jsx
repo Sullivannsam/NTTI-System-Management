@@ -416,7 +416,7 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
             <div className="fixed inset-0 z-40" onMouseDown={close} />
             <div
               ref={menuRef}
-              className={`fixed z-50 rounded-xl p-1.5 overflow-y-auto thin-scroll shadow-lg border ${pos.up ? "animate-fade-down" : "animate-fade-up"}`}
+              className={`fixed z-50 rounded-xl p-1.5 overflow-y-auto thin-scroll shadow-lg border ${pos.up ? "dd-panel dd-up" : "dd-panel"}`}
               style={{
                 left: pos.left,
                 minWidth: pos.minWidth,
@@ -429,7 +429,7 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
               <button
                 type="button"
                 onClick={toggleAll}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold transition-colors hover:bg-emerald-50"
+                className="dd-enter flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold transition-colors hover:bg-emerald-50"
                 style={{ color: "#047857" }}
               >
                 <span
@@ -448,15 +448,15 @@ function ClassMultiSelect({ options, value = [], onChange, allCount }) {
                 </span>
               </button>
               <div className="my-1 h-px" style={{ background: "#e2e8f0" }} />
-              {options.map((o) => {
+              {options.map((o, i) => {
                 const on = value.includes(o.value);
                 return (
                   <button
                     key={o.value}
                     type="button"
                     onClick={() => toggle(o.value)}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-slate-50"
-                    style={{ color: "#1e293b" }}
+                    className="dd-enter flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-slate-50"
+                    style={{ color: "#1e293b", "--i": i + 1 }}
                   >
                     <span
                       className="flex h-4 w-4 items-center justify-center rounded border shrink-0"

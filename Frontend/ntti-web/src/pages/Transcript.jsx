@@ -202,7 +202,7 @@ function StudentSelect({ students, value, onChange, placeholder = "Select a stud
           <User2 className="h-4 w-4 shrink-0" style={{ color: COLORS.accent }} />
           <span className="truncate text-sm">{current ? label(current) : placeholder}</span>
         </span>
-        <ChevronDown className="h-4 w-4 shrink-0" style={{ color: COLORS.textMuted }} />
+        <ChevronDown className={`dd-chevron h-4 w-4 shrink-0 ${open ? "is-open" : ""}`} style={{ color: open ? COLORS.accent : COLORS.textMuted }} />
       </button>
 
       <DropdownPanel pos={pos} menuRef={menuRef} onClose={close} className="p-2">
@@ -231,13 +231,14 @@ function StudentSelect({ students, value, onChange, placeholder = "Select a stud
           {filtered.length === 0 ? (
             <p className="px-3 py-3 text-xs" style={{ color: COLORS.textMuted }}>No student matches "{q}"</p>
           ) : (
-            filtered.map((s) => (
+            filtered.map((s, i) => (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => pick(s.id)}
-                className="flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm transition-colors"
+                className="dd-enter flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm transition-colors"
                 style={{
+                  "--i": i,
                   color: s.id === value ? COLORS.accent : COLORS.textPrimary,
                   fontWeight: s.id === value ? 600 : 500,
                   background: s.id === value ? `rgba(37, 99, 235, 0.08)` : "transparent",
