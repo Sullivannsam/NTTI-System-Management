@@ -135,6 +135,56 @@ export const appendColumns = (layout, labels) => {
 };
 
 /**
+ * Group headers must stay contiguous — a hand drag can leave one group sitting in
+ * two separate runs, which would render a wrong colspan. Give the later run its
+ * own id (same name) so every group header covers exactly one block of columns.
+ */
+export const ensureContiguousGroups = (columns, groups) => {
+  const gs = [...(groups || [])];
+  const opened = new Set();
+  const extra = [];
+  let prev = null;
+  const out = columns.map((c) => {
+    let g = c.group ?? null;
+    if (g !== prev) {
+      // this column opens a new run — if that group already ran earlier, split it off
+      if (g && opened.has(g)) {
+        const src = gs.find((x) => x.id === g);
+        const fresh = nextGroupId([...gs, ...extra]);
+        extra.push({ id: fresh, name: src ? src.name : "" });
+        g = fresh;
+      }
+      if (g) opened.add(g);
+      prev = g;
+    }
+    return { ...c, group: g };
+  });
+  return pruneGroups({ columns: out, groups: [...gs, ...extra] });
+};
+
+/** Drop one subject column. The caller is responsible for clearing its scores. */
+export const removeColumn = (layout, key) =>
+  pruneGroups({
+    columns: (layout.columns || []).filter((c) => c.key !== key),
+    groups: layout.groups,
+  });
+
+/**
+ * Move a subject column somewhere else. The dragged column takes the index of the
+ * column it was dropped on, so dragging right past a neighbour swaps the two.
+ */
+export const moveColumn = (layout, fromKey, toKey) => {
+  const cols = layout.columns || [];
+  const from = cols.findIndex((c) => c.key === fromKey);
+  const to = cols.findIndex((c) => c.key === toKey);
+  if (from < 0 || to < 0 || from === to) return layout;
+  const next = [...cols];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return ensureContiguousGroups(next, layout.groups);
+};
+
+/**
  * Reconstruct merged groups from a (possibly sparse) header row.
  * Merged cells in xlsx read as the value in the first cell and "" in the rest;
  * adjacent identical labels are treated as the same group too.

@@ -279,7 +279,7 @@ export default function Rankings() {
             type="button"
             onClick={() => {
               setDlAll(false);
-              setDlChecked({});
+              setDlChecked(classId ? { [classId]: true } : {});
               setDlOpen(true);
             }}
             disabled={billboardClasses.length === 0}
@@ -371,7 +371,7 @@ export default function Rankings() {
                   <th className="sticky left-0 z-10 w-16 px-5 py-3.5 text-center" style={{ background: "var(--surface)" }}>
                     Rank
                   </th>
-                  <th className="sticky left-16 z-10 min-w-[190px] px-3 py-3.5" style={{ background: "var(--surface)" }}>
+                  <th className="sticky left-16 z-10 min-w-[210px] px-3 py-3.5" style={{ background: "var(--surface)" }}>
                     Student
                   </th>
                   <th className="px-3 py-3.5 text-center whitespace-nowrap" style={{ minWidth: 120 }}>ID</th>
@@ -396,8 +396,8 @@ export default function Rankings() {
                   const latinName = [row.student.firstName, row.student.lastName].filter(Boolean).join(" ");
                   return (
                     <tr key={row.student.id} className="border-t transition-colors hover:bg-[var(--surface-2)]" style={{ borderColor: "var(--border)" }}>
-                      <td className="sticky left-0 z-10 px-5 py-2.5 text-center" style={{ background: "var(--surface)" }}>
-                        <span className="text-[13px] font-bold tabular-nums" style={{ color: "var(--text)" }}>
+                      <td className="sticky left-0 z-10 w-16 px-5 py-2.5 text-center" style={{ background: "var(--surface)" }}>
+                        <span className="text-[13px] font-extrabold tabular-nums" style={{ color: "var(--text)" }}>
                           {row.rank}
                         </span>
                       </td>
@@ -408,11 +408,11 @@ export default function Rankings() {
                           title="Open student profile"
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-[13px] font-bold" style={{ color: "var(--text)" }}>
+                            <span className="block truncate text-[13px] font-bold leading-tight" style={{ color: "var(--text)" }}>
                               {row.student.khmerName || latinName}
                             </span>
                             {latinName && row.student.khmerName && (
-                              <span className="block truncate text-[10.5px]" style={{ color: "var(--text-3)" }}>
+                              <span className="block truncate text-[10.5px] leading-tight mt-[1px]" style={{ color: "var(--text-3)" }}>
                                 {latinName}
                               </span>
                             )}
@@ -491,7 +491,7 @@ export default function Rankings() {
                   onChange={(e) => {
                     const on = e.target.checked;
                     setDlAll(on);
-                    if (on) setDlChecked({});
+                    if (on) setDlChecked(classId ? { [classId]: true } : {});
                   }}
                   className="accent-emerald-500"
                 />

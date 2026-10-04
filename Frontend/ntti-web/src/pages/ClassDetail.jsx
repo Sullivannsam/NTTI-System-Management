@@ -122,11 +122,11 @@ export default function ClassDetail() {
     const present = thisWeek.filter((r) => r.status === "present").length;
     const avg = all.length
       ? Math.round(
-          all.reduce(
-            (acc, s) => acc + computeRate(attendance.filter((a) => a.studentId === s.id)),
-            0
-          ) / all.length
-        )
+        all.reduce(
+          (acc, s) => acc + computeRate(attendance.filter((a) => a.studentId === s.id)),
+          0
+        ) / all.length
+      )
       : 0;
     return { total: all.length, present, avg };
   }, [students, attendance, classId]);
@@ -431,8 +431,8 @@ export default function ClassDetail() {
               cls.completed
                 ? "This class has completed its programme"
                 : !nextLevelCode
-                ? "No next semester is available for this class — nothing to advance to"
-                : "Archive this term and open the next semester"
+                  ? "No next semester is available for this class — nothing to advance to"
+                  : "Archive this term and open the next semester"
             }
             className="ml-auto btn btn-outline h-10 px-4 text-sm gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >

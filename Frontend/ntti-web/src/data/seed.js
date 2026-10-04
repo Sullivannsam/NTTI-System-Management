@@ -1,9 +1,9 @@
 export const MAJORS = [
-  { id: "it", name: "IT" },
-  { id: "el", name: "Electronic" },
+  { id: "it", name: "Information Technology" },
+  { id: "ce", name: "Civil Engineering" },
+  { id: "ee", name: "Electrical Engineering" },
+  { id: "eee", name: "Electronic Engineering" },
   { id: "arc", name: "Architecture" },
-  { id: "des", name: "Design" },
-  { id: "elec", name: "Electric" },
 ];
 
 export const DEGREES = ["Certificate", "Diploma", "Bachelor", "Master"];
@@ -29,7 +29,13 @@ export const ACADEMIC_LEVELS = ["S1Y1", "S2Y1", "S1Y2", "S2Y2", "S1Y3", "S2Y3", 
  * curriculum. Architecture runs 5 years; IT / Electronic run 4. A major that
  * isn't listed falls back to 4 years.
  */
-export const PROGRAM_YEARS = { it: 4, el: 4, arc: 5, des: 4, elec: 4 };
+export const PROGRAM_YEARS = {
+  it: 4,
+  ce: 4,
+  ee: 4,
+  eee: 4,
+  arc: 5,
+};
 export const programYears = (majorId) => PROGRAM_YEARS[majorId] || 4;
 /** The levels a major actually runs through: S1Y1 … S2Y<years>. */
 export const levelsForMajor = (majorId) => ACADEMIC_LEVELS.slice(0, programYears(majorId) * 2);
@@ -48,11 +54,19 @@ export const nextLevel = (lvl) => {
 
 /** Fields of study (program types) per major — used when creating a class. */
 export const FIELDS_OF_STUDY = {
-  it: ["IT General", "Cyber Security", "Graphic Design"],
-  el: ["Electrical Engineering", "Mechatronics", "Electronics Repair"],
+  it: [
+    "Cyber Security",
+    "Software Engineering",
+    "Artificial Intelligence",
+    "Graphic Design",
+    "IOT Engineering",
+    "Computer Networking Engineering",
+    "Virtual Technology Engineering",
+  ],
+  ce: ["Civil Engineering", "Structural Engineering", "Construction Management"],
+  ee: ["Electrical Engineering", "Power Systems", "Automation"],
+  eee: ["Electronic Engineering", "Mechatronics", "Electronics Repair"],
   arc: ["Architecture Design", "Interior Design", "Urban Planning"],
-  des: ["Graphic Design", "Interior Design", "UX/UI Design"],
-  elec: ["Electrical Engineering", "Power Systems", "Automation"],
 };
 
 /* Every demo class starts at the very beginning of its programme: Year 1 · Semester 1. */
@@ -60,9 +74,9 @@ export const CLASSES = [
   { id: "cyber", name: "IT01A", field: "Cyber Security", major: "it", shift: "Morning", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
   { id: "git", name: "IT02A", field: "IT General", major: "it", shift: "Morning", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
   { id: "gin", name: "IT03A", field: "Graphic Design", major: "it", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
-  { id: "ele", name: "IT04A", field: "Electrical Engineering", major: "el", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Bachelor" },
-  { id: "mec", name: "IT05A", field: "Mechatronics", major: "el", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
-  { id: "rep", name: "IT06A", field: "Electronics Repair", major: "el", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Certificate" },
+  { id: "ele", name: "IT04A", field: "Electronic Engineering", major: "eee", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Bachelor" },
+  { id: "mec", name: "IT05A", field: "Mechatronics", major: "eee", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
+  { id: "rep", name: "IT06A", field: "Electronics Repair", major: "eee", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Certificate" },
   { id: "ads", name: "IT07A", field: "Architecture Design", major: "arc", shift: "Morning", year: "Year 1", semester: "Semester 1", degree: "Bachelor" },
   { id: "int", name: "IT08A", field: "Interior Design", major: "arc", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Diploma" },
   { id: "urb", name: "IT09A2", field: "Urban Planning", major: "arc", shift: "Night", year: "Year 1", semester: "Semester 1", degree: "Bachelor" },

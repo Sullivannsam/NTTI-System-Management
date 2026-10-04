@@ -331,12 +331,26 @@ export function rowToStudent(row, roles, { classes = [], existing = [], defaultC
   };
 
   const sid = get("sid", true);
-  const kh = cleanName(get("khmer"));
-  const latin = cleanName(get("latin"));
+  let kh = cleanName(get("khmer"));
+  let latin = cleanName(get("latin"));
+  // Strip leading numbers from Khmer/Latin names (like "01 គង់ ណៃសៀង" or "01 KUNG NAISIENG")
+  if (kh) {
+    kh = kh.replace(/^\s*\d+\s+/, "").replace(/^\s*\d+[-_\s]+/, "");
+  }
+  if (latin) {
+    latin = latin.replace(/^\s*\d+\s+/, "").replace(/^\s*\d+[-_\s]+/, "");
+  }
   let firstName = cleanName(get("first"));
   let lastName = cleanName(get("last"));
-  if (!firstName && !lastName && latin) {
-    const sp = splitLatin(latin);
+  if (firstName) {
+    firstName = firstName.replace(/^\s*\d+\s+/, "").replace(/^\s*\d+[-_\s]+/, "");
+  }
+  if (lastName) {
+    lastName = lastName.replace(/^\s*\d+\s+/, "").replace(/^\s*\d+[-_\s]+/, "");
+  }
+  const latinRaw = latin;
+  if (!firstName && !lastName && latinRaw) {
+    const sp = splitLatin(latinRaw);
     firstName = sp.firstName;
     lastName = sp.lastName;
   }
@@ -430,8 +444,8 @@ export function buildStudent(p, classes, defaultClassId, defaultYear, usedSids, 
 
   return {
     studentId: sid,
-    khmerName: p.kh || latinToKhmer(`${p.lastName} ${p.firstName}`.trim()),
-    firstName: p.firstName || p.kh || "Student",
+    khmerName: p.kh || "",
+    firstName: p.firstName || "",
     lastName: p.lastName || "",
     username: p.username || "",
     photo: "",

@@ -185,7 +185,7 @@ export default function StudentDetail() {
             </h3>
             <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
               1 semester = 15 weeks · {programYears(student.major)}-year programme · a semester is archived when the class passes the exam
-            </p>
+            </p>Morning · Year 1 · Semester 1 · 57 subjects · 48 students
           </div>
           <span
             className="inline-flex items-center rounded-lg px-3 py-2 text-xs font-semibold"

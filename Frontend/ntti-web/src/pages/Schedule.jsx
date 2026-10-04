@@ -2,13 +2,15 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, Save, RotateCcw, Trash2, CalendarDays, Download, ChevronDown, Check, X,
-  FileDown, FileSpreadsheet, FileText, Copy, Link2, Search,
+  FileDown, FileSpreadsheet, FileText, Copy, Link2, Search, GripVertical,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
+import { ensureContiguousGroups } from "../components/scoreSheetModel";
 import { MAJORS as SEED_MAJORS, majorName, FIELDS_OF_STUDY } from "../data/seed";
 
 const KEY = "ntti.schedule.v2";
 const LEGACY = "ntti.schedule.v1";
+const LAYOUT_KEY = "ntti.scores.layout.v1";
 
 const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -166,9 +168,33 @@ function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY));
     if (raw && Array.isArray(raw.schedules) && raw.schedules.length) {
-      schedules = raw.schedules;
-      activeId = raw.activeId && schedules.some((s) => s.id === raw.activeId) ? raw.activeId : schedules[0].id;
+      /* Only keep real schedule objects. A stray non-object row (a bad write once
+         left booleans here) would blow up every `.className` access on the page,
+         so drop those instead of crashing on them. */
+      schedules = raw.schedules
+        .filter((s) => s && typeof s === "object" && !Array.isArray(s))
+        .map((s) => ({
+          ...s,
+          subjects: (Array.isArray(s.subjects) ? s.subjects : []).filter(Boolean),
+          teachers: (Array.isArray(s.teachers) ? s.teachers : []).filter(Boolean),
+          cells: s.cells && typeof s.cells === "object" ? s.cells : {},
+        }));
+      activeId = schedules.some((s) => s.id === raw.activeId) ? raw.activeId : (schedules[0] && schedules[0].id) || null;
     }
+  } catch {
+    /* ignore */
+  }
+
+  /* A schedule that lost its subject list gets it back from the class's score
+     sheet, which keeps the same subject names under its own storage key. */
+  try {
+    const layout = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
+    schedules = schedules.map((s) => {
+      if (s.subjects.length || !s.classId) return s;
+      const cols = layout?.[s.classId]?.columns;
+      const names = (Array.isArray(cols) ? cols : []).map((c) => String(c.label || "").trim()).filter(Boolean);
+      return names.length ? { ...s, subjects: names } : s;
+    });
   } catch {
     /* ignore */
   }
@@ -439,7 +465,9 @@ function doExport(schedules, type) {
 
 /* ── main page ───────────────────────────────────────────── */
 export default function Schedule() {
-  const { showToast, classes, logAudit, updateClass, addClass } = useApp();
+  const { showToast, classes, logAudit, updateClass, addClass, renameAttendanceSubject } = useApp();
+  const [dragSub, setDragSub] = useState(null);
+  const [overSub, setOverSub] = useState(null);
   const [state, setState] = useState(load());
   const stateRef = useRef(state);
   useEffect(() => {
@@ -557,13 +585,87 @@ export default function Schedule() {
     pushToClass({ [field]: value });
   };
 
+  /* Mirror this schedule's subject list into the class's score-sheet layout, so a
+     rename / add / delete / reorder here also shows up in the Scores panel.
+     Each column keeps its key — that is where its scores are stored — so nothing
+     typed so far is lost when a subject is renamed. `prev` is the list before the
+     change, which is the only way to recognise a rename: once renamed, nothing in
+     the new list still carries the old name to match on. */
+  const syncLayoutFromSubjects = (subjects, prev) => {
+    const cid = data.classId;
+    if (!cid) return;
+    try {
+      const store = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
+      const cur = store[cid];
+      if (!cur || !Array.isArray(cur.columns)) return; // sheet has no saved layout yet
+      const cols = cur.columns;
+      const taken = new Set();
+      const next = [];
+      (subjects || []).forEach((name, i) => {
+        const label = String(name ?? "").trim();
+        if (!label) return;
+        /* match by name first, then fall back to the column that used to sit on
+           this position — that is the same subject, freshly renamed */
+        let col = cols.find((c) => !taken.has(c.key) && (c.key === label || c.label === label));
+        if (!col && Array.isArray(prev)) {
+          const oldLabel = String(prev[i] ?? "").trim();
+          const at = oldLabel ? cols.findIndex((c) => c.key === oldLabel || c.label === oldLabel) : -1;
+          if (at >= 0 && !taken.has(cols[at].key)) col = cols[at];
+        }
+        if (col) {
+          taken.add(col.key);
+          next.push({ ...col, label });
+          return;
+        }
+        /* a subject the sheet has not seen: give it a key, and join the group of
+           its left neighbour so the merged header row stays aligned */
+        const left = next[next.length - 1];
+        next.push({ key: label, label, group: left ? left.group : null });
+      });
+      const fixed = ensureContiguousGroups(next, cur.groups || []);
+      if (
+        fixed.columns.length === cols.length &&
+        fixed.columns.every((c, i) => c.key === cols[i].key && c.label === cols[i].label && c.group === cols[i].group)
+      ) {
+        return; // already in step — don't churn the stored layout
+      }
+      store[cid] = { columns: fixed.columns, groups: fixed.groups };
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(store));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /* Every change to the subject list goes through here, so the score sheet can
+     never drift away from the schedule. */
+  const setSubjects = (subjects, extra) => {
+    const prev = data.subjects;
+    setMeta({ subjects, ...(extra || {}) });
+    syncLayoutFromSubjects(subjects, prev);
+    /* Attendance keys its records by subject name, so carry that history across a
+       rename. A position counts as a rename only when its old name is gone from the
+       list and the new one is new to it — that way a plain reorder (where both names
+       are still present, just swapped) renames nothing. */
+    if (Array.isArray(prev)) {
+      const names = (subjects || []).map((s) => String(s ?? "").trim()).filter(Boolean);
+      const oldNames = prev.map((p) => String(p ?? "").trim()).filter(Boolean);
+      prev.forEach((oldName, i) => {
+        const from = String(oldName ?? "").trim();
+        const to = names[i] || "";
+        if (!from || !to || from === to) return;
+        if (names.includes(from) || oldNames.includes(to)) return;
+        renameAttendanceSubject(data.classId, from, to);
+      });
+    }
+  };
+
   const setSubjectName = (i, name) =>
-    setMeta({ subjects: data.subjects.map((s, idx) => (idx === i ? name : s)) });
+    setSubjects(data.subjects.map((s, idx) => (idx === i ? name : s)));
   const setTeacherName = (i, name) =>
     setMeta({ teachers: data.teachers.map((t, idx) => (idx === i ? name : t)) });
 
   const addSubject = () =>
-    setMeta({ subjects: [...data.subjects, `Subject ${data.subjects.length + 1}`] });
+    setSubjects([...data.subjects, `Subject ${data.subjects.length + 1}`]);
   const addTeacher = () =>
     setMeta({ teachers: [...data.teachers, `Teacher ${data.teachers.length + 1}`] });
 
@@ -573,7 +675,33 @@ export default function Schedule() {
       const [c] = splitKey(k);
       if (c !== i) cells[k] = data.cells[k];
     });
-    setMeta({ subjects: data.subjects.filter((_, idx) => idx !== i), cells });
+    setSubjects(
+      data.subjects.filter((_, idx) => idx !== i),
+      { cells }
+    );
+  };
+
+  /* Drag a subject sideways: it lands on the position it was dropped at, the
+     columns in between slide over, and every lesson cell travels with its column. */
+  const moveSubjectTo = (from, to) => {
+    const subs = data.subjects || [];
+    if (from < 0 || to < 0 || from >= subs.length || to >= subs.length || from === to) return;
+    /* order[newCol] = oldCol — the permutation to apply to subjects and cells alike */
+    const order = subs.map((_, c) => c);
+    const [movedIdx] = order.splice(from, 1);
+    order.splice(to, 0, movedIdx);
+    /* cells are keyed "col|row", so each one just needs its column number rewritten */
+    const cells = {};
+    Object.keys(data.cells).forEach((k) => {
+      const [c, r] = splitKey(k);
+      const newC = order.indexOf(c);
+      if (newC < 0) return;
+      cells[cellKey(newC, r)] = data.cells[k];
+    });
+    setSubjects(order.map((c) => subs[c]), { cells });
+    setDragSub(null);
+    setOverSub(null);
+    showToast(`Moved "${String(subs[from] || "subject").trim()}" to position ${to + 1} of ${subs.length}`);
   };
 
   const removeTeacher = (i) => {
@@ -741,6 +869,7 @@ export default function Schedule() {
       );
     }
     setMeta(patch);
+    if (patch.subjects) syncLayoutFromSubjects(patch.subjects, data.subjects);
     logAudit(
       "copy_schedule",
       `Copied ${["subjects", "teachers", "cells"].filter((k) => copyOpts[k]).join(", ")} from ${src.className || "a schedule"} into ${data.className || "current schedule"}`
@@ -946,8 +1075,44 @@ export default function Schedule() {
                   <div className="h-7 w-10" />
                 </th>
                 {data.subjects.map((s, i) => (
-                  <th key={i} className="p-1 align-bottom">
+                  <th
+                    key={i}
+                    className="p-1 align-bottom"
+                    onDragOver={(e) => {
+                      if (dragSub === null || dragSub === i) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      setOverSub(i);
+                    }}
+                    onDragLeave={() => setOverSub((v) => (v === i ? null : v))}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragSub === null || dragSub === i) return;
+                      moveSubjectTo(dragSub, i);
+                    }}
+                    style={{
+                      opacity: dragSub !== null && dragSub !== i ? 0.55 : 1,
+                      boxShadow: overSub === i ? "inset 3px 0 0 0 var(--primary)" : undefined,
+                    }}
+                  >
                     <div className="flex items-center justify-center gap-0.5">
+                      <span
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("text/plain", String(i));
+                          setDragSub(i);
+                        }}
+                        onDragEnd={() => {
+                          setDragSub(null);
+                          setOverSub(null);
+                        }}
+                        title="Drag sideways to move this subject to another position"
+                        className="shrink-0 cursor-grab leading-none opacity-40 hover:opacity-100 active:cursor-grabbing"
+                        style={{ color: "var(--text-3)" }}
+                      >
+                        <GripVertical size={11} />
+                      </span>
                       <input
                         value={s}
                         onChange={(e) => setSubjectName(i, e.target.value)}
