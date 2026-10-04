@@ -121,11 +121,11 @@ export default function ClassDetail() {
     const present = thisWeek.filter((r) => r.status === "present").length;
     const avg = all.length
       ? Math.round(
-          all.reduce(
-            (acc, s) => acc + computeRate(attendance.filter((a) => a.studentId === s.id)),
-            0
-          ) / all.length
-        )
+        all.reduce(
+          (acc, s) => acc + computeRate(attendance.filter((a) => a.studentId === s.id)),
+          0
+        ) / all.length
+      )
       : 0;
     return { total: all.length, present, avg };
   }, [students, attendance, classId]);
@@ -287,11 +287,21 @@ export default function ClassDetail() {
                 </button>
               )}
             </div>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input sm:w-40">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-2.5 pr-10 text-gray-700 font-medium cursor-pointer transition duration-200 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:w-40"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%234B5563' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 0.75rem center',
+                backgroundSize: '1.2em 1.2em',
+              }}
+            >
               <option value="all">All statuses</option>
-              <option>Learning</option>
-              <option>Graduate</option>
-              <option>Undergraduate</option>
+              <option value="learning">Learning</option>
+              <option value="graduate">Graduate</option>
+              <option value="undergraduate">Undergraduate</option>
             </select>
           </div>
         </div>
@@ -424,8 +434,8 @@ export default function ClassDetail() {
               cls.completed
                 ? "This class has completed its programme"
                 : !nextLevelCode
-                ? "No next semester is available for this class — nothing to advance to"
-                : "Archive this term and open the next semester"
+                  ? "No next semester is available for this class — nothing to advance to"
+                  : "Archive this term and open the next semester"
             }
             className="ml-auto btn btn-outline h-10 px-4 text-sm gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
