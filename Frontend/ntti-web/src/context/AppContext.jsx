@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { SEED_STUDENTS, SEED_ATTENDANCE, SEED_WEEKLY, SEED_SCORES, SEED_SCHEDULE, CLASSES, ACADEMIC_LEVELS, levelMeta, todayISO, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
+import { SEED_SCORES, SEED_SCHEDULE, ACADEMIC_LEVELS, levelMeta, todayISO, FIELDS_OF_STUDY, levelsForMajor } from "../data/seed";
 import { cleanName, isRollLabel, norm, nextStudentId } from "../components/studentImportHelpers";
+import api from "../api";
 
 const AppContext = createContext(null);
 
@@ -33,6 +34,10 @@ const LS_SEED = "ntti.seed.v1";
  */
 const SEED_VERSION = "demo-y1s1-2026-09-19";
 function applyDemoReset() {
+  /* Demo reset is a mock-mode concept: it re-seeds the localStorage dataset.
+     When the API is the source of truth the backend owns the data, so touching
+     it here would push demo rows over the real records. */
+  if (!api.USE_MOCK) return;
   try {
     if (localStorage.getItem(LS_SEED) === SEED_VERSION) return;
     [LS_STUDENTS, LS_ATTENDANCE, LS_CLASSES, LS_WEEKLY, LS_SCORES, LS_SCHED, LS_SEL, LS_BB].forEach((k) =>
@@ -63,7 +68,7 @@ const SEED_ADMINS = [
 
 function loadAdmins() {
   try {
-    const raw = localStorage.getItem(LS_ADMINS);
+    const raw = api.getItem(LS_ADMINS);
     const list = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(list) || list.length === 0) return SEED_ADMINS;
     // never allow a lockout: if no active admin exists, restore the seed account
@@ -76,7 +81,7 @@ function loadAdmins() {
 
 function loadAudit() {
   try {
-    const raw = localStorage.getItem(LS_AUDIT);
+    const raw = api.getItem(LS_AUDIT);
     const arr = raw ? JSON.parse(raw) : [];
     return Array.isArray(arr) ? arr : [];
   } catch {
@@ -86,7 +91,7 @@ function loadAudit() {
 
 function loadSession() {
   try {
-    const raw = localStorage.getItem(LS_AUTH);
+    const raw = api.getItem(LS_AUTH);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -129,7 +134,7 @@ async function refreshIP() {
 
 function load(key, fallback) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = api.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
@@ -177,8 +182,8 @@ function repairKhmerNameFields(s) {
 
 /** Migrate stored students: lifecycle statuses, enrollment year, academic level + history. */
 function loadStudents() {
-  const stored = localStorage.getItem(LS_STUDENTS);
-  if (!stored) return SEED_STUDENTS;
+  const stored = api.getItem(LS_STUDENTS);
+  if (!stored) return [];
   try {
     const list = JSON.parse(stored);
     /* Back up once, before any repair, and only when there is something to fix. */
@@ -235,7 +240,7 @@ function loadStudents() {
       };
     });
   } catch {
-    return SEED_STUDENTS;
+    return [];
   }
 }
 
@@ -271,8 +276,8 @@ const LEGACY_CLASS_NAMES = {
 
 /** Load classes: rename legacy seed classes to IT codes, backfill info, fix shift vocab. */
 function loadClasses() {
-  const stored = localStorage.getItem(LS_CLASSES);
-  if (!stored) return CLASSES;
+  const stored = api.getItem(LS_CLASSES);
+  if (!stored) return [];
   try {
     return JSON.parse(stored).map((c) => {
       const patch = CLASS_IT_CODES[c.id];
@@ -289,13 +294,13 @@ function loadClasses() {
       };
     });
   } catch {
-    return CLASSES;
+    return [];
   }
 }
 
 function readLS(key, fallback) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = api.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
@@ -326,12 +331,12 @@ let toastId = 0;
 
 export function AppProvider({ children }) {
   const [students, setStudents] = useState(loadStudents);
-  const [attendance, setAttendance] = useState(() => load(LS_ATTENDANCE, SEED_ATTENDANCE));
+  const [attendance, setAttendance] = useState(() => load(LS_ATTENDANCE, []));
   const [classes, setClasses] = useState(loadClasses);
   /* Soft-deleted classes park here (the Classes page Draft tab) until they are
      restored to the live list or purged forever. Persisted separately. */
   const [drafts, setDrafts] = useState(() => readLS(LS_CLASS_DRAFTS, []));
-  const [weekly, setWeekly] = useState(() => load(LS_WEEKLY, SEED_WEEKLY));
+  const [weekly, setWeekly] = useState(() => load(LS_WEEKLY, []));
   const [toasts, setToasts] = useState([]);
   const [theme, setTheme] = useState(() => load(LS_THEME, "light"));
   const [admins, setAdmins] = useState(loadAdmins);
@@ -339,11 +344,11 @@ export function AppProvider({ children }) {
   const [session, setSession] = useState(loadSession);
 
   useEffect(() => {
-    localStorage.setItem(LS_STUDENTS, JSON.stringify(students));
+    api.setItem(LS_STUDENTS, JSON.stringify(students));
   }, [students]);
 
   useEffect(() => {
-    localStorage.setItem(LS_ATTENDANCE, JSON.stringify(attendance));
+    api.setItem(LS_ATTENDANCE, JSON.stringify(attendance));
   }, [attendance]);
 
   /* One-time repair: classes rolled over before attendance was cleared at
@@ -415,11 +420,11 @@ export function AppProvider({ children }) {
   }, [classes]);
 
   useEffect(() => {
-    localStorage.setItem(LS_CLASSES, JSON.stringify(classes));
+    api.setItem(LS_CLASSES, JSON.stringify(classes));
   }, [classes]);
 
   useEffect(() => {
-    localStorage.setItem(LS_CLASS_DRAFTS, JSON.stringify(drafts));
+    api.setItem(LS_CLASS_DRAFTS, JSON.stringify(drafts));
   }, [drafts]);
 
   /* keep every student's major / field / shift aligned with their class —
@@ -441,7 +446,7 @@ export function AppProvider({ children }) {
   }, [classes]);
 
   useEffect(() => {
-    localStorage.setItem(LS_WEEKLY, JSON.stringify(weekly));
+    api.setItem(LS_WEEKLY, JSON.stringify(weekly));
   }, [weekly]);
 
   /* One-time: rewrite legacy "NTTI-<year>-<serial>" ids for IT bachelor/diploma
@@ -478,11 +483,11 @@ export function AppProvider({ children }) {
   }, [classes, students]);
 
   useEffect(() => {
-    localStorage.setItem(LS_ADMINS, JSON.stringify(admins));
+    api.setItem(LS_ADMINS, JSON.stringify(admins));
   }, [admins]);
 
   useEffect(() => {
-    localStorage.setItem(LS_AUDIT, JSON.stringify(audit));
+    api.setItem(LS_AUDIT, JSON.stringify(audit));
   }, [audit]);
 
   useEffect(() => {
@@ -893,7 +898,7 @@ export function AppProvider({ children }) {
           const schedList = Array.isArray(schedRaw?.schedules) ? schedRaw.schedules : [];
           const unlink = new Set(classItems.map((c) => scheduleForClass(schedList, c)).filter(Boolean));
           if (unlink.size) {
-            localStorage.setItem(
+            api.setItem(
               LS_SCHED,
               JSON.stringify({
                 ...schedRaw,
@@ -914,7 +919,7 @@ export function AppProvider({ children }) {
               touched = true;
             }
           });
-          if (touched) localStorage.setItem(LS_SCORES, JSON.stringify(allScores));
+          if (touched) api.setItem(LS_SCORES, JSON.stringify(allScores));
         } catch {
           /* ignore */
         }
@@ -927,14 +932,14 @@ export function AppProvider({ children }) {
               touched = true;
             }
           });
-          if (touched) localStorage.setItem(LS_SCORES_LAYOUT, JSON.stringify(layouts));
+          if (touched) api.setItem(LS_SCORES_LAYOUT, JSON.stringify(layouts));
         } catch {
           /* ignore */
         }
         // if the Scores page had one of these classes selected, forget it
         try {
           const sel = readLS(LS_SEL, null);
-          if (sel && classIds.has(sel.id)) localStorage.removeItem(LS_SEL);
+          if (sel && classIds.has(sel.id)) api.removeItem(LS_SEL);
         } catch {
           /* ignore */
         }
@@ -1139,7 +1144,7 @@ export function AppProvider({ children }) {
       // clear the live class scores (captured above in the archive)
       delete allScores[classId];
       try {
-        localStorage.setItem(LS_SCORES, JSON.stringify(allScores));
+        api.setItem(LS_SCORES, JSON.stringify(allScores));
       } catch {
         /* ignore */
       }
@@ -1175,7 +1180,7 @@ export function AppProvider({ children }) {
                 : s
             ),
           };
-          localStorage.setItem(LS_SCHED, JSON.stringify(nextSched));
+          api.setItem(LS_SCHED, JSON.stringify(nextSched));
         } catch {
           /* ignore */
         }
@@ -1310,7 +1315,7 @@ export function AppProvider({ children }) {
           sheet[r.studentId] = map;
         });
         allScores[classId] = sheet;
-        localStorage.setItem(LS_SCORES, JSON.stringify(allScores));
+        api.setItem(LS_SCORES, JSON.stringify(allScores));
       } catch {
         /* ignore */
       }
@@ -1348,7 +1353,7 @@ export function AppProvider({ children }) {
         const schedList = Array.isArray(schedRaw?.schedules) ? schedRaw.schedules : [];
         const sched = scheduleForClass(schedList, cls);
         if (sched) {
-          localStorage.setItem(
+          api.setItem(
             LS_SCHED,
             JSON.stringify({
               ...schedRaw,

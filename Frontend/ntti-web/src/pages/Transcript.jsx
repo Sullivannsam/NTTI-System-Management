@@ -24,6 +24,7 @@ import { useDropPos, DropdownPanel } from "../components/Dropdown";
 import TranscriptImportModal from "../components/TranscriptImportModal";
 import { ACADEMIC_LEVELS, levelMeta, majorName, prettyDate, computeRate, todayISO, programYears, maxLevelForMajor } from "../data/seed";
 import { cleanName, isRollLabel } from "../components/studentImportHelpers";
+import api from "../api";
 
 const SCORES_KEY = "ntti.scores.v1";
 const SCHED_KEY = "ntti.schedule.v2";
@@ -89,7 +90,7 @@ const COLORS = {
 
 function loadScores() {
   try {
-    const raw = JSON.parse(localStorage.getItem(SCORES_KEY));
+    const raw = JSON.parse(api.getItem(SCORES_KEY));
     return raw && typeof raw === "object" ? raw : {};
   } catch {
     return {};
@@ -98,7 +99,7 @@ function loadScores() {
 
 function loadSchedules() {
   try {
-    const raw = JSON.parse(localStorage.getItem(SCHED_KEY));
+    const raw = JSON.parse(api.getItem(SCHED_KEY));
     return raw && Array.isArray(raw.schedules) ? raw.schedules : [];
   } catch {
     return [];

@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { useApp } from "../context/AppContext";
 import { EmptyState, CtaButton } from "../components/Page";
 import ClassSelect from "../components/ClassSelect";
+import api from "../api";
 
 const SCORES_KEY = "ntti.scores.v1";
 const SCHED_KEY = "ntti.schedule.v2";
@@ -14,7 +15,7 @@ const LAYOUT_KEY = "ntti.scores.layout.v1";
 
 function loadScores() {
   try {
-    const raw = JSON.parse(localStorage.getItem(SCORES_KEY));
+    const raw = JSON.parse(api.getItem(SCORES_KEY));
     return raw && typeof raw === "object" ? raw : {};
   } catch {
     return {};
@@ -23,7 +24,7 @@ function loadScores() {
 
 function loadSchedules() {
   try {
-    const raw = JSON.parse(localStorage.getItem(SCHED_KEY));
+    const raw = JSON.parse(api.getItem(SCHED_KEY));
     return raw && Array.isArray(raw.schedules) ? raw.schedules : [];
   } catch {
     return [];
@@ -34,7 +35,7 @@ function loadSchedules() {
    resolve a schedule subject to the actual column key the score lives under. */
 function loadLayouts() {
   try {
-    const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY));
+    const raw = JSON.parse(api.getItem(LAYOUT_KEY));
     return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   } catch {
     return {};
@@ -125,7 +126,7 @@ export default function Rankings() {
   const [scores, setScores] = useState(loadScores);
   const [schedules, setSchedules] = useState(loadSchedules);
   const [layouts, setLayouts] = useState(loadLayouts);
-  const [classId, setClassId] = useState(() => localStorage.getItem(SEL_KEY) || "");
+  const [classId, setClassId] = useState(() => api.getItem(SEL_KEY) || "");
   const [dlOpen, setDlOpen] = useState(false);
   const [dlAll, setDlAll] = useState(false);
   const [dlChecked, setDlChecked] = useState({});
@@ -161,7 +162,7 @@ export default function Rankings() {
   useEffect(() => {
     if (classId) {
       try {
-        localStorage.setItem(SEL_KEY, classId);
+        api.setItem(SEL_KEY, classId);
       } catch {
         /* ignore */
       }

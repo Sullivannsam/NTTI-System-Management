@@ -7,6 +7,7 @@ import {
 import { useApp } from "../context/AppContext";
 import { ensureContiguousGroups } from "../components/scoreSheetModel";
 import { MAJORS as SEED_MAJORS, majorName, FIELDS_OF_STUDY } from "../data/seed";
+import api from "../api";
 
 const KEY = "ntti.schedule.v2";
 const LEGACY = "ntti.schedule.v1";
@@ -166,7 +167,7 @@ function load() {
   let activeId = null;
 
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY));
+    const raw = JSON.parse(api.getItem(KEY));
     if (raw && Array.isArray(raw.schedules) && raw.schedules.length) {
       /* Only keep real schedule objects. A stray non-object row (a bad write once
          left booleans here) would blow up every `.className` access on the page,
@@ -188,7 +189,7 @@ function load() {
   /* A schedule that lost its subject list gets it back from the class's score
      sheet, which keeps the same subject names under its own storage key. */
   try {
-    const layout = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
+    const layout = JSON.parse(api.getItem(LAYOUT_KEY) || "{}");
     schedules = schedules.map((s) => {
       if (s.subjects.length || !s.classId) return s;
       const cols = layout?.[s.classId]?.columns;
@@ -201,7 +202,7 @@ function load() {
 
   if (!schedules.length) {
     try {
-      const old = JSON.parse(localStorage.getItem(LEGACY));
+      const old = JSON.parse(api.getItem(LEGACY));
       if (old && Array.isArray(old.subjects) && Array.isArray(old.teachers)) {
         const cells = {};
         Object.keys(old.cells || {}).forEach((k) => {
@@ -489,7 +490,7 @@ export default function Schedule() {
   // persist every state change so schedules survive a refresh
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(state));
+      api.setItem(KEY, JSON.stringify(state));
     } catch {
       /* ignore quota / private-mode errors */
     }
@@ -593,7 +594,7 @@ export default function Schedule() {
     const cid = data.classId;
     if (!cid) return;
     try {
-      const store = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
+      const store = JSON.parse(api.getItem(LAYOUT_KEY) || "{}");
       const cur = store[cid];
       if (!cur || !Array.isArray(cur.columns)) return; // sheet has no saved layout yet
       const cols = cur.columns;
@@ -628,7 +629,7 @@ export default function Schedule() {
         return; // already in step — don't churn the stored layout
       }
       store[cid] = { columns: fixed.columns, groups: fixed.groups };
-      localStorage.setItem(LAYOUT_KEY, JSON.stringify(store));
+      api.setItem(LAYOUT_KEY, JSON.stringify(store));
     } catch {
       /* ignore */
     }
@@ -769,7 +770,7 @@ export default function Schedule() {
     });
 
     try {
-      localStorage.setItem(KEY, JSON.stringify({ ...cur, schedules }));
+      api.setItem(KEY, JSON.stringify({ ...cur, schedules }));
     } catch {
       /* ignore */
     }

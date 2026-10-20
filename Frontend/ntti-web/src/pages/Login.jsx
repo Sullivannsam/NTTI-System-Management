@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { User, Lock, Eye, EyeOff, ArrowRight, UsersRound, CalendarCheck2, ShieldCheck, Loader2, AlertTriangle } from "lucide-react";
 import { useApp } from "../context/AppContext";
+import api from "../api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ export default function Login() {
   const [error, setError] = useState(null);
   const [lastIpHint, setLastIpHint] = useState("");
 
-  if (localStorage.getItem("ntti.auth")) return <Navigate to="/dashboard" replace />;
+  if (api.getItem("ntti.auth")) return <Navigate to="/dashboard" replace />;
 
   const submit = async (e) => {
     e.preventDefault();

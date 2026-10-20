@@ -17,9 +17,10 @@ import Rankings from "./pages/Billboard";
 import Transcript from "./pages/Transcript";
 import Analytics from "./pages/Analytics";
 import Admin from "./pages/Admin";
+import api from "./api";
 
 function RequireAuth({ children }) {
-  const authed = localStorage.getItem("ntti.auth");
+  const authed = api.getItem("ntti.auth");
   return authed ? children : <Navigate to="/login" replace />;
 }
 

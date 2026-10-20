@@ -21,6 +21,7 @@ import ScoreImportModal from "../components/ScoreImportModal";
 import ScoreSheet from "../components/ScoreSheet";
 import { cleanName, splitLatin, norm, buildStudent } from "../components/studentImportHelpers";
 import { SHIFTS, majorName } from "../data/seed";
+import api from "../api";
 import {
   bootstrapColumns,
   layoutFromColumns,
@@ -47,7 +48,7 @@ const SEL_CLASS_KEY = "ntti.scores.selectedClass.v1";
    the class no longer exists, e.g. it was moved to Draft). */
 function loadSelectedClass() {
   try {
-    return String(localStorage.getItem(SEL_CLASS_KEY) || "");
+    return String(api.getItem(SEL_CLASS_KEY) || "");
   } catch {
     return "";
   }
@@ -55,7 +56,7 @@ function loadSelectedClass() {
 
 function loadScores() {
   try {
-    const raw = JSON.parse(localStorage.getItem(SCORES_KEY));
+    const raw = JSON.parse(api.getItem(SCORES_KEY));
     return raw && typeof raw === "object" ? raw : {};
   } catch {
     return {};
@@ -64,7 +65,7 @@ function loadScores() {
 
 function loadSchedules() {
   try {
-    const raw = JSON.parse(localStorage.getItem(SCHED_KEY));
+    const raw = JSON.parse(api.getItem(SCHED_KEY));
     if (!raw || !Array.isArray(raw.schedules)) return [];
     /* keep only real schedule objects — a stray non-object row would break every
        field access on this page */
@@ -103,7 +104,7 @@ function blankFallbackGroups(payload) {
 /* per-class column layouts: { [classId]: { columns: [{key,label,group}], groups: [{id,name}] } } */
 function loadLayout() {
   try {
-    const raw = JSON.parse(localStorage.getItem(LAYOUT_KEY));
+    const raw = JSON.parse(api.getItem(LAYOUT_KEY));
     return raw && typeof raw === "object" && !Array.isArray(raw) ? blankFallbackGroups(raw) : { version: 1 };
   } catch {
     return { version: 1 };
@@ -113,7 +114,7 @@ function loadLayout() {
 /* the "(No class)" cheatsheet — subjects + rows come straight from an imported file */
 function loadNoneMeta() {
   try {
-    const raw = JSON.parse(localStorage.getItem(NONE_META_KEY));
+    const raw = JSON.parse(api.getItem(NONE_META_KEY));
     if (raw && Array.isArray(raw.subjects) && Array.isArray(raw.rows)) {
       if (raw.layout && Array.isArray(raw.layout.columns) && Array.isArray(raw.layout.groups)) {
         const columns = raw.layout.columns;
@@ -489,7 +490,7 @@ export default function Scores() {
   // persist drafts continuously so nothing is lost while filling
   useEffect(() => {
     try {
-      localStorage.setItem(SCORES_KEY, JSON.stringify(scores));
+      api.setItem(SCORES_KEY, JSON.stringify(scores));
     } catch {
       /* ignore */
     }
@@ -498,7 +499,7 @@ export default function Scores() {
   // persist column layouts (groups + renames + new columns)
   useEffect(() => {
     try {
-      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+      api.setItem(LAYOUT_KEY, JSON.stringify(layout));
     } catch {
       /* ignore */
     }
@@ -518,8 +519,8 @@ export default function Scores() {
   // class is gone (deleted / moved to Draft)
   useEffect(() => {
     try {
-      if (classId && classes.some((c) => c.id === classId)) localStorage.setItem(SEL_CLASS_KEY, classId);
-      else localStorage.removeItem(SEL_CLASS_KEY);
+      if (classId && classes.some((c) => c.id === classId)) api.setItem(SEL_CLASS_KEY, classId);
+      else api.removeItem(SEL_CLASS_KEY);
     } catch {
       /* ignore */
     }
@@ -532,8 +533,8 @@ export default function Scores() {
   // persist the "(No class)" cheatsheet so it survives a refresh
   useEffect(() => {
     try {
-      if (noneMeta) localStorage.setItem(NONE_META_KEY, JSON.stringify(noneMeta));
-      else localStorage.removeItem(NONE_META_KEY);
+      if (noneMeta) api.setItem(NONE_META_KEY, JSON.stringify(noneMeta));
+      else api.removeItem(NONE_META_KEY);
     } catch {
       /* ignore */
     }
@@ -593,8 +594,8 @@ export default function Scores() {
 
   const persistSchedules = (next) => {
     try {
-      const raw = JSON.parse(localStorage.getItem(SCHED_KEY) || "{}");
-      localStorage.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
+      const raw = JSON.parse(api.getItem(SCHED_KEY) || "{}");
+      api.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
     } catch {
       /* ignore */
     }
@@ -653,7 +654,7 @@ export default function Scores() {
     setScores((prev) => {
       const next = { ...prev, [classId]: { ...(prev[classId] || {}), [studentId]: { ...((prev[classId] || {})[studentId] || {}), [colKey]: value } } };
       try {
-        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+        api.setItem(SCORES_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -693,9 +694,9 @@ export default function Scores() {
     // claims "saved" when the browser actually refused the write.
     const stamp = stampNow();
     try {
-      localStorage.setItem(SCORES_KEY, JSON.stringify(scores));
-      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
-      const back = JSON.parse(localStorage.getItem(SCORES_KEY) || "null");
+      api.setItem(SCORES_KEY, JSON.stringify(scores));
+      api.setItem(LAYOUT_KEY, JSON.stringify(layout));
+      const back = JSON.parse(api.getItem(SCORES_KEY) || "null");
       if (!back || JSON.stringify(back[classId] || {}) !== JSON.stringify(scores[classId] || {})) {
         throw new Error("read-back mismatch");
       }
@@ -811,7 +812,7 @@ export default function Scores() {
       if (!touched) return prev;
       const next = { ...prev, [classId]: perStudent };
       try {
-        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+        api.setItem(SCORES_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -837,7 +838,7 @@ export default function Scores() {
       delete perStudent[String(s.id)];
       const next = { ...prev, [classId]: perStudent };
       try {
-        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+        api.setItem(SCORES_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -1093,8 +1094,8 @@ export default function Scores() {
         cells: {},
       });
       try {
-        const raw = JSON.parse(localStorage.getItem(SCHED_KEY) || "{}");
-        localStorage.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
+        const raw = JSON.parse(api.getItem(SCHED_KEY) || "{}");
+        api.setItem(SCHED_KEY, JSON.stringify({ ...raw, schedules: next }));
       } catch {
         /* ignore */
       }
@@ -1105,7 +1106,7 @@ export default function Scores() {
     setLayout((prev) => {
       const next = { ...prev, version: 1, [classId]: { columns: cols, groups } };
       try {
-        localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
+        api.setItem(LAYOUT_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -1183,7 +1184,7 @@ export default function Scores() {
         next[classId][String(studentId)] = { ...(next[classId][String(studentId)] || {}), ...src };
       });
       try {
-        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+        api.setItem(SCORES_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -1211,8 +1212,8 @@ export default function Scores() {
 
     if (final) {
       try {
-        localStorage.setItem(NONE_META_KEY, JSON.stringify(final));
-        const back = JSON.parse(localStorage.getItem(NONE_META_KEY) || "null");
+        api.setItem(NONE_META_KEY, JSON.stringify(final));
+        const back = JSON.parse(api.getItem(NONE_META_KEY) || "null");
         if (!back || (back.name || "") !== nm) throw new Error("read-back mismatch");
       } catch {
         showToast("Could not save — this browser refused to store the data", "error");
@@ -1309,7 +1310,7 @@ export default function Scores() {
       setNoneMeta(meta);
       setNoneOpened(true);
       try {
-        localStorage.setItem(NONE_META_KEY, JSON.stringify(meta));
+        api.setItem(NONE_META_KEY, JSON.stringify(meta));
       } catch {
         /* ignore */
       }
@@ -1418,7 +1419,7 @@ export default function Scores() {
         });
       });
       try {
-        localStorage.setItem(SCORES_KEY, JSON.stringify(next));
+        api.setItem(SCORES_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }

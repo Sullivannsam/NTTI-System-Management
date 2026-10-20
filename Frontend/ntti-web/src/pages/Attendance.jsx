@@ -28,6 +28,7 @@ import StudentFormModal from "../components/StudentFormModal";
 import StudentAttendanceModal from "../components/StudentAttendanceModal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useDropPos } from "../components/Dropdown";
+import api from "../api";
 
 /* ── weekly statuses (Excel tick letters) ────────────────── */
 const WEEK_STATUS = {
@@ -58,7 +59,7 @@ const LS_CLASS_SEL = "ntti.attendance.classes.v1";
 
 function readScheduleState() {
   try {
-    const raw = localStorage.getItem(LS_SCHED);
+    const raw = api.getItem(LS_SCHED);
     if (!raw) return { schedules: [] };
     const v = JSON.parse(raw);
     if (!v || !Array.isArray(v.schedules)) return { schedules: [] };
@@ -1316,7 +1317,7 @@ export default function Attendance() {
     if (classParam && classes.some((c) => c.id === classParam)) return [classParam];
     const live = classes.map((c) => c.id);
     try {
-      const stored = localStorage.getItem(LS_CLASS_SEL);
+      const stored = api.getItem(LS_CLASS_SEL);
       if (stored !== null) {
         const raw = JSON.parse(stored);
         if (Array.isArray(raw)) {
@@ -1343,7 +1344,7 @@ export default function Attendance() {
   // remember which sheets are open
   useEffect(() => {
     try {
-      localStorage.setItem(LS_CLASS_SEL, JSON.stringify(sel));
+      api.setItem(LS_CLASS_SEL, JSON.stringify(sel));
     } catch {
       /* ignore */
     }
@@ -1367,12 +1368,12 @@ export default function Attendance() {
   const [weekMap, setWeekMap] = useState(() => {
     const base = lastNWeeks(15).map((w) => w.key);
     try {
-      const raw = localStorage.getItem(LS_WEEKS);
+      const raw = api.getItem(LS_WEEKS);
       if (raw) {
         const v = JSON.parse(raw);
         if (v && typeof v === "object" && !Array.isArray(v)) return v;
       }
-      const old = localStorage.getItem(LS_EXTRA_WEEKS);
+      const old = api.getItem(LS_EXTRA_WEEKS);
       const ov = old ? JSON.parse(old) : {};
       const map = {};
       const merge = (clsId, keys) => {
@@ -1389,7 +1390,7 @@ export default function Attendance() {
   });
 
   useEffect(() => {
-    localStorage.setItem(LS_WEEKS, JSON.stringify(weekMap));
+    api.setItem(LS_WEEKS, JSON.stringify(weekMap));
   }, [weekMap]);
 
   const baseWeeks = useMemo(() => lastNWeeks(15), []);
